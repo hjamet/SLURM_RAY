@@ -5,7 +5,12 @@ import os
 PROJECT_PATH = {{PROJECT_PATH}}
 
 # Start the ray cluster
-ray.init(address="auto", include_dashboard=True)
+ray.init(
+    address="auto",
+    include_dashboard=True,
+    dashboard_host="0.0.0.0",
+    dashboard_port=8888,
+)
 
 # Load the function
 with open(os.path.join(PROJECT_PATH, "func.pkl"), "rb") as f:

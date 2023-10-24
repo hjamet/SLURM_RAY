@@ -10,15 +10,12 @@
 
 ### This script works for any number of nodes, Ray will find and manage all resources
 #SBATCH --nodes={{NUM_NODES}}
-#SBATCH --exclusive
 
 ### Give all resources to a single Ray task, ray can manage the resources internally
 #SBATCH --ntasks-per-node=1
-#SBATCH --gpus-per-task={{NUM_GPUS_PER_NODE}}
+{{PARTITION_SPECIFICS}}
 
 # Load modules or your own conda environment here
-# module load pytorch/v1.4.0-gpu
-# conda activate {{CONDA_ENV}}
 {{LOAD_ENV}}
 
 ################# DON NOT CHANGE THINGS HERE UNLESS YOU KNOW WHAT YOU ARE DOING ###############

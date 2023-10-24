@@ -47,12 +47,24 @@ class RayLauncher:
             self.node_nbr, self.gpu_nbr
         )
 
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
+    def __call__(self, cancel_old_jobs: bool = True) -> Any:
         """Launch the job and return the result
+
+        Args:
+            cancel_old_jobs (bool, optional): Cancel the old jobs. Defaults to True.
 
         Returns:
             Any: Result of the function
         """
+        # Cancel the old jobs
+        if cancel_old_jobs:
+            print("Canceling old jobs...")
+            subprocess.Popen(
+                ["scancel", "-u", os.environ["USER"]],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
         # Launch the job
         self.launch_job(self.script_file, self.job_name)
 
@@ -117,6 +129,7 @@ class RayLauncher:
         GIVEN_NODE = "{{GIVEN_NODE}}"
         COMMAND_SUFFIX = "{{COMMAND_SUFFIX}}"
         LOAD_ENV = "{{LOAD_ENV}}"
+        PARTITION_SPECIFICS = "{{PARTITION_SPECIFICS}}"
 
         job_name = "{}_{}".format(
             self.project_name, time.strftime("%d%m-%Hh%M", time.localtime())
@@ -140,6 +153,15 @@ class RayLauncher:
             "# THIS FILE IS MODIFIED AUTOMATICALLY FROM TEMPLATE AND SHOULD BE "
             "RUNNABLE!",
         )
+
+        # ===== Add partition specifics =====
+        if gpu_nbr > 0:
+            text = text.replace(
+                PARTITION_SPECIFICS,
+                str("#SBATCH --gres gpu:1\n#SBATCH --gres-flags enforce-binding"),
+            )
+        else:
+            text = text.replace(PARTITION_SPECIFICS, "#SBATCH --exclusive")
 
         # ===== Save the script =====
         script_file = "sbatch.sh"
@@ -169,13 +191,55 @@ class RayLauncher:
         )
 
         # Wait for log file to be created
-
+        current_queue = None
         while True:
             time.sleep(0.25)
             if os.path.exists(
                 os.path.join(self.project_path, "{}.log".format(job_name))
             ):
                 break
+            else:
+                # Get result from squeue -p {{PARTITION_NAME}}
+                result = subprocess.run(
+                    ["squeue", "-p", "gpu" if self.gpu_nbr > 0 else "cpu"],
+                    capture_output=True,
+                )
+                df = result.stdout.decode("utf-8").split("\n")
+                users = list(
+                    map(
+                        lambda row: row[: len(df[0].split("ST")[0])][:-1].split(" ")[
+                            -1
+                        ],
+                        df,
+                    )
+                )
+                status = list(
+                    map(
+                        lambda row: row[len(df[0].split("ST")[0]) :]
+                        .strip()
+                        .split(" ")[0],
+                        df,
+                    )
+                )
+                node_list = list(
+                    map(lambda row: row[len(df[0].split("NODELIST(REASON)")[0]) :], df)
+                )[1:]
+
+                to_queue = list(
+                    zip(
+                        users,
+                        status,
+                        node_list,
+                    )
+                )[1:]
+                if current_queue is None or current_queue != to_queue:
+                    current_queue = to_queue
+                    print("Current queue:")
+                    # Tabulared print
+                    format_row = "{:>30}" * (len(current_queue[0]))
+                    for user, status, node_list in current_queue:
+                        print(format_row.format(user, status, node_list))
+                    print()
 
         # Wait for the job to finish while printing the log
         log_cursor_position = 0
@@ -208,7 +272,7 @@ if __name__ == "__main__":
 
     args = [1]
     launcher = RayLauncher(
-        node_nbr=10, gpu_nbr=0, func=test_func, args=args, project_name="test"
+        node_nbr=2, gpu_nbr=1, func=test_func, args=args, project_name="test"
     )
 
     result = launcher()
