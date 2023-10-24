@@ -5,77 +5,109 @@ import time
 import os
 import dill
 
+
 class RayLauncher:
-    """A class that automatically connects RAY workers and executes the function requested by the user
-    """
-    def __init__(self, cpu_nbr : int = 1, gpu_nbr : int = 0, func : Callable = None, args : list = None, project_name : str = None):
-        """Constructor of the class
+    """A class that automatically connects RAY workers and executes the function requested by the user"""
+
+    def __init__(
+        self,
+        node_nbr: int = 1,
+        gpu_nbr: int = 0,
+        func: Callable = None,
+        args: list = None,
+        project_name: str = None,
+    ):
+        """Initialize the launcher
 
         Args:
-            cpu_nbr (int, optional): Number of CPUs to use. Defaults to 1.
-            gpu_nbr (int, optional): Number of GPUs to use. Defaults to 0.
+            node_nbr (int, optional): Number of nodes to use. Defaults to 1.
+            gpu_nbr (int, optional): Number of GPUs per node to use. Defaults to 0.
             func (Callable, optional): Function to execute. Defaults to None.
+            args (list, optional): Arguments of the function. Defaults to None.
+            project_name (str, optional): Name of the project. Defaults to None.
         """
         # Save the parameters
-        self.cpu_nbr = cpu_nbr
+        self.node_nbr = node_nbr
         self.gpu_nbr = gpu_nbr
         self.func = func
         self.args = args
         self.project_name = project_name
-        
+
         # Create the project directory if not exists
         self.pwd_path = os.path.dirname(os.path.abspath(__file__))
         self.project_path = os.path.join(self.pwd_path, "logs", self.project_name)
         if not os.path.exists(self.project_path):
             os.makedirs(self.project_path)
-        
+
         # Write the python script
-        self.write_python_script(self.func, self.args)
-        
+        self.__write_python_script(self.func, self.args)
+
         # Write the sh script
-        self.script_file, self.job_name = self.write_slurm_script(self.cpu_nbr, self.gpu_nbr)
-        
+        self.script_file, self.job_name = self.__write_slurm_script(
+            self.node_nbr, self.gpu_nbr
+        )
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
+        """Launch the job and return the result
+
+        Returns:
+            Any: Result of the function
+        """
         # Launch the job
         self.launch_job(self.script_file, self.job_name)
-        
+
         # Load the result
         with open(os.path.join(self.project_path, "result.pkl"), "rb") as f:
             result = dill.load(f)
-            
+
         return result
-        
-    def write_python_script(self, func : Callable = None, args : list = None):
+
+    def __write_python_script(self, func: Callable = None, args: list = None):
+        """Write the python script that will be executed by the job
+
+        Args:
+            func (Callable, optional): Function to execute. Defaults to None.
+            args (list, optional): Arguments of the function. Defaults to None.
+
+        Raises:
+            ValueError: If the function is not callable
+        """
+        print("Writing python script...")
+
         # Remove the old python script
         for file in os.listdir(self.project_path):
             if file.endswith(".py") or file.endswith(".pkl"):
                 os.remove(os.path.join(self.project_path, file))
-        
+
         # Pickle the function
         with open(os.path.join(self.project_path, "func.pkl"), "wb") as f:
             dill.dump(func, f)
-        
+
         # Pickle the arguments
         with open(os.path.join(self.project_path, "args.pkl"), "wb") as f:
             dill.dump(args, f)
-            
+
         # Write the python script
         with open(os.path.join(self.pwd_path, "spython_template.py"), "r") as f:
             text = f.read()
- 
-        text = text.replace("{{PROJECT_PATH}}", f"\"{self.project_path}\"")
+
+        text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path}"')
         with open(os.path.join(self.project_path, "spython.py"), "w") as f:
             f.write(text)
-    
-    def write_slurm_script(self, cpu_nbr : int = None, gpu_nbr : int = None):
-        template_file = os.path.join(
-            self.pwd_path,
-            'sbatch_template.sh'
-        )
-        
-        # Get venv location
-        venv_location = os.path.dirname(sys.executable)
+
+    def __write_slurm_script(self, node_nbr: int = None, gpu_nbr: int = None):
+        """Write the slurm script that will be executed by the job
+
+        Args:
+            node_nbr (int, optional): Number of nodes to use. Defaults to None.
+            gpu_nbr (int, optional): Number of GPUs per node to use. Defaults to None.
+
+        Returns:
+            str: Name of the script file
+            str: Name of the job
+        """
+        print("Writing slurm script...")
+        template_file = os.path.join(self.pwd_path, "sbatch_template.sh")
 
         JOB_NAME = "{{JOB_NAME}}"
         NUM_NODES = "{{NUM_NODES}}"
@@ -87,68 +119,97 @@ class RayLauncher:
         LOAD_ENV = "{{LOAD_ENV}}"
 
         job_name = "{}_{}".format(
-            self.project_name,
-            time.strftime("%d%m-%Hh%M", time.localtime())
+            self.project_name, time.strftime("%d%m-%Hh%M", time.localtime())
         )
 
         # ===== Modified the template script =====
         with open(template_file, "r") as f:
             text = f.read()
         text = text.replace(JOB_NAME, os.path.join(self.project_path, job_name))
-        text = text.replace(NUM_NODES, str(cpu_nbr))
+        text = text.replace(NUM_NODES, str(node_nbr))
         text = text.replace(NUM_GPUS_PER_NODE, str(gpu_nbr))
         text = text.replace(PARTITION_NAME, str("gpu" if gpu_nbr > 0 else "cpu"))
-        text = text.replace(COMMAND_PLACEHOLDER, str(f"{sys.executable} {self.project_path}/spython.py"))
+        text = text.replace(
+            COMMAND_PLACEHOLDER, str(f"{sys.executable} {self.project_path}/spython.py")
+        )
         text = text.replace(LOAD_ENV, str("module load gcc python/3.9.13"))
         text = text.replace(GIVEN_NODE, "")
         text = text.replace(COMMAND_SUFFIX, "")
         text = text.replace(
-            "# THIS FILE IS A TEMPLATE AND IT SHOULD NOT BE DEPLOYED TO "
-            "PRODUCTION!",
+            "# THIS FILE IS A TEMPLATE AND IT SHOULD NOT BE DEPLOYED TO " "PRODUCTION!",
             "# THIS FILE IS MODIFIED AUTOMATICALLY FROM TEMPLATE AND SHOULD BE "
-            "RUNNABLE!"
+            "RUNNABLE!",
         )
 
         # ===== Save the script =====
         script_file = "sbatch.sh"
         with open(os.path.join(self.project_path, script_file), "w") as f:
             f.write(text)
-            
+
         return script_file, job_name
-        
-    def launch_job(self, script_file : str = None, job_name : str = None):
+
+    def launch_job(self, script_file: str = None, job_name: str = None):
+        """Launch the job
+
+        Args:
+            script_file (str, optional): Name of the script file. Defaults to None.
+            job_name (str, optional): Name of the job. Defaults to None.
+
+        Raises:
+            ValueError: If the script file does not exist
+        """
         # ===== Submit the job =====
         print("Start to submit job!")
         subprocess.Popen(["sbatch", os.path.join(self.project_path, script_file)])
         print(
             "Job submitted! Script file is at: <{}>. Log file is at: <{}>".format(
                 os.path.join(self.project_path, script_file),
-                os.path.join(self.project_path, "{}.log".format(job_name)))
+                os.path.join(self.project_path, "{}.log".format(job_name)),
+            )
         )
-        
-        # Wait for the job to finish
+
+        # Wait for log file to be created
+
         while True:
-            time.sleep(1)
-            if os.path.exists(os.path.join(self.project_path, "result.pkl")):
+            time.sleep(0.25)
+            if os.path.exists(
+                os.path.join(self.project_path, "{}.log".format(job_name))
+            ):
                 break
+
+        # Wait for the job to finish while printing the log
+        log_cursor_position = 0
+        job_finished = False
+        while not job_finished:
+            time.sleep(0.25)
+            if os.path.exists(os.path.join(self.project_path, "result.pkl")):
+                job_finished = True
+            else:
+                with open(
+                    os.path.join(self.project_path, "{}.log".format(job_name)), "r"
+                ) as f:
+                    f.seek(log_cursor_position)
+                    text = f.read()
+                    if text != "":
+                        print(text, end="")
+                    log_cursor_position = f.tell()
+
         print("Job finished!")
 
-        
+
 # ---------------------------------------------------------------------------- #
 #                             EXAMPLE OF EXECUTION                             #
 # ---------------------------------------------------------------------------- #
 if __name__ == "__main__":
+    import ray
+
     def test_func(x):
-        return "Number of CPUs: {}".format(os.cpu_count()), x + 1
-    
+        return ray.cluster_resources(), x + 1
+
     args = [1]
     launcher = RayLauncher(
-        cpu_nbr = 50,
-        gpu_nbr = 0,
-        func = test_func,
-        args = args,
-        project_name = "test"
+        node_nbr=10, gpu_nbr=0, func=test_func, args=args, project_name="test"
     )
-    
+
     result = launcher()
     print(result)
