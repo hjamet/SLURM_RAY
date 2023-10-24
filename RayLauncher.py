@@ -299,7 +299,7 @@ if __name__ == "__main__":
 
     args = [1]
     launcher = RayLauncher(
-        node_nbr=4, gpu_nbr=0, func=test_func, args=args, project_name="test"
+        node_nbr=2, gpu_nbr=1, func=test_func, args=args, project_name="test"
     )
 
     result = launcher()
