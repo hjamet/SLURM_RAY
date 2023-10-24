@@ -33,6 +33,9 @@ class RayLauncher:
         self.args = args
         self.project_name = project_name
 
+        # Check if this code is running on a cluster
+        self.cluster = os.path.exists("/usr/bin/sbatch")
+
         # Create the project directory if not exists
         self.pwd_path = os.path.dirname(os.path.abspath(__file__))
         self.project_path = os.path.join(self.pwd_path, "logs", self.project_name)
@@ -56,19 +59,30 @@ class RayLauncher:
         Returns:
             Any: Result of the function
         """
-        # Cancel the old jobs
-        if cancel_old_jobs:
-            print("Canceling old jobs...")
+
+        if self.cluster:
+            print("Cluster detected, running on cluster...")
+            # Cancel the old jobs
+            if cancel_old_jobs:
+                print("Canceling old jobs...")
+                subprocess.Popen(
+                    ["scancel", "-u", os.environ["USER"]],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+
+            # Launch the job
+            self.launch_job(self.script_file, self.job_name)
+
+        else:
+            print("No cluster detected, running locally...")
             subprocess.Popen(
-                ["scancel", "-u", os.environ["USER"]],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                [sys.executable, os.path.join(self.project_path, "spython.py")]
             )
 
-        # Launch the job
-        self.launch_job(self.script_file, self.job_name)
-
         # Load the result
+        while not os.path.exists(os.path.join(self.project_path, "result.pkl")):
+            time.sleep(0.25)
         with open(os.path.join(self.project_path, "result.pkl"), "rb") as f:
             result = dill.load(f)
 
@@ -104,6 +118,10 @@ class RayLauncher:
             text = f.read()
 
         text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path}"')
+        text = text.replace(
+            "{{LOCAL_MODE}}",
+            str("local_mode=True" if not self.cluster else "address='auto'"),
+        )
         with open(os.path.join(self.project_path, "spython.py"), "w") as f:
             f.write(text)
 
@@ -281,7 +299,7 @@ if __name__ == "__main__":
 
     args = [1]
     launcher = RayLauncher(
-        node_nbr=5, gpu_nbr=0, func=test_func, args=args, project_name="test"
+        node_nbr=4, gpu_nbr=0, func=test_func, args=args, project_name="test"
     )
 
     result = launcher()
