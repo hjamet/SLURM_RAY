@@ -221,14 +221,23 @@ class RayLauncher:
                         df,
                     )
                 )
+                nodes = list(
+                    map(
+                        lambda row: row[len(df[0].split("NODE")[0]) :]
+                        .strip()
+                        .split(" ")[0],
+                        df,
+                    )
+                )
                 node_list = list(
                     map(lambda row: row[len(df[0].split("NODELIST(REASON)")[0]) :], df)
-                )[1:]
+                )
 
                 to_queue = list(
                     zip(
                         users,
                         status,
+                        nodes,
                         node_list,
                     )
                 )[1:]
@@ -237,8 +246,8 @@ class RayLauncher:
                     print("Current queue:")
                     # Tabulared print
                     format_row = "{:>30}" * (len(current_queue[0]))
-                    for user, status, node_list in current_queue:
-                        print(format_row.format(user, status, node_list))
+                    for user, status, nodes, node_list in current_queue:
+                        print(format_row.format(user, status, nodes, node_list))
                     print()
 
         # Wait for the job to finish while printing the log
@@ -272,7 +281,7 @@ if __name__ == "__main__":
 
     args = [1]
     launcher = RayLauncher(
-        node_nbr=2, gpu_nbr=1, func=test_func, args=args, project_name="test"
+        node_nbr=5, gpu_nbr=0, func=test_func, args=args, project_name="test"
     )
 
     result = launcher()
