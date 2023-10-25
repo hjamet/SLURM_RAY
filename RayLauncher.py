@@ -110,6 +110,8 @@ class RayLauncher:
             dill.dump(func, f)
 
         # Pickle the arguments
+        if args is None:
+            args = []
         with open(os.path.join(self.project_path, "args.pkl"), "wb") as f:
             dill.dump(args, f)
 
@@ -122,6 +124,7 @@ class RayLauncher:
             "{{LOCAL_MODE}}",
             str("local_mode=True" if not self.cluster else "address='auto'"),
         )
+        text = text.replace("{{NUM_GPUS}}", str(self.gpu_nbr))
         with open(os.path.join(self.project_path, "spython.py"), "w") as f:
             f.write(text)
 

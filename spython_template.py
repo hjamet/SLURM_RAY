@@ -7,6 +7,7 @@ PROJECT_PATH = {{PROJECT_PATH}}
 # Start the ray cluster
 ray.init(
     {{LOCAL_MODE}},
+    num_gpus={{NUM_GPUS}},
     include_dashboard=True,
     dashboard_host="0.0.0.0",
     dashboard_port=8888,
