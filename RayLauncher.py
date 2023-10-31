@@ -1,4 +1,4 @@
-from typing import Any, Callable
+from typing import Any, Callable, List
 import subprocess
 import sys
 import time
@@ -16,6 +16,7 @@ class RayLauncher:
         func: Callable = None,
         args: list = None,
         project_name: str = None,
+        modules: List[str] = [],
     ):
         """Initialize the launcher
 
@@ -25,6 +26,7 @@ class RayLauncher:
             func (Callable, optional): Function to execute. Defaults to None.
             args (list, optional): Arguments of the function. Defaults to None.
             project_name (str, optional): Name of the project. Defaults to None.
+            modules (List[str], optional): List of modules to load. Defaults to None.
         """
         # Save the parameters
         self.node_nbr = node_nbr
@@ -32,6 +34,11 @@ class RayLauncher:
         self.func = func
         self.args = args
         self.project_name = project_name
+        self.modules = ["gcc", "python/3.9.13"] + [
+            mod for mod in modules if mod not in ["gcc", "python/3.9.13"]
+        ]
+        if self.gpu_nbr > 0 and "cuda" not in self.modules:
+            self.modules += ["cuda/11.8.0", "cudnn"]
 
         # Check if this code is running on a cluster
         self.cluster = os.path.exists("/usr/bin/sbatch")
@@ -122,7 +129,11 @@ class RayLauncher:
         text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path}"')
         text = text.replace(
             "{{LOCAL_MODE}}",
-            str("local_mode=True" if not self.cluster else "address='auto'"),
+            str(
+                f"local_mode=True\nnum_gpus={self.gpu_nbr}"
+                if not self.cluster
+                else "address='auto'"
+            ),
         )
         text = text.replace("{{NUM_GPUS}}", str(self.gpu_nbr))
         with open(os.path.join(self.project_path, "spython.py"), "w") as f:
@@ -166,7 +177,7 @@ class RayLauncher:
         text = text.replace(
             COMMAND_PLACEHOLDER, str(f"{sys.executable} {self.project_path}/spython.py")
         )
-        text = text.replace(LOAD_ENV, str("module load gcc python/3.9.13"))
+        text = text.replace(LOAD_ENV, str(f"module load {' '.join(self.modules)}"))
         text = text.replace(GIVEN_NODE, "")
         text = text.replace(COMMAND_SUFFIX, "")
         text = text.replace(
@@ -302,7 +313,7 @@ if __name__ == "__main__":
 
     args = [1]
     launcher = RayLauncher(
-        node_nbr=2, gpu_nbr=1, func=test_func, args=args, project_name="test"
+        node_nbr=1, gpu_nbr=1, func=test_func, args=args, project_name="test"
     )
 
     result = launcher()
