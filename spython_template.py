@@ -21,7 +21,7 @@ with open(os.path.join(PROJECT_PATH, "args.pkl"), "rb") as f:
     args = dill.load(f)
 
 # Run the function
-result = func(*args)
+result = func(**args)
 
 # Write the result
 with open(os.path.join(PROJECT_PATH, "result.pkl"), "wb") as f:

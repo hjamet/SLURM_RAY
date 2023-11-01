@@ -14,7 +14,7 @@ class RayLauncher:
         node_nbr: int = 1,
         gpu_nbr: int = 0,
         func: Callable = None,
-        args: list = None,
+        args: dict = None,
         project_name: str = None,
         modules: List[str] = [],
     ):
@@ -24,7 +24,7 @@ class RayLauncher:
             node_nbr (int, optional): Number of nodes to use. Defaults to 1.
             gpu_nbr (int, optional): Number of GPUs per node to use. Defaults to 0.
             func (Callable, optional): Function to execute. Defaults to None.
-            args (list, optional): Arguments of the function. Defaults to None.
+            args (dict, optional): Arguments of the function. Defaults to None.
             project_name (str, optional): Name of the project. Defaults to None.
             modules (List[str], optional): List of modules to load. Defaults to None.
         """
@@ -118,7 +118,7 @@ class RayLauncher:
 
         # Pickle the arguments
         if args is None:
-            args = []
+            args = {}
         with open(os.path.join(self.project_path, "args.pkl"), "wb") as f:
             dill.dump(args, f)
 
@@ -311,9 +311,8 @@ if __name__ == "__main__":
     def test_func(x):
         return ray.cluster_resources(), x + 1
 
-    args = [1]
     launcher = RayLauncher(
-        node_nbr=1, gpu_nbr=1, func=test_func, args=args, project_name="test"
+        node_nbr=1, gpu_nbr=1, func=test_func, args={"x": 1}, project_name="test"
     )
 
     result = launcher()
