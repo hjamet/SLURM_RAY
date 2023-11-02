@@ -16,7 +16,7 @@ class RayLauncher:
         args: dict = None,
         modules: List[str] = [],
         node_nbr: int = 1,
-        gpu_nbr: int = 0,
+        use_gpu: bool = False,
         memory: int = 64,
         max_running_time: int = 60,
     ):
@@ -24,27 +24,49 @@ class RayLauncher:
 
         Args:
             project_name (str, optional): Name of the project. Defaults to None.
-            func (Callable, optional): Function to execute. Defaults to None.
+            func (Callable, optional): Function to execute. This function should not be remote but can use ray ressources. Defaults to None.
             args (dict, optional): Arguments of the function. Defaults to None.
-            modules (List[str], optional): List of modules to load. Defaults to None.
+            modules (List[str], optional): List of modules to load on the curnagl Cluster. Use `module spider` to see available modules. Defaults to None.
             node_nbr (int, optional): Number of nodes to use. Defaults to 1.
-            gpu_nbr (int, optional): Number of GPUs per node to use (Exact number has no impact on cluster).Defaults to 0.
-            memory (int, optional): Amount of memory to use per node in GigaBytes. Defaults to 64.
+            use_gpu (bool, optional): Use GPU or not. Defaults to False.
+            memory (int, optional): Amount of RAM to use per node in GigaBytes. Defaults to 64.
             max_running_time (int, optional): Maximum running time of the job in minutes. Defaults to 60.
         """
+        # Check the parameters
+        if project_name is None:
+            raise ValueError("project_name cannot be None")
+        if func is None:
+            raise ValueError("func cannot be None")
+        if not callable(func):
+            raise ValueError("func must be callable")
+        if args is None:
+            args = {}
+        if not isinstance(args, dict):
+            raise ValueError("args must be a dict")
+        if not isinstance(modules, list):
+            raise ValueError("modules must be a list")
+        if not isinstance(node_nbr, int):
+            raise ValueError("node_nbr must be an int")
+        if not isinstance(use_gpu, int):
+            raise ValueError("gpu_nbr must be an int")
+        if not isinstance(memory, int):
+            raise ValueError("memory must be an int")
+        if not isinstance(max_running_time, int):
+            raise ValueError("max_running_time must be an int")
+        
         # Save the parameters
         self.project_name = project_name
         self.func = func
         self.args = args
         self.node_nbr = node_nbr
-        self.gpu_nbr = gpu_nbr
+        self.use_gpu = use_gpu
         self.memory = memory
         self.max_running_time = max_running_time
 
         self.modules = ["gcc", "python/3.9.13"] + [
             mod for mod in modules if mod not in ["gcc", "python/3.9.13"]
         ]
-        if self.gpu_nbr > 0 and "cuda" not in self.modules:
+        if self.use_gpu is True and "cuda" not in self.modules:
             self.modules += ["cuda/11.8.0", "cudnn"]
 
         # Check if this code is running on a cluster
@@ -60,9 +82,7 @@ class RayLauncher:
         self.__write_python_script(self.func, self.args)
 
         # Write the sh script
-        self.script_file, self.job_name = self.__write_slurm_script(
-            self.node_nbr, self.gpu_nbr, self.memory, self.max_running_time
-        )
+        self.script_file, self.job_name = self.__write_slurm_script()
 
     def __call__(self, cancel_old_jobs: bool = True) -> Any:
         """Launch the job and return the result
@@ -86,7 +106,7 @@ class RayLauncher:
                 )
 
             # Launch the job
-            self.launch_job(self.script_file, self.job_name)
+            self.__launch_job(self.script_file, self.job_name)
 
         else:
             print("No cluster detected, running locally...")
@@ -130,7 +150,7 @@ class RayLauncher:
             dill.dump(args, f)
 
         # Write the python script
-        with open(os.path.join(self.pwd_path, "assets", "spython_template.py"), "r") as f:
+        with open(os.path.join(self.pwd_path, "slurmray", "assets", "spython_template.py"), "r") as f:
             text = f.read()
 
         text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path}"')
@@ -140,32 +160,22 @@ class RayLauncher:
                 f""
                 if not self.cluster
                 else "\n\taddress='auto'\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\n"
-            ),
+            ) + "num_gpus=1" if self.use_gpu is True else "",
         )
         with open(os.path.join(self.project_path, "spython.py"), "w") as f:
             f.write(text)
 
     def __write_slurm_script(
         self,
-        node_nbr: int = None,
-        gpu_nbr: int = None,
-        memory: int = None,
-        max_time: int = None,
     ):
         """Write the slurm script that will be executed by the job
-
-        Args:
-            node_nbr (int, optional): Number of nodes to use. Defaults to None.
-            gpu_nbr (int, optional): Number of GPUs per node to use. Defaults to None.
-            memory (int, optional): Amount of memory to use per node in GigaBytes. Defaults to None.
-            max_time (int, optional): Maximum running time of the job in minutes. Defaults to None.
 
         Returns:
             str: Name of the script file
             str: Name of the job
         """
         print("Writing slurm script...")
-        template_file = os.path.join(self.pwd_path, "assets", "sbatch_template.sh")
+        template_file = os.path.join(self.pwd_path, "slurmray", "assets", "sbatch_template.sh")
 
         JOB_NAME = "{{JOB_NAME}}"
         NUM_NODES = "{{NUM_NODES}}"
@@ -184,8 +194,8 @@ class RayLauncher:
 
         # Convert the time to xx:xx:xx format
         max_time = "{}:{}:{}".format(
-            str(max_time // 60).zfill(2),
-            str(max_time % 60).zfill(2),
+            str(self.max_running_time // 60).zfill(2),
+            str(self.max_running_time % 60).zfill(2),
             str(0).zfill(2),
         )
 
@@ -193,10 +203,10 @@ class RayLauncher:
         with open(template_file, "r") as f:
             text = f.read()
         text = text.replace(JOB_NAME, os.path.join(self.project_path, job_name))
-        text = text.replace(NUM_NODES, str(node_nbr))
-        text = text.replace(MEMORY, str(memory))
+        text = text.replace(NUM_NODES, str(self.node_nbr))
+        text = text.replace(MEMORY, str(self.memory))
         text = text.replace(RUNNING_TIME, str(max_time))
-        text = text.replace(PARTITION_NAME, str("gpu" if gpu_nbr > 0 else "cpu"))
+        text = text.replace(PARTITION_NAME, str("gpu" if self.use_gpu > 0 else "cpu"))
         text = text.replace(
             COMMAND_PLACEHOLDER, str(f"{sys.executable} {self.project_path}/spython.py")
         )
@@ -210,7 +220,7 @@ class RayLauncher:
         )
 
         # ===== Add partition specifics =====
-        if gpu_nbr > 0:
+        if self.use_gpu > 0:
             text = text.replace(
                 PARTITION_SPECIFICS,
                 str("#SBATCH --gres gpu:1\n#SBATCH --gres-flags enforce-binding"),
@@ -225,15 +235,12 @@ class RayLauncher:
 
         return script_file, job_name
 
-    def launch_job(self, script_file: str = None, job_name: str = None):
+    def __launch_job(self, script_file: str = None, job_name: str = None):
         """Launch the job
 
         Args:
             script_file (str, optional): Name of the script file. Defaults to None.
             job_name (str, optional): Name of the job. Defaults to None.
-
-        Raises:
-            ValueError: If the script file does not exist
         """
         # ===== Submit the job =====
         print("Start to submit job!")
@@ -256,7 +263,7 @@ class RayLauncher:
             else:
                 # Get result from squeue -p {{PARTITION_NAME}}
                 result = subprocess.run(
-                    ["squeue", "-p", "gpu" if self.gpu_nbr > 0 else "cpu"],
+                    ["squeue", "-p", "gpu" if self.use_gpu is True else "cpu"],
                     capture_output=True,
                 )
                 df = result.stdout.decode("utf-8").split("\n")
@@ -341,7 +348,7 @@ if __name__ == "__main__":
         args={"x": 1},
         modules=[],
         node_nbr=1,
-        gpu_nbr=True,
+        use_gpu=True,
         memory=64,
         max_running_time=15,
     )
