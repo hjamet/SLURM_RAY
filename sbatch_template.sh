@@ -4,9 +4,10 @@
 # THIS FILE IS A TEMPLATE AND IT SHOULD NOT BE DEPLOYED TO PRODUCTION!
 
 #SBATCH --partition={{PARTITION_NAME}}
-#SBATCH --mem 64G
+#SBATCH --mem {{MEMORY}}G
 #SBATCH --job-name={{JOB_NAME}}
 #SBATCH --output={{JOB_NAME}}.log
+#SBATCH --time {{RUNNING_TIME}}
 {{GIVEN_NODE}}
 
 ### This script works for any number of nodes, Ray will find and manage all resources

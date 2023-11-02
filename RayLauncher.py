@@ -11,29 +11,36 @@ class RayLauncher:
 
     def __init__(
         self,
-        node_nbr: int = 1,
-        gpu_nbr: int = 0,
+        project_name: str = None,
         func: Callable = None,
         args: dict = None,
-        project_name: str = None,
         modules: List[str] = [],
+        node_nbr: int = 1,
+        gpu_nbr: int = 0,
+        memory: int = 64,
+        max_running_time: int = 60,
     ):
         """Initialize the launcher
 
         Args:
-            node_nbr (int, optional): Number of nodes to use. Defaults to 1.
-            gpu_nbr (int, optional): Number of GPUs per node to use. Defaults to 0.
+            project_name (str, optional): Name of the project. Defaults to None.
             func (Callable, optional): Function to execute. Defaults to None.
             args (dict, optional): Arguments of the function. Defaults to None.
-            project_name (str, optional): Name of the project. Defaults to None.
             modules (List[str], optional): List of modules to load. Defaults to None.
+            node_nbr (int, optional): Number of nodes to use. Defaults to 1.
+            gpu_nbr (int, optional): Number of GPUs per node to use (Exact number has no impact on cluster).Defaults to 0.
+            memory (int, optional): Amount of memory to use per node in GigaBytes. Defaults to 64.
+            max_running_time (int, optional): Maximum running time of the job in minutes. Defaults to 60.
         """
         # Save the parameters
-        self.node_nbr = node_nbr
-        self.gpu_nbr = gpu_nbr
+        self.project_name = project_name
         self.func = func
         self.args = args
-        self.project_name = project_name
+        self.node_nbr = node_nbr
+        self.gpu_nbr = gpu_nbr
+        self.memory = memory
+        self.max_running_time = max_running_time
+
         self.modules = ["gcc", "python/3.9.13"] + [
             mod for mod in modules if mod not in ["gcc", "python/3.9.13"]
         ]
@@ -54,7 +61,7 @@ class RayLauncher:
 
         # Write the sh script
         self.script_file, self.job_name = self.__write_slurm_script(
-            self.node_nbr, self.gpu_nbr
+            self.node_nbr, self.gpu_nbr, self.memory, self.max_running_time
         )
 
     def __call__(self, cancel_old_jobs: bool = True) -> Any:
@@ -135,16 +142,23 @@ class RayLauncher:
                 else "address='auto'"
             ),
         )
-        text = text.replace("{{NUM_GPUS}}", str(self.gpu_nbr))
         with open(os.path.join(self.project_path, "spython.py"), "w") as f:
             f.write(text)
 
-    def __write_slurm_script(self, node_nbr: int = None, gpu_nbr: int = None):
+    def __write_slurm_script(
+        self,
+        node_nbr: int = None,
+        gpu_nbr: int = None,
+        memory: int = None,
+        max_time: int = None,
+    ):
         """Write the slurm script that will be executed by the job
 
         Args:
             node_nbr (int, optional): Number of nodes to use. Defaults to None.
             gpu_nbr (int, optional): Number of GPUs per node to use. Defaults to None.
+            memory (int, optional): Amount of memory to use per node in GigaBytes. Defaults to None.
+            max_time (int, optional): Maximum running time of the job in minutes. Defaults to None.
 
         Returns:
             str: Name of the script file
@@ -155,7 +169,8 @@ class RayLauncher:
 
         JOB_NAME = "{{JOB_NAME}}"
         NUM_NODES = "{{NUM_NODES}}"
-        NUM_GPUS_PER_NODE = "{{NUM_GPUS_PER_NODE}}"
+        MEMORY = "{{MEMORY}}"
+        RUNNING_TIME = "{{RUNNING_TIME}}"
         PARTITION_NAME = "{{PARTITION_NAME}}"
         COMMAND_PLACEHOLDER = "{{COMMAND_PLACEHOLDER}}"
         GIVEN_NODE = "{{GIVEN_NODE}}"
@@ -167,12 +182,20 @@ class RayLauncher:
             self.project_name, time.strftime("%d%m-%Hh%M", time.localtime())
         )
 
+        # Convert the time to xx:xx:xx format
+        max_time = "{}:{}:{}".format(
+            str(max_time // 60).zfill(2),
+            str(max_time % 60).zfill(2),
+            str(0).zfill(2),
+        )
+
         # ===== Modified the template script =====
         with open(template_file, "r") as f:
             text = f.read()
         text = text.replace(JOB_NAME, os.path.join(self.project_path, job_name))
         text = text.replace(NUM_NODES, str(node_nbr))
-        text = text.replace(NUM_GPUS_PER_NODE, str(gpu_nbr))
+        text = text.replace(MEMORY, str(memory))
+        text = text.replace(RUNNING_TIME, str(max_time))
         text = text.replace(PARTITION_NAME, str("gpu" if gpu_nbr > 0 else "cpu"))
         text = text.replace(
             COMMAND_PLACEHOLDER, str(f"{sys.executable} {self.project_path}/spython.py")
@@ -308,11 +331,18 @@ class RayLauncher:
 if __name__ == "__main__":
     import ray
 
-    def test_func(x):
+    def example_func(x):
         return ray.cluster_resources(), x + 1
 
     launcher = RayLauncher(
-        node_nbr=1, gpu_nbr=1, func=test_func, args={"x": 1}, project_name="test"
+        project_name="example",
+        func=example_func,
+        args={"x": 1},
+        modules=[],
+        node_nbr=1,
+        gpu_nbr=1,
+        memory=64,
+        max_running_time=15,
     )
 
     result = launcher()
