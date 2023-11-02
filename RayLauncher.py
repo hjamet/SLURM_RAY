@@ -137,9 +137,9 @@ class RayLauncher:
         text = text.replace(
             "{{LOCAL_MODE}}",
             str(
-                f"local_mode=True\nnum_gpus={self.gpu_nbr}"
+                f""
                 if not self.cluster
-                else "address='auto'"
+                else "\n\taddress='auto'\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\n"
             ),
         )
         with open(os.path.join(self.project_path, "spython.py"), "w") as f:
@@ -340,7 +340,7 @@ if __name__ == "__main__":
         args={"x": 1},
         modules=[],
         node_nbr=1,
-        gpu_nbr=1,
+        gpu_nbr=True,
         memory=64,
         max_running_time=15,
     )
