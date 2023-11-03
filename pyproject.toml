@@ -4,7 +4,8 @@ version = "2.1.0"
 description = "SlurmRay is a module for effortlessly distributing tasks on a Slurm cluster using the Ray library. "
 authors = ["Henri Jamet <henri.jamet@unil.ch>"]
 license = "Apache License"
-website = "https://henri-jamet.vercel.app/cards/documentation/slurm-ray/slurm-ray/"
+website = "https://henri-jamet.vercel.app/"
+documentation = "https://henri-jamet.vercel.app/cards/documentation/slurm-ray/slurm-ray/"
 readme = "README.md"
 
 [tool.poetry.dependencies]
