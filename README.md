@@ -1,5 +1,7 @@
 # SLURM_RAY
 
+👉[Full documentation](https://henri-jamet.vercel.app/cards/documentation/slurm-ray/slurm-ray/)
+
 ## Description
 
 **SlurmRay** is a module for effortlessly distributing tasks on a [Slurm](https://slurm.schedmd.com/) cluster using the [Ray](https://ray.io/) library. **SlurmRay** was initially designed to work with the [Curnagl](https://wiki.unil.ch/ci/books/high-performance-computing-hpc/page/curnagl) cluster at the *University of Lausanne*. However, it should be able to run on any [Slurm](https://slurm.schedmd.com/) cluster with a minimum of configuration.
@@ -15,7 +17,6 @@ pip install slurmray
 ## Usage
 
 ```python
-python
 from slurmray.RayLauncher import RayLauncher
 
 if __name__ == "__main__":
