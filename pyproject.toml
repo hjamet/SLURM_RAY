@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "slurmray"
-version = "2.0.0"
-description = "A tool to easily launch calculations from python notebooks using the resources of a SLURM cluster"
+version = "2.1.0"
+description = "SlurmRay is a module for effortlessly distributing tasks on a Slurm cluster using the Ray library. "
 authors = ["Henri Jamet <henri.jamet@unil.ch>"]
 license = "Apache License"
 readme = "README.md"
