@@ -12,6 +12,7 @@ readme = "README.md"
 python = "3.9.13"
 dill = "^0.3.7"
 ray = {extras = ["data", "serve", "train", "tune"], version = "^2.7.1"}
+pdoc3 = "^0.10.0"
 
 
 [build-system]
