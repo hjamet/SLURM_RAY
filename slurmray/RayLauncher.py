@@ -162,10 +162,7 @@ class RayLauncher:
                 f""
                 if not self.cluster
                 else "\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\n"
-            )
-            + "num_gpus=1"
-            if self.use_gpu is True
-            else "",
+            ),
         )
         with open(os.path.join(self.project_path, "spython.py"), "w") as f:
             f.write(text)
