@@ -371,6 +371,10 @@ class RayLauncher:
         # Run the server
         print("Running server...")
         subprocess.run(["ssh", "{}@{}".format(self.server_username, self.server_ssh), "./slurmray_server.sh"])
+        
+        # Downloading result
+        print("Downloading result...")
+        subprocess.run(["scp", "{}@{}:slurmray-server/.slogs/server/result.pkl".format(self.server_username, self.server_ssh), os.path.join(self.project_path, "result.pkl")])
     
     def __write_server_script(self):
         """This funtion will write a script with the given specifications to run slurmray on the cluster"""
