@@ -333,6 +333,15 @@ class RayLauncher:
                     log_cursor_position = f.tell()
 
         print("Job finished!")
+        
+    def __launch_server(self, script_file : str, job_name : str):
+        """Launch the server on the cluster and run the function using the ressources.
+
+        Args:
+            script_file (str): The name of the script file to execute
+            job_name (str): The name of the job to run
+        """
+        pass
 
 
 
