@@ -19,6 +19,7 @@ class RayLauncher:
         use_gpu: bool = False,
         memory: int = 64,
         max_running_time: int = 60,
+        server_run: bool = True,
     ):
         """Initialize the launcher
 
@@ -31,6 +32,7 @@ class RayLauncher:
             use_gpu (bool, optional): Use GPU or not. Defaults to False.
             memory (int, optional): Amount of RAM to use per node in GigaBytes. Defaults to 64.
             max_running_time (int, optional): Maximum running time of the job in minutes. Defaults to 60.
+            server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster ressources. Defaults to True.
         """
         # Check the parameters
         if project_name is None:
@@ -62,6 +64,7 @@ class RayLauncher:
         self.use_gpu = use_gpu
         self.memory = memory
         self.max_running_time = max_running_time
+        self.server_run = server_run
 
         self.modules = ["gcc", "python/3.9.13"] + [
             mod for mod in modules if mod not in ["gcc", "python/3.9.13"]
@@ -70,7 +73,7 @@ class RayLauncher:
             self.modules += ["cuda/11.8.0", "cudnn"]
 
         # Check if this code is running on a cluster
-        self.cluster = os.path.exists("/usr/bin/sbatch")
+        self.cluster = os.path.exists("/usr/bin/sbatch") or self.server_run
 
         # Create the project directory if not exists
         self.pwd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
