@@ -1,15 +1,18 @@
 [tool.poetry]
 name = "slurmray"
-version = "2.0.0"
-description = "A tool to easily launch calculations from python notebooks using the resources of a SLURM cluster"
+version = "2.3.0"
+description = "SlurmRay is a module for effortlessly distributing tasks on a Slurm cluster using the Ray library. "
 authors = ["Henri Jamet <henri.jamet@unil.ch>"]
 license = "Apache License"
+homepage = "https://henri-jamet.vercel.app/"
+documentation = "https://henri-jamet.vercel.app/cards/documentation/slurm-ray/slurm-ray/"
 readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "3.9.13"
 dill = "^0.3.7"
 ray = {extras = ["data", "serve", "train", "tune"], version = "^2.7.1"}
+pdoc3 = "^0.10.0"
 
 
 [build-system]

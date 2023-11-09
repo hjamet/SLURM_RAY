@@ -59,7 +59,7 @@ class RayLauncher:
             raise ValueError("memory must be an int")
         if not isinstance(max_running_time, int):
             raise ValueError("max_running_time must be an int")
-        
+
         # Save the parameters
         self.project_name = project_name
         self.func = func
@@ -82,7 +82,7 @@ class RayLauncher:
         self.cluster = os.path.exists("/usr/bin/sbatch")
 
         # Create the project directory if not exists
-        self.pwd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        self.pwd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
         self.project_path = os.path.join(self.pwd_path, "logs", self.project_name)
         if not os.path.exists(self.project_path):
             os.makedirs(self.project_path)
@@ -159,7 +159,9 @@ class RayLauncher:
             dill.dump(args, f)
 
         # Write the python script
-        with open(os.path.join(self.pwd_path, "slurmray", "assets", "spython_template.py"), "r") as f:
+        with open(
+            os.path.join(self.pwd_path, "assets", "spython_template.py"), "r"
+        ) as f:
             text = f.read()
 
         text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path}"')
@@ -168,8 +170,8 @@ class RayLauncher:
             str(
                 f""
                 if not (self.cluster or self.server_run)
-                else "\n\taddress='auto'\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\n"
-            ) + "num_gpus=1" if self.use_gpu is True else "",
+                else "\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\n"
+            ),
         )
         with open(os.path.join(self.project_path, "spython.py"), "w") as f:
             f.write(text)
@@ -184,7 +186,7 @@ class RayLauncher:
             str: Name of the job
         """
         print("Writing slurm script...")
-        template_file = os.path.join(self.pwd_path, "slurmray", "assets", "sbatch_template.sh")
+        template_file = os.path.join(self.pwd_path, "assets", "sbatch_template.sh")
 
         JOB_NAME = "{{JOB_NAME}}"
         NUM_NODES = "{{NUM_NODES}}"
