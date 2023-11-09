@@ -38,28 +38,6 @@ class RayLauncher:
             server_ssh (str, optional): If `server_run` is set to true, the addess of the **SLURM** server to use.
             server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect.
         """
-        # Check the parameters
-        if project_name is None:
-            raise ValueError("project_name cannot be None")
-        if func is None:
-            raise ValueError("func cannot be None")
-        if not callable(func):
-            raise ValueError("func must be callable")
-        if args is None:
-            args = {}
-        if not isinstance(args, dict):
-            raise ValueError("args must be a dict")
-        if not isinstance(modules, list):
-            raise ValueError("modules must be a list")
-        if not isinstance(node_nbr, int):
-            raise ValueError("node_nbr must be an int")
-        if not isinstance(use_gpu, int):
-            raise ValueError("gpu_nbr must be an int")
-        if not isinstance(memory, int):
-            raise ValueError("memory must be an int")
-        if not isinstance(max_running_time, int):
-            raise ValueError("max_running_time must be an int")
-        
         # Save the parameters
         self.project_name = project_name
         self.func = func
@@ -89,9 +67,12 @@ class RayLauncher:
             
         if server_run:
             self.server_project_path = "~/slurmray-server/"
+            
+        # Sereialize function and arguments
+        self.__serialize_func_and_args(self.func, self.args)
 
         # Write the python script
-        self.__write_python_script(self.func, self.args)
+        self.__write_python_script()
 
         # Write the sh script
         self.script_file, self.job_name = self.__write_slurm_script()
@@ -133,22 +114,19 @@ class RayLauncher:
             result = dill.load(f)
 
         return result
-
-    def __write_python_script(self, func: Callable = None, args: list = None):
-        """Write the python script that will be executed by the job
-
+    
+    def __serialize_func_and_args(self, func: Callable = None, args: list = None):
+        """Serialize the function and the arguments
+        
         Args:
-            func (Callable, optional): Function to execute. Defaults to None.
+            func (Callable, optional): Function to serialize. Defaults to None.
             args (list, optional): Arguments of the function. Defaults to None.
-
-        Raises:
-            ValueError: If the function is not callable
         """
-        print("Writing python script...")
+        print("Serializing function and arguments...")
 
         # Remove the old python script
         for file in os.listdir(self.project_path):
-            if file.endswith(".py") or file.endswith(".pkl"):
+            if file.endswith(".pkl"):
                 os.remove(os.path.join(self.project_path, file))
 
         # Pickle the function
@@ -161,6 +139,16 @@ class RayLauncher:
         with open(os.path.join(self.project_path, "args.pkl"), "wb") as f:
             dill.dump(args, f)
 
+    def __write_python_script(self):
+        """Write the python script that will be executed by the job
+        """
+        print("Writing python script...")
+
+        # Remove the old python script
+        for file in os.listdir(self.project_path):
+            if file.endswith(".py"):
+                os.remove(os.path.join(self.project_path, file))
+
         # Write the python script
         with open(os.path.join(self.pwd_path, "slurmray", "assets", "spython_template.py"), "r") as f:
             text = f.read()
@@ -172,7 +160,7 @@ class RayLauncher:
                 f""
                 if not (self.cluster or self.server_run)
                 else "\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\n"
-            ) + "num_gpus=1" if self.use_gpu is True else "",
+            )
         )
         with open(os.path.join(self.project_path, "spython.py"), "w") as f:
             f.write(text)
@@ -369,6 +357,9 @@ class RayLauncher:
                 print("Wrong password, please try again.")
         print("Connected to the server!")
         
+        # Write server script
+        self.__write_server_script()
+        
         print("Installing server...")
         # Generate requirements.txt
         subprocess.run(["pip freeze > requirements.txt"], shell=True)
@@ -379,11 +370,38 @@ class RayLauncher:
         # Copy the requirements.txt to the server
         subprocess.run(["scp", "requirements.txt", "{}@{}:~/".format(self.server_username, self.server_ssh)])
         # Copy the server script to the server
-        # subprocess.run(["scp", os.path.join(self.pwd_path, "slurmray", "assets", "server_template.sh"), "{}@{}:~/".format(self.server_username, self.server_ssh)])
+        # subprocess.run(["scp", os.path.join(self.pwd_path, "slurmray", "assets", "slurmray_server.sh"), "{}@{}:~/".format(self.server_username, self.server_ssh)])
         
         # Eventually cancel running jobs
         print("truc")
         pass
+    
+    def __write_server_script(self):
+        """This funtion will write a script with the given specifications to run slurmray on the cluster"""
+        print("Writing slurmray server script...")
+        template_file = os.path.join(self.pwd_path, "slurmray", "assets", "slurmray_server_template.py")
+        
+        MODULES = self.modules
+        NODE_NBR = self.node_nbr
+        USE_GPU = self.use_gpu
+        MEMORY = self.memory
+        MAX_RUNNING_TIME = self.max_running_time
+        
+        # ===== Modified the template script =====
+        with open(template_file, "r") as f:
+            text = f.read()
+        text = text.replace("{{MODULES}}", str(MODULES))
+        text = text.replace("{{NODE_NBR}}", str(NODE_NBR))
+        text = text.replace("{{USE_GPU}}", str(USE_GPU))
+        text = text.replace("{{MEMORY}}", str(MEMORY))
+        text = text.replace("{{MAX_RUNNING_TIME}}", str(MAX_RUNNING_TIME))
+        
+        # ===== Save the script =====
+        script_file = "slurmray_server.py"
+        with open(os.path.join(self.project_path, script_file), "w") as f:
+            f.write(text)
+            
+        
 
 
 # ---------------------------------------------------------------------------- #
