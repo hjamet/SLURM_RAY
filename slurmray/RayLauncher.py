@@ -80,7 +80,7 @@ class RayLauncher:
             Any: Result of the function
         """
         # Sereialize function and arguments
-        self.__serialize_func_and_args(self.func, self.args)
+        self.serialize_func_and_args(self.func, self.args)
 
         if self.cluster:
             print("Cluster detected, running on cluster...")
@@ -110,7 +110,7 @@ class RayLauncher:
 
         return result
     
-    def __serialize_func_and_args(self, func: Callable = None, args: list = None):
+    def serialize_func_and_args(self, func: Callable = None, args: list = None):
         """Serialize the function and the arguments
         
         Args:
@@ -354,7 +354,7 @@ class RayLauncher:
         # Write server script
         self.__write_server_script()
         
-        print("Installing server...")
+        print("Downloading server...")
         # Generate requirements.txt
         subprocess.run(["pip freeze > requirements.txt"], shell=True)
         # Copy files from the project to the server

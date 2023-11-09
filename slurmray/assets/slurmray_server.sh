@@ -21,4 +21,4 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # Run server
-python slurmray_server.py
+python slurmray_server.py 2>&1
