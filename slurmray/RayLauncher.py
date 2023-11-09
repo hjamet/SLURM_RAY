@@ -72,11 +72,9 @@ class RayLauncher:
         # Sereialize function and arguments
         self.__serialize_func_and_args(self.func, self.args)
 
-        # Write the python script
-        self.__write_python_script()
-
-        # Write the sh script
-        self.script_file, self.job_name = self.__write_slurm_script()
+        if not self.server_run:
+            self.__write_python_script()
+            self.script_file, self.job_name = self.__write_slurm_script()
 
     def __call__(self, cancel_old_jobs: bool = True) -> Any:
         """Launch the job and return the result
@@ -356,7 +354,6 @@ class RayLauncher:
                 connected = True
             except subprocess.CalledProcessError:
                 print("Wrong password, please try again.")
-        print("Connected to the server!")
         
         # Write server script
         self.__write_server_script()
@@ -371,11 +368,13 @@ class RayLauncher:
         # Copy the requirements.txt to the server
         subprocess.run(["scp", "requirements.txt", "{}@{}:~/".format(self.server_username, self.server_ssh)])
         # Copy the server script to the server
-        # subprocess.run(["scp", os.path.join(self.pwd_path, "slurmray", "assets", "slurmray_server.sh"), "{}@{}:~/".format(self.server_username, self.server_ssh)])
+        subprocess.run(["scp", os.path.join(self.pwd_path, "slurmray", "assets", "slurmray_server.sh"), "{}@{}:~/".format(self.server_username, self.server_ssh)])
+        # Chmod script
+        subprocess.run(["ssh", "{}@{}".format(self.server_username, self.server_ssh), "chmod", "+x", "slurmray_server.sh"])
         
-        # Eventually cancel running jobs
-        print("truc")
-        pass
+        # Run the server
+        print("Running server...")
+        subprocess.run(["ssh", "{}@{}".format(self.server_username, self.server_ssh), "./slurmray_server.sh"])
     
     def __write_server_script(self):
         """This funtion will write a script with the given specifications to run slurmray on the cluster"""
@@ -423,7 +422,7 @@ if __name__ == "__main__":
         use_gpu=True,
         memory=64,
         max_running_time=15,
-        server_run=False,
+        server_run=True,
         server_ssh="curnagl.dcsr.unil.ch",
         server_username="hjamet",
     )

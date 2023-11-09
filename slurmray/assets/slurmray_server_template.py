@@ -1,7 +1,7 @@
 from slurmray.RayLauncher import RayLauncher
 
 # Remove the serialization of the function and arguments
-RayLauncher.__serialize_func_and_args = lambda self: None
+setattr(RayLauncher, "__serialize_func_and_args", lambda *args, **kwargs: None)
 
 if __name__ == "__main__":
 
