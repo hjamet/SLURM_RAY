@@ -60,8 +60,9 @@ class RayLauncher:
         self.cluster = os.path.exists("/usr/bin/sbatch")
 
         # Create the project directory if not exists
-        self.pwd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-        self.project_path = os.path.join(self.pwd_path, "logs", self.project_name)
+        self.module_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        self.pwd = os.getcwd()
+        self.project_path = os.path.join(self.pwd, ".slogs", self.project_name)
         if not os.path.exists(self.project_path):
             os.makedirs(self.project_path)
             
@@ -150,7 +151,7 @@ class RayLauncher:
                 os.remove(os.path.join(self.project_path, file))
 
         # Write the python script
-        with open(os.path.join(self.pwd_path, "slurmray", "assets", "spython_template.py"), "r") as f:
+        with open(os.path.join(self.module_path, "slurmray", "assets", "spython_template.py"), "r") as f:
             text = f.read()
 
         text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path if not self.server_run else self.server_project_path}"')
@@ -175,7 +176,7 @@ class RayLauncher:
             str: Name of the job
         """
         print("Writing slurm script...")
-        template_file = os.path.join(self.pwd_path, "slurmray", "assets", "sbatch_template.sh")
+        template_file = os.path.join(self.module_path, "slurmray", "assets", "sbatch_template.sh")
 
         JOB_NAME = "{{JOB_NAME}}"
         NUM_NODES = "{{NUM_NODES}}"
@@ -379,7 +380,7 @@ class RayLauncher:
     def __write_server_script(self):
         """This funtion will write a script with the given specifications to run slurmray on the cluster"""
         print("Writing slurmray server script...")
-        template_file = os.path.join(self.pwd_path, "slurmray", "assets", "slurmray_server_template.py")
+        template_file = os.path.join(self.module_path, "slurmray", "assets", "slurmray_server_template.py")
         
         MODULES = self.modules
         NODE_NBR = self.node_nbr
@@ -422,7 +423,7 @@ if __name__ == "__main__":
         use_gpu=True,
         memory=64,
         max_running_time=15,
-        server_run=True,
+        server_run=False,
         server_ssh="curnagl.dcsr.unil.ch",
         server_username="hjamet",
     )
