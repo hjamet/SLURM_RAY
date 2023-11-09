@@ -59,7 +59,7 @@ class RayLauncher:
             raise ValueError("memory must be an int")
         if not isinstance(max_running_time, int):
             raise ValueError("max_running_time must be an int")
-
+        
         # Save the parameters
         self.project_name = project_name
         self.func = func
@@ -82,10 +82,13 @@ class RayLauncher:
         self.cluster = os.path.exists("/usr/bin/sbatch")
 
         # Create the project directory if not exists
-        self.pwd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+        self.pwd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
         self.project_path = os.path.join(self.pwd_path, "logs", self.project_name)
         if not os.path.exists(self.project_path):
             os.makedirs(self.project_path)
+            
+        if server_run:
+            self.server_project_path = "~/slurmray-server/"
 
         # Write the python script
         self.__write_python_script(self.func, self.args)
@@ -159,19 +162,17 @@ class RayLauncher:
             dill.dump(args, f)
 
         # Write the python script
-        with open(
-            os.path.join(self.pwd_path, "assets", "spython_template.py"), "r"
-        ) as f:
+        with open(os.path.join(self.pwd_path, "slurmray", "assets", "spython_template.py"), "r") as f:
             text = f.read()
 
-        text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path}"')
+        text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path if not self.server_run else self.server_project_path}"')
         text = text.replace(
             "{{LOCAL_MODE}}",
             str(
                 f""
                 if not (self.cluster or self.server_run)
                 else "\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\n"
-            ),
+            ) + "num_gpus=1" if self.use_gpu is True else "",
         )
         with open(os.path.join(self.project_path, "spython.py"), "w") as f:
             f.write(text)
@@ -186,7 +187,7 @@ class RayLauncher:
             str: Name of the job
         """
         print("Writing slurm script...")
-        template_file = os.path.join(self.pwd_path, "assets", "sbatch_template.sh")
+        template_file = os.path.join(self.pwd_path, "slurmray", "assets", "sbatch_template.sh")
 
         JOB_NAME = "{{JOB_NAME}}"
         NUM_NODES = "{{NUM_NODES}}"
@@ -213,13 +214,13 @@ class RayLauncher:
         # ===== Modified the template script =====
         with open(template_file, "r") as f:
             text = f.read()
-        text = text.replace(JOB_NAME, os.path.join(self.project_path, job_name))
+        text = text.replace(JOB_NAME, os.path.join(self.project_path if not self.server_run else self.server_project_path, job_name))
         text = text.replace(NUM_NODES, str(self.node_nbr))
         text = text.replace(MEMORY, str(self.memory))
         text = text.replace(RUNNING_TIME, str(max_time))
         text = text.replace(PARTITION_NAME, str("gpu" if self.use_gpu > 0 else "cpu"))
         text = text.replace(
-            COMMAND_PLACEHOLDER, str(f"{sys.executable} {self.project_path}/spython.py")
+            COMMAND_PLACEHOLDER, str(f"{sys.executable if not self.server_run else '~/slurmray-server/.venv/bin/python3'} {self.project_path if not self.server_run else self.server_project_path}/spython.py")
         )
         text = text.replace(LOAD_ENV, str(f"module load {' '.join(self.modules)}"))
         text = text.replace(GIVEN_NODE, "")
@@ -350,28 +351,38 @@ class RayLauncher:
         """
         connected = False
         while not connected:
-            password = input("Please enter your SSH password: ")
             try:
+                # Add ssh-agent
                 subprocess.run(
-                    ["ssh", "{}@{}".format(self.server_username, self.server_ssh)],
-                    input=password,
-                    check=True,
+                    ["eval", "$(ssh-agent -s)"],
+                    shell=True,
+                )
+                # Add ssh key
+                subprocess.run(
+                    ["ssh-add", os.path.join(os.path.expanduser("~"), ".ssh", "id_rsa")],
+                )
+                subprocess.run(
+                    ["ssh" , "{}@{}".format(self.server_username, self.server_ssh), "echo", "Connected to the server!"],
                 )
                 connected = True
             except subprocess.CalledProcessError:
                 print("Wrong password, please try again.")
         print("Connected to the server!")
         
+        print("Installing server...")
         # Generate requirements.txt
         subprocess.run(["pip freeze > requirements.txt"], shell=True)
-        # Copy the project to the server
-        subprocess.run(["scp", "-r", self.project_path, "{}@{}:~/".format(self.server_username, self.server_ssh)])
+        # Copy files from the project to the server
+        for file in os.listdir(self.project_path):
+            if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".sh"):
+                subprocess.run(["scp", os.path.join(self.project_path, file), "{}@{}:~/".format(self.server_username, self.server_ssh)])
         # Copy the requirements.txt to the server
         subprocess.run(["scp", "requirements.txt", "{}@{}:~/".format(self.server_username, self.server_ssh)])
         # Copy the server script to the server
-        subprocess.run(["scp", os.path.join(self.pwd_path, "slurmray", "assets", "server_template.sh"), "{}@{}:~/".format(self.server_username, self.server_ssh)])
+        # subprocess.run(["scp", os.path.join(self.pwd_path, "slurmray", "assets", "server_template.sh"), "{}@{}:~/".format(self.server_username, self.server_ssh)])
         
         # Eventually cancel running jobs
+        print("truc")
         pass
 
 
