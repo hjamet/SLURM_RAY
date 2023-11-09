@@ -25,8 +25,12 @@ gpustat==1.1.1
 grpcio==1.59.2
 h11==0.14.0
 idna==3.4
+importlib-metadata==6.8.0
 jsonschema==4.19.2
 jsonschema-specifications==2023.7.1
+Mako==1.3.0
+Markdown==3.5.1
+MarkupSafe==2.1.3
 msgpack==1.0.7
 multidict==6.0.4
 numpy==1.26.1
@@ -35,6 +39,7 @@ opencensus==0.11.3
 opencensus-context==0.1.3
 packaging==23.2
 pandas==2.1.2
+pdoc3==0.10.0
 platformdirs==3.11.0
 prometheus-client==0.18.0
 protobuf==4.25.0
@@ -53,6 +58,7 @@ requests==2.31.0
 rpds-py==0.10.6
 rsa==4.9
 six==1.16.0
+slurmray==3.0.0a2
 smart-open==6.4.0
 sniffio==1.3.0
 starlette==0.27.0
@@ -65,3 +71,4 @@ virtualenv==20.21.0
 watchfiles==0.21.0
 wcwidth==0.2.9
 yarl==1.9.2
+zipp==3.17.0

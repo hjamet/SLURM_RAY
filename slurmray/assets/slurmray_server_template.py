@@ -1,8 +1,5 @@
 from slurmray.RayLauncher import RayLauncher
 
-# Remove the serialization of the function and arguments
-setattr(RayLauncher, "__serialize_func_and_args", lambda *args, **kwargs: None)
-
 if __name__ == "__main__":
 
     launcher = RayLauncher(
@@ -18,5 +15,8 @@ if __name__ == "__main__":
         server_ssh=None,
         server_username=None,
     )
+    
+    # Remove serialization
+    launcher.__serialize_func_and_args = lambda *args, **kwargs : print("No serialization done.")
 
     result = launcher()

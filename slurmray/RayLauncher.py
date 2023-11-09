@@ -61,16 +61,10 @@ class RayLauncher:
 
         # Create the project directory if not exists
         self.module_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-        self.pwd = os.getcwd()
-        self.project_path = os.path.join(self.pwd, ".slogs", self.project_name)
+        self.pwd_path = os.getcwd()
+        self.project_path = os.path.join(self.pwd_path, ".slogs", self.project_name)
         if not os.path.exists(self.project_path):
             os.makedirs(self.project_path)
-            
-        if server_run:
-            self.server_project_path = "~/slurmray-server/"
-            
-        # Sereialize function and arguments
-        self.__serialize_func_and_args(self.func, self.args)
 
         if not self.server_run:
             self.__write_python_script()
@@ -85,6 +79,8 @@ class RayLauncher:
         Returns:
             Any: Result of the function
         """
+        # Sereialize function and arguments
+        self.__serialize_func_and_args(self.func, self.args)
 
         if self.cluster:
             print("Cluster detected, running on cluster...")
@@ -152,7 +148,7 @@ class RayLauncher:
         with open(os.path.join(self.module_path, "slurmray", "assets", "spython_template.py"), "r") as f:
             text = f.read()
 
-        text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path if not self.server_run else self.server_project_path}"')
+        text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path}"')
         text = text.replace(
             "{{LOCAL_MODE}}",
             str(
@@ -201,13 +197,13 @@ class RayLauncher:
         # ===== Modified the template script =====
         with open(template_file, "r") as f:
             text = f.read()
-        text = text.replace(JOB_NAME, os.path.join(self.project_path if not self.server_run else self.server_project_path, job_name))
+        text = text.replace(JOB_NAME, os.path.join(self.project_path, job_name))
         text = text.replace(NUM_NODES, str(self.node_nbr))
         text = text.replace(MEMORY, str(self.memory))
         text = text.replace(RUNNING_TIME, str(max_time))
         text = text.replace(PARTITION_NAME, str("gpu" if self.use_gpu > 0 else "cpu"))
         text = text.replace(
-            COMMAND_PLACEHOLDER, str(f"{sys.executable if not self.server_run else '~/slurmray-server/.venv/bin/python3'} {self.project_path if not self.server_run else self.server_project_path}/spython.py")
+            COMMAND_PLACEHOLDER, str(f"{sys.executable} {self.project_path}/spython.py")
         )
         text = text.replace(LOAD_ENV, str(f"module load {' '.join(self.modules)}"))
         text = text.replace(GIVEN_NODE, "")
