@@ -20,6 +20,8 @@ class RayLauncher:
         memory: int = 64,
         max_running_time: int = 60,
         server_run: bool = True,
+        server_ssh: str = "curnagl.dcsr.unil.ch",
+        server_username: str = "hjamet",
     ):
         """Initialize the launcher
 
@@ -33,6 +35,8 @@ class RayLauncher:
             memory (int, optional): Amount of RAM to use per node in GigaBytes. Defaults to 64.
             max_running_time (int, optional): Maximum running time of the job in minutes. Defaults to 60.
             server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster ressources. Defaults to True.
+            server_ssh (str, optional): If `server_run` is set to true, the addess of the **SLURM** server to use.
+            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect.
         """
         # Check the parameters
         if project_name is None:
@@ -65,6 +69,8 @@ class RayLauncher:
         self.memory = memory
         self.max_running_time = max_running_time
         self.server_run = server_run
+        self.server_ssh = server_ssh
+        self.server_username = server_username
 
         self.modules = ["gcc", "python/3.9.13"] + [
             mod for mod in modules if mod not in ["gcc", "python/3.9.13"]
@@ -73,7 +79,7 @@ class RayLauncher:
             self.modules += ["cuda/11.8.0", "cudnn"]
 
         # Check if this code is running on a cluster
-        self.cluster = os.path.exists("/usr/bin/sbatch") or self.server_run
+        self.cluster = os.path.exists("/usr/bin/sbatch")
 
         # Create the project directory if not exists
         self.pwd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -107,10 +113,10 @@ class RayLauncher:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
-
             # Launch the job
             self.__launch_job(self.script_file, self.job_name)
-
+        elif self.server_run:
+            self.__launch_server(cancel_old_jobs)
         else:
             print("No cluster detected, running locally...")
             subprocess.Popen(
@@ -161,7 +167,7 @@ class RayLauncher:
             "{{LOCAL_MODE}}",
             str(
                 f""
-                if not self.cluster
+                if not (self.cluster or self.server_run)
                 else "\n\taddress='auto'\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\n"
             ) + "num_gpus=1" if self.use_gpu is True else "",
         )
@@ -334,15 +340,37 @@ class RayLauncher:
 
         print("Job finished!")
         
-    def __launch_server(self, script_file : str, job_name : str):
+    def __launch_server(self, cancel_old_jobs : bool = True):
         """Launch the server on the cluster and run the function using the ressources.
 
         Args:
-            script_file (str): The name of the script file to execute
-            job_name (str): The name of the job to run
+            cancel_old_jobs (bool, optional): Whether or not to interrupt all the user's jobs on the cluster.
         """
+        connected = False
+        while not connected:
+            password = input("Please enter your SSH password: ")
+            try:
+                subprocess.run(
+                    ["ssh", "{}@{}".format(self.server_username, self.server_ssh)],
+                    input=password,
+                    check=True,
+                )
+                connected = True
+            except subprocess.CalledProcessError:
+                print("Wrong password, please try again.")
+        print("Connected to the server!")
+        
+        # Generate requirements.txt
+        subprocess.run(["pip freeze > requirements.txt"], shell=True)
+        # Copy the project to the server
+        subprocess.run(["scp", "-r", self.project_path, "{}@{}:~/".format(self.server_username, self.server_ssh)])
+        # Copy the requirements.txt to the server
+        subprocess.run(["scp", "requirements.txt", "{}@{}:~/".format(self.server_username, self.server_ssh)])
+        # Copy the server script to the server
+        subprocess.run(["scp", os.path.join(self.pwd_path, "slurmray", "assets", "server_template.sh"), "{}@{}:~/".format(self.server_username, self.server_ssh)])
+        
+        # Eventually cancel running jobs
         pass
-
 
 
 # ---------------------------------------------------------------------------- #
@@ -363,6 +391,9 @@ if __name__ == "__main__":
         use_gpu=True,
         memory=64,
         max_running_time=15,
+        server_run=True,
+        server_ssh="curnagl.dcsr.unil.ch",
+        server_username="hjamet",
     )
 
     result = launcher()
