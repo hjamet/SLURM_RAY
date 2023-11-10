@@ -4,6 +4,11 @@ echo "Installing slurmray server"
 
 # Create a folder if not exists
 mkdir -p slurmray-server/.slogs/server
+
+# Remove every old file in the server folder
+rm -rf slurmray-server/.slogs/server/*
+
+# Copy files
 mv -t slurmray-server requirements.txt slurmray_server.py
 mv -t slurmray-server/.slogs/server func.pkl args.pkl 
 cd slurmray-server
@@ -21,4 +26,4 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # Run server
-python -u slurmray_server.py 2>&1
+python -u slurmray_server.py

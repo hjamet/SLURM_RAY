@@ -4,6 +4,8 @@ import sys
 import time
 import os
 import dill
+import paramiko
+from getpass import getpass
 
 
 class RayLauncher:
@@ -60,7 +62,9 @@ class RayLauncher:
         self.cluster = os.path.exists("/usr/bin/sbatch")
 
         # Create the project directory if not exists
-        self.module_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        self.module_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), ".."
+        )
         self.pwd_path = os.getcwd()
         self.project_path = os.path.join(self.pwd_path, ".slogs", self.project_name)
         if not os.path.exists(self.project_path):
@@ -109,10 +113,10 @@ class RayLauncher:
             result = dill.load(f)
 
         return result
-    
+
     def serialize_func_and_args(self, func: Callable = None, args: list = None):
         """Serialize the function and the arguments
-        
+
         Args:
             func (Callable, optional): Function to serialize. Defaults to None.
             args (list, optional): Arguments of the function. Defaults to None.
@@ -135,8 +139,7 @@ class RayLauncher:
             dill.dump(args, f)
 
     def __write_python_script(self):
-        """Write the python script that will be executed by the job
-        """
+        """Write the python script that will be executed by the job"""
         print("Writing python script...")
 
         # Remove the old python script
@@ -145,7 +148,10 @@ class RayLauncher:
                 os.remove(os.path.join(self.project_path, file))
 
         # Write the python script
-        with open(os.path.join(self.module_path, "slurmray", "assets", "spython_template.py"), "r") as f:
+        with open(
+            os.path.join(self.module_path, "slurmray", "assets", "spython_template.py"),
+            "r",
+        ) as f:
             text = f.read()
 
         text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path}"')
@@ -155,7 +161,7 @@ class RayLauncher:
                 f""
                 if not (self.cluster or self.server_run)
                 else "\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\n"
-            )
+            ),
         )
         with open(os.path.join(self.project_path, "spython.py"), "w") as f:
             f.write(text)
@@ -170,7 +176,9 @@ class RayLauncher:
             str: Name of the job
         """
         print("Writing slurm script...")
-        template_file = os.path.join(self.module_path, "slurmray", "assets", "sbatch_template.sh")
+        template_file = os.path.join(
+            self.module_path, "slurmray", "assets", "sbatch_template.sh"
+        )
 
         JOB_NAME = "{{JOB_NAME}}"
         NUM_NODES = "{{NUM_NODES}}"
@@ -325,68 +333,87 @@ class RayLauncher:
                     log_cursor_position = f.tell()
 
         print("Job finished!")
-        
-    def __launch_server(self, cancel_old_jobs : bool = True):
+
+    def __launch_server(self, cancel_old_jobs: bool = True):
         """Launch the server on the cluster and run the function using the ressources.
 
         Args:
             cancel_old_jobs (bool, optional): Whether or not to interrupt all the user's jobs on the cluster.
         """
         connected = False
+        print("Connecting to the cluster...")
+        ssh_client = paramiko.SSHClient()
+        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         while not connected:
             try:
-                # Add ssh-agent
-                subprocess.run(
-                    ["eval", "$(ssh-agent -s)"],
-                    shell=True,
-                )
                 # Add ssh key
-                subprocess.run(
-                    ["ssh-add", os.path.join(os.path.expanduser("~"), ".ssh", "id_rsa")],
+                ssh_key = getpass("Enter your cluster password: ")
+                ssh_client.connect(
+                    hostname=self.server_ssh,
+                    username=self.server_username,
+                    password=ssh_key,
                 )
-                subprocess.run(
-                    ["ssh" , "{}@{}".format(self.server_username, self.server_ssh), "echo", "Connected to the server!"],
-                )
+                sftp = ssh_client.open_sftp()
                 connected = True
-            except subprocess.CalledProcessError:
+            except paramiko.ssh_exception.AuthenticationException:
                 print("Wrong password, please try again.")
-        
+
         # Write server script
         self.__write_server_script()
-        
+
         print("Downloading server...")
         # Generate requirements.txt
-        subprocess.run(["pip freeze > requirements.txt"], shell=True)
+        subprocess.run(
+            [f"pip freeze > {self.project_path}/requirements.txt"], shell=True
+        )
         # Copy files from the project to the server
         for file in os.listdir(self.project_path):
             if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".sh"):
-                subprocess.run(["scp", os.path.join(self.project_path, file), "{}@{}:~/".format(self.server_username, self.server_ssh)])
+                sftp.put(os.path.join(self.project_path, file), file)
         # Copy the requirements.txt to the server
-        subprocess.run(["scp", "requirements.txt", "{}@{}:~/".format(self.server_username, self.server_ssh)])
+        sftp.put(
+            os.path.join(self.project_path, "requirements.txt"), "requirements.txt"
+        )
         # Copy the server script to the server
-        subprocess.run(["scp", os.path.join(self.pwd_path, "slurmray", "assets", "slurmray_server.sh"), "{}@{}:~/".format(self.server_username, self.server_ssh)])
+        sftp.put(
+            os.path.join(self.pwd_path, "slurmray", "assets", "slurmray_server.sh"),
+            "slurmray_server.sh",
+        )
         # Chmod script
-        subprocess.run(["ssh", "{}@{}".format(self.server_username, self.server_ssh), "chmod", "+x", "slurmray_server.sh"])
-        
+        sftp.chmod("slurmray_server.sh", 0o755)
+
         # Run the server
         print("Running server...")
-        subprocess.run(["ssh", "{}@{}".format(self.server_username, self.server_ssh), "./slurmray_server.sh"])
-        
+        stdin, stdout, stderr = ssh_client.exec_command("./slurmray_server.sh")
+
+        # Read the output in real time
+        while True:
+            line = stdout.readline()
+            if not line:
+                break
+            print(line, end="")
+
         # Downloading result
         print("Downloading result...")
-        subprocess.run(["scp", "{}@{}:slurmray-server/.slogs/server/result.pkl".format(self.server_username, self.server_ssh), os.path.join(self.project_path, "result.pkl")])
-    
+        sftp.get(
+            "slurmray-server/.slogs/server/result.pkl",
+            os.path.join(self.project_path, "result.pkl"),
+        )
+        print("Result downloaded!")
+
     def __write_server_script(self):
         """This funtion will write a script with the given specifications to run slurmray on the cluster"""
         print("Writing slurmray server script...")
-        template_file = os.path.join(self.module_path, "slurmray", "assets", "slurmray_server_template.py")
-        
+        template_file = os.path.join(
+            self.module_path, "slurmray", "assets", "slurmray_server_template.py"
+        )
+
         MODULES = self.modules
         NODE_NBR = self.node_nbr
         USE_GPU = self.use_gpu
         MEMORY = self.memory
         MAX_RUNNING_TIME = self.max_running_time
-        
+
         # ===== Modified the template script =====
         with open(template_file, "r") as f:
             text = f.read()
@@ -395,22 +422,21 @@ class RayLauncher:
         text = text.replace("{{USE_GPU}}", str(USE_GPU))
         text = text.replace("{{MEMORY}}", str(MEMORY))
         text = text.replace("{{MAX_RUNNING_TIME}}", str(MAX_RUNNING_TIME))
-        
+
         # ===== Save the script =====
         script_file = "slurmray_server.py"
         with open(os.path.join(self.project_path, script_file), "w") as f:
             f.write(text)
-            
-        
 
 
 # ---------------------------------------------------------------------------- #
 #                             EXAMPLE OF EXECUTION                             #
 # ---------------------------------------------------------------------------- #
 if __name__ == "__main__":
-    import ray
 
     def example_func(x):
+        import ray
+
         return ray.cluster_resources(), x + 1
 
     launcher = RayLauncher(
