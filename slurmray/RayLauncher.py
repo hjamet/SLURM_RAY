@@ -4,6 +4,8 @@ import sys
 import time
 import os
 import dill
+import paramiko
+from getpass import getpass
 
 
 class RayLauncher:
@@ -19,6 +21,9 @@ class RayLauncher:
         use_gpu: bool = False,
         memory: int = 64,
         max_running_time: int = 60,
+        server_run: bool = True,
+        server_ssh: str = "curnagl.dcsr.unil.ch",
+        server_username: str = "hjamet",
     ):
         """Initialize the launcher
 
@@ -31,29 +36,10 @@ class RayLauncher:
             use_gpu (bool, optional): Use GPU or not. Defaults to False.
             memory (int, optional): Amount of RAM to use per node in GigaBytes. Defaults to 64.
             max_running_time (int, optional): Maximum running time of the job in minutes. Defaults to 60.
+            server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster ressources. Defaults to True.
+            server_ssh (str, optional): If `server_run` is set to true, the addess of the **SLURM** server to use.
+            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect.
         """
-        # Check the parameters
-        if project_name is None:
-            raise ValueError("project_name cannot be None")
-        if func is None:
-            raise ValueError("func cannot be None")
-        if not callable(func):
-            raise ValueError("func must be callable")
-        if args is None:
-            args = {}
-        if not isinstance(args, dict):
-            raise ValueError("args must be a dict")
-        if not isinstance(modules, list):
-            raise ValueError("modules must be a list")
-        if not isinstance(node_nbr, int):
-            raise ValueError("node_nbr must be an int")
-        if not isinstance(use_gpu, int):
-            raise ValueError("gpu_nbr must be an int")
-        if not isinstance(memory, int):
-            raise ValueError("memory must be an int")
-        if not isinstance(max_running_time, int):
-            raise ValueError("max_running_time must be an int")
-
         # Save the parameters
         self.project_name = project_name
         self.func = func
@@ -62,6 +48,9 @@ class RayLauncher:
         self.use_gpu = use_gpu
         self.memory = memory
         self.max_running_time = max_running_time
+        self.server_run = server_run
+        self.server_ssh = server_ssh
+        self.server_username = server_username
 
         self.modules = ["gcc", "python/3.9.13"] + [
             mod for mod in modules if mod not in ["gcc", "python/3.9.13"]
@@ -73,16 +62,17 @@ class RayLauncher:
         self.cluster = os.path.exists("/usr/bin/sbatch")
 
         # Create the project directory if not exists
-        self.pwd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-        self.project_path = os.path.join(self.pwd_path, "logs", self.project_name)
+        self.module_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), ".."
+        )
+        self.pwd_path = os.getcwd()
+        self.project_path = os.path.join(self.pwd_path, ".slogs", self.project_name)
         if not os.path.exists(self.project_path):
             os.makedirs(self.project_path)
 
-        # Write the python script
-        self.__write_python_script(self.func, self.args)
-
-        # Write the sh script
-        self.script_file, self.job_name = self.__write_slurm_script()
+        if not self.server_run:
+            self.__write_python_script()
+            self.script_file, self.job_name = self.__write_slurm_script()
 
     def __call__(self, cancel_old_jobs: bool = True) -> Any:
         """Launch the job and return the result
@@ -93,6 +83,8 @@ class RayLauncher:
         Returns:
             Any: Result of the function
         """
+        # Sereialize function and arguments
+        self.serialize_func_and_args(self.func, self.args)
 
         if self.cluster:
             print("Cluster detected, running on cluster...")
@@ -104,10 +96,10 @@ class RayLauncher:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
-
             # Launch the job
             self.__launch_job(self.script_file, self.job_name)
-
+        elif self.server_run:
+            self.__launch_server(cancel_old_jobs)
         else:
             print("No cluster detected, running locally...")
             subprocess.Popen(
@@ -122,21 +114,18 @@ class RayLauncher:
 
         return result
 
-    def __write_python_script(self, func: Callable = None, args: list = None):
-        """Write the python script that will be executed by the job
+    def serialize_func_and_args(self, func: Callable = None, args: list = None):
+        """Serialize the function and the arguments
 
         Args:
-            func (Callable, optional): Function to execute. Defaults to None.
+            func (Callable, optional): Function to serialize. Defaults to None.
             args (list, optional): Arguments of the function. Defaults to None.
-
-        Raises:
-            ValueError: If the function is not callable
         """
-        print("Writing python script...")
+        print("Serializing function and arguments...")
 
         # Remove the old python script
         for file in os.listdir(self.project_path):
-            if file.endswith(".py") or file.endswith(".pkl"):
+            if file.endswith(".pkl"):
                 os.remove(os.path.join(self.project_path, file))
 
         # Pickle the function
@@ -149,9 +138,19 @@ class RayLauncher:
         with open(os.path.join(self.project_path, "args.pkl"), "wb") as f:
             dill.dump(args, f)
 
+    def __write_python_script(self):
+        """Write the python script that will be executed by the job"""
+        print("Writing python script...")
+
+        # Remove the old python script
+        for file in os.listdir(self.project_path):
+            if file.endswith(".py"):
+                os.remove(os.path.join(self.project_path, file))
+
         # Write the python script
         with open(
-            os.path.join(self.pwd_path, "assets", "spython_template.py"), "r"
+            os.path.join(self.module_path, "slurmray", "assets", "spython_template.py"),
+            "r",
         ) as f:
             text = f.read()
 
@@ -160,7 +159,7 @@ class RayLauncher:
             "{{LOCAL_MODE}}",
             str(
                 f""
-                if not self.cluster
+                if not (self.cluster or self.server_run)
                 else "\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\n"
             ),
         )
@@ -177,7 +176,9 @@ class RayLauncher:
             str: Name of the job
         """
         print("Writing slurm script...")
-        template_file = os.path.join(self.pwd_path, "assets", "sbatch_template.sh")
+        template_file = os.path.join(
+            self.module_path, "slurmray", "assets", "sbatch_template.sh"
+        )
 
         JOB_NAME = "{{JOB_NAME}}"
         NUM_NODES = "{{NUM_NODES}}"
@@ -333,14 +334,109 @@ class RayLauncher:
 
         print("Job finished!")
 
+    def __launch_server(self, cancel_old_jobs: bool = True):
+        """Launch the server on the cluster and run the function using the ressources.
+
+        Args:
+            cancel_old_jobs (bool, optional): Whether or not to interrupt all the user's jobs on the cluster.
+        """
+        connected = False
+        print("Connecting to the cluster...")
+        ssh_client = paramiko.SSHClient()
+        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        while not connected:
+            try:
+                # Add ssh key
+                ssh_key = getpass("Enter your cluster password: ")
+                ssh_client.connect(
+                    hostname=self.server_ssh,
+                    username=self.server_username,
+                    password=ssh_key,
+                )
+                sftp = ssh_client.open_sftp()
+                connected = True
+            except paramiko.ssh_exception.AuthenticationException:
+                print("Wrong password, please try again.")
+
+        # Write server script
+        self.__write_server_script()
+
+        print("Downloading server...")
+        # Generate requirements.txt
+        subprocess.run(
+            [f"pip freeze > {self.project_path}/requirements.txt"], shell=True
+        )
+        # Copy files from the project to the server
+        for file in os.listdir(self.project_path):
+            if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".sh"):
+                sftp.put(os.path.join(self.project_path, file), file)
+        # Copy the requirements.txt to the server
+        sftp.put(
+            os.path.join(self.project_path, "requirements.txt"), "requirements.txt"
+        )
+        # Copy the server script to the server
+        sftp.put(
+            os.path.join(self.pwd_path, "slurmray", "assets", "slurmray_server.sh"),
+            "slurmray_server.sh",
+        )
+        # Chmod script
+        sftp.chmod("slurmray_server.sh", 0o755)
+
+        # Run the server
+        print("Running server...")
+        stdin, stdout, stderr = ssh_client.exec_command("./slurmray_server.sh")
+
+        # Read the output in real time
+        while True:
+            line = stdout.readline()
+            if not line:
+                break
+            print(line, end="")
+
+        # Downloading result
+        print("Downloading result...")
+        sftp.get(
+            "slurmray-server/.slogs/server/result.pkl",
+            os.path.join(self.project_path, "result.pkl"),
+        )
+        print("Result downloaded!")
+
+    def __write_server_script(self):
+        """This funtion will write a script with the given specifications to run slurmray on the cluster"""
+        print("Writing slurmray server script...")
+        template_file = os.path.join(
+            self.module_path, "slurmray", "assets", "slurmray_server_template.py"
+        )
+
+        MODULES = self.modules
+        NODE_NBR = self.node_nbr
+        USE_GPU = self.use_gpu
+        MEMORY = self.memory
+        MAX_RUNNING_TIME = self.max_running_time
+
+        # ===== Modified the template script =====
+        with open(template_file, "r") as f:
+            text = f.read()
+        text = text.replace("{{MODULES}}", str(MODULES))
+        text = text.replace("{{NODE_NBR}}", str(NODE_NBR))
+        text = text.replace("{{USE_GPU}}", str(USE_GPU))
+        text = text.replace("{{MEMORY}}", str(MEMORY))
+        text = text.replace("{{MAX_RUNNING_TIME}}", str(MAX_RUNNING_TIME))
+
+        # ===== Save the script =====
+        script_file = "slurmray_server.py"
+        with open(os.path.join(self.project_path, script_file), "w") as f:
+            f.write(text)
+
 
 # ---------------------------------------------------------------------------- #
 #                             EXAMPLE OF EXECUTION                             #
 # ---------------------------------------------------------------------------- #
 if __name__ == "__main__":
-    import ray
 
     def example_func(x):
+        import ray
+
         return ray.cluster_resources(), x + 1
 
     launcher = RayLauncher(
@@ -352,6 +448,9 @@ if __name__ == "__main__":
         use_gpu=True,
         memory=64,
         max_running_time=15,
+        server_run=True,
+        server_ssh="curnagl.dcsr.unil.ch",
+        server_username="hjamet",
     )
 
     result = launcher()
