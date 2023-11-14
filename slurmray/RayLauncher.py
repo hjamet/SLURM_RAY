@@ -381,6 +381,10 @@ class RayLauncher:
         subprocess.run(
             [f"pip freeze > {self.project_path}/requirements.txt"], shell=True
         )
+        # Add slurmray --pre
+        with open(f"{self.project_path}/requirements.txt", "a") as file:
+            file.write("\nslurmray --pre")
+
         # Copy files from the project to the server
         for file in os.listdir(self.project_path):
             if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".sh"):
