@@ -66,6 +66,7 @@ class RayLauncher:
             os.path.dirname(os.path.abspath(__file__)), ".."
         )
         self.pwd_path = os.getcwd()
+        self.module_path = os.path.dirname(os.path.abspath(__file__))
         self.project_path = os.path.join(self.pwd_path, ".slogs", self.project_name)
         if not os.path.exists(self.project_path):
             os.makedirs(self.project_path)
@@ -149,7 +150,7 @@ class RayLauncher:
 
         # Write the python script
         with open(
-            os.path.join(self.module_path, "slurmray", "assets", "spython_template.py"),
+            os.path.join(self.module_path, "assets", "spython_template.py"),
             "r",
         ) as f:
             text = f.read()
@@ -176,9 +177,7 @@ class RayLauncher:
             str: Name of the job
         """
         print("Writing slurm script...")
-        template_file = os.path.join(
-            self.module_path, "slurmray", "assets", "sbatch_template.sh"
-        )
+        template_file = os.path.join(self.module_path, "assets", "sbatch_template.sh")
 
         JOB_NAME = "{{JOB_NAME}}"
         NUM_NODES = "{{NUM_NODES}}"
@@ -257,6 +256,19 @@ class RayLauncher:
 
         # Wait for log file to be created
         current_queue = None
+        queue_log_file = os.path.join(
+            self.project_path, "{}_queue.log".format(job_name)
+        )
+        with open(queue_log_file, "w") as f:
+            f.write("")
+        print(
+            "Start to monitor the queue... You can check the queue at: <{}>".format(
+                queue_log_file
+            )
+        )
+        subprocess.Popen(
+            ["tail", "-f", os.path.join(self.project_path, "{}.log".format(job_name))]
+        )
         while True:
             time.sleep(0.25)
             if os.path.exists(
@@ -308,12 +320,15 @@ class RayLauncher:
                 )[1:]
                 if current_queue is None or current_queue != to_queue:
                     current_queue = to_queue
-                    print("Current queue:")
-                    # Tabulared print
-                    format_row = "{:>30}" * (len(current_queue[0]))
-                    for user, status, nodes, node_list in current_queue:
-                        print(format_row.format(user, status, nodes, node_list))
-                    print()
+                    with open(queue_log_file, "w") as f:
+                        text = "Current queue:\n"
+                        format_row = "{:>30}" * (len(current_queue[0]))
+                        for user, status, nodes, node_list in current_queue:
+                            text += (
+                                format_row.format(user, status, nodes, node_list) + "\n"
+                            )
+                        text += "\n"
+                        f.write(text)
 
         # Wait for the job to finish while printing the log
         log_cursor_position = 0
@@ -376,7 +391,7 @@ class RayLauncher:
         )
         # Copy the server script to the server
         sftp.put(
-            os.path.join(self.pwd_path, "slurmray", "assets", "slurmray_server.sh"),
+            os.path.join(self.module_path, "assets", "slurmray_server.sh"),
             "slurmray_server.sh",
         )
         # Chmod script
@@ -405,7 +420,7 @@ class RayLauncher:
         """This funtion will write a script with the given specifications to run slurmray on the cluster"""
         print("Writing slurmray server script...")
         template_file = os.path.join(
-            self.module_path, "slurmray", "assets", "slurmray_server_template.py"
+            self.module_path, "assets", "slurmray_server_template.py"
         )
 
         MODULES = self.modules
