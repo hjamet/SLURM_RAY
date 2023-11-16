@@ -32,6 +32,8 @@ import sys
 import time
 import os
 import dill
+import paramiko
+from getpass import getpass
 
 
 class RayLauncher:
@@ -47,6 +49,9 @@ class RayLauncher:
         use_gpu: bool = False,
         memory: int = 64,
         max_running_time: int = 60,
+        server_run: bool = True,
+        server_ssh: str = &#34;curnagl.dcsr.unil.ch&#34;,
+        server_username: str = &#34;hjamet&#34;,
     ):
         &#34;&#34;&#34;Initialize the launcher
 
@@ -59,29 +64,10 @@ class RayLauncher:
             use_gpu (bool, optional): Use GPU or not. Defaults to False.
             memory (int, optional): Amount of RAM to use per node in GigaBytes. Defaults to 64.
             max_running_time (int, optional): Maximum running time of the job in minutes. Defaults to 60.
+            server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster ressources. Defaults to True.
+            server_ssh (str, optional): If `server_run` is set to true, the addess of the **SLURM** server to use.
+            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect.
         &#34;&#34;&#34;
-        # Check the parameters
-        if project_name is None:
-            raise ValueError(&#34;project_name cannot be None&#34;)
-        if func is None:
-            raise ValueError(&#34;func cannot be None&#34;)
-        if not callable(func):
-            raise ValueError(&#34;func must be callable&#34;)
-        if args is None:
-            args = {}
-        if not isinstance(args, dict):
-            raise ValueError(&#34;args must be a dict&#34;)
-        if not isinstance(modules, list):
-            raise ValueError(&#34;modules must be a list&#34;)
-        if not isinstance(node_nbr, int):
-            raise ValueError(&#34;node_nbr must be an int&#34;)
-        if not isinstance(use_gpu, int):
-            raise ValueError(&#34;gpu_nbr must be an int&#34;)
-        if not isinstance(memory, int):
-            raise ValueError(&#34;memory must be an int&#34;)
-        if not isinstance(max_running_time, int):
-            raise ValueError(&#34;max_running_time must be an int&#34;)
-        
         # Save the parameters
         self.project_name = project_name
         self.func = func
@@ -90,6 +76,9 @@ class RayLauncher:
         self.use_gpu = use_gpu
         self.memory = memory
         self.max_running_time = max_running_time
+        self.server_run = server_run
+        self.server_ssh = server_ssh
+        self.server_username = server_username
 
         self.modules = [&#34;gcc&#34;, &#34;python/3.9.13&#34;] + [
             mod for mod in modules if mod not in [&#34;gcc&#34;, &#34;python/3.9.13&#34;]
@@ -101,16 +90,18 @@ class RayLauncher:
         self.cluster = os.path.exists(&#34;/usr/bin/sbatch&#34;)
 
         # Create the project directory if not exists
-        self.pwd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), &#34;..&#34;)
-        self.project_path = os.path.join(self.pwd_path, &#34;logs&#34;, self.project_name)
+        self.module_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), &#34;..&#34;
+        )
+        self.pwd_path = os.getcwd()
+        self.module_path = os.path.dirname(os.path.abspath(__file__))
+        self.project_path = os.path.join(self.pwd_path, &#34;.slogs&#34;, self.project_name)
         if not os.path.exists(self.project_path):
             os.makedirs(self.project_path)
 
-        # Write the python script
-        self.__write_python_script(self.func, self.args)
-
-        # Write the sh script
-        self.script_file, self.job_name = self.__write_slurm_script()
+        if not self.server_run:
+            self.__write_python_script()
+            self.script_file, self.job_name = self.__write_slurm_script()
 
     def __call__(self, cancel_old_jobs: bool = True) -&gt; Any:
         &#34;&#34;&#34;Launch the job and return the result
@@ -121,6 +112,8 @@ class RayLauncher:
         Returns:
             Any: Result of the function
         &#34;&#34;&#34;
+        # Sereialize function and arguments
+        self.serialize_func_and_args(self.func, self.args)
 
         if self.cluster:
             print(&#34;Cluster detected, running on cluster...&#34;)
@@ -132,10 +125,10 @@ class RayLauncher:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
-
             # Launch the job
             self.__launch_job(self.script_file, self.job_name)
-
+        elif self.server_run:
+            self.__launch_server(cancel_old_jobs)
         else:
             print(&#34;No cluster detected, running locally...&#34;)
             subprocess.Popen(
@@ -150,21 +143,18 @@ class RayLauncher:
 
         return result
 
-    def __write_python_script(self, func: Callable = None, args: list = None):
-        &#34;&#34;&#34;Write the python script that will be executed by the job
+    def serialize_func_and_args(self, func: Callable = None, args: list = None):
+        &#34;&#34;&#34;Serialize the function and the arguments
 
         Args:
-            func (Callable, optional): Function to execute. Defaults to None.
+            func (Callable, optional): Function to serialize. Defaults to None.
             args (list, optional): Arguments of the function. Defaults to None.
-
-        Raises:
-            ValueError: If the function is not callable
         &#34;&#34;&#34;
-        print(&#34;Writing python script...&#34;)
+        print(&#34;Serializing function and arguments...&#34;)
 
         # Remove the old python script
         for file in os.listdir(self.project_path):
-            if file.endswith(&#34;.py&#34;) or file.endswith(&#34;.pkl&#34;):
+            if file.endswith(&#34;.pkl&#34;):
                 os.remove(os.path.join(self.project_path, file))
 
         # Pickle the function
@@ -177,8 +167,20 @@ class RayLauncher:
         with open(os.path.join(self.project_path, &#34;args.pkl&#34;), &#34;wb&#34;) as f:
             dill.dump(args, f)
 
+    def __write_python_script(self):
+        &#34;&#34;&#34;Write the python script that will be executed by the job&#34;&#34;&#34;
+        print(&#34;Writing python script...&#34;)
+
+        # Remove the old python script
+        for file in os.listdir(self.project_path):
+            if file.endswith(&#34;.py&#34;):
+                os.remove(os.path.join(self.project_path, file))
+
         # Write the python script
-        with open(os.path.join(self.pwd_path, &#34;slurmray&#34;, &#34;assets&#34;, &#34;spython_template.py&#34;), &#34;r&#34;) as f:
+        with open(
+            os.path.join(self.module_path, &#34;assets&#34;, &#34;spython_template.py&#34;),
+            &#34;r&#34;,
+        ) as f:
             text = f.read()
 
         text = text.replace(&#34;{{PROJECT_PATH}}&#34;, f&#39;&#34;{self.project_path}&#34;&#39;)
@@ -186,9 +188,9 @@ class RayLauncher:
             &#34;{{LOCAL_MODE}}&#34;,
             str(
                 f&#34;&#34;
-                if not self.cluster
-                else &#34;\n\taddress=&#39;auto&#39;\n\tinclude_dashboard=True,\n\tdashboard_host=&#39;0.0.0.0&#39;,\n\tdashboard_port=8888,\n&#34;
-            ) + &#34;num_gpus=1&#34; if self.use_gpu is True else &#34;&#34;,
+                if not (self.cluster or self.server_run)
+                else &#34;\n\taddress=&#39;auto&#39;,\n\tinclude_dashboard=True,\n\tdashboard_host=&#39;0.0.0.0&#39;,\n\tdashboard_port=8888,\n&#34;
+            ),
         )
         with open(os.path.join(self.project_path, &#34;spython.py&#34;), &#34;w&#34;) as f:
             f.write(text)
@@ -203,7 +205,7 @@ class RayLauncher:
             str: Name of the job
         &#34;&#34;&#34;
         print(&#34;Writing slurm script...&#34;)
-        template_file = os.path.join(self.pwd_path, &#34;slurmray&#34;, &#34;assets&#34;, &#34;sbatch_template.sh&#34;)
+        template_file = os.path.join(self.module_path, &#34;assets&#34;, &#34;sbatch_template.sh&#34;)
 
         JOB_NAME = &#34;{{JOB_NAME}}&#34;
         NUM_NODES = &#34;{{NUM_NODES}}&#34;
@@ -282,6 +284,19 @@ class RayLauncher:
 
         # Wait for log file to be created
         current_queue = None
+        queue_log_file = os.path.join(
+            self.project_path, &#34;{}_queue.log&#34;.format(job_name)
+        )
+        with open(queue_log_file, &#34;w&#34;) as f:
+            f.write(&#34;&#34;)
+        print(
+            &#34;Start to monitor the queue... You can check the queue at: &lt;{}&gt;&#34;.format(
+                queue_log_file
+            )
+        )
+        subprocess.Popen(
+            [&#34;tail&#34;, &#34;-f&#34;, os.path.join(self.project_path, &#34;{}.log&#34;.format(job_name))]
+        )
         while True:
             time.sleep(0.25)
             if os.path.exists(
@@ -333,12 +348,15 @@ class RayLauncher:
                 )[1:]
                 if current_queue is None or current_queue != to_queue:
                     current_queue = to_queue
-                    print(&#34;Current queue:&#34;)
-                    # Tabulared print
-                    format_row = &#34;{:&gt;30}&#34; * (len(current_queue[0]))
-                    for user, status, nodes, node_list in current_queue:
-                        print(format_row.format(user, status, nodes, node_list))
-                    print()
+                    with open(queue_log_file, &#34;w&#34;) as f:
+                        text = &#34;Current queue:\n&#34;
+                        format_row = &#34;{:&gt;30}&#34; * (len(current_queue[0]))
+                        for user, status, nodes, node_list in current_queue:
+                            text += (
+                                format_row.format(user, status, nodes, node_list) + &#34;\n&#34;
+                            )
+                        text += &#34;\n&#34;
+                        f.write(text)
 
         # Wait for the job to finish while printing the log
         log_cursor_position = 0
@@ -359,15 +377,113 @@ class RayLauncher:
 
         print(&#34;Job finished!&#34;)
 
+    def __launch_server(self, cancel_old_jobs: bool = True):
+        &#34;&#34;&#34;Launch the server on the cluster and run the function using the ressources.
+
+        Args:
+            cancel_old_jobs (bool, optional): Whether or not to interrupt all the user&#39;s jobs on the cluster.
+        &#34;&#34;&#34;
+        connected = False
+        print(&#34;Connecting to the cluster...&#34;)
+        ssh_client = paramiko.SSHClient()
+        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        while not connected:
+            try:
+                # Add ssh key
+                ssh_key = getpass(&#34;Enter your cluster password: &#34;)
+                ssh_client.connect(
+                    hostname=self.server_ssh,
+                    username=self.server_username,
+                    password=ssh_key,
+                )
+                sftp = ssh_client.open_sftp()
+                connected = True
+            except paramiko.ssh_exception.AuthenticationException:
+                print(&#34;Wrong password, please try again.&#34;)
+
+        # Write server script
+        self.__write_server_script()
+
+        print(&#34;Downloading server...&#34;)
+        # Generate requirements.txt
+        subprocess.run(
+            [f&#34;pip freeze &gt; {self.project_path}/requirements.txt&#34;], shell=True
+        )
+        # Add slurmray --pre
+        with open(f&#34;{self.project_path}/requirements.txt&#34;, &#34;a&#34;) as file:
+            file.write(&#34;\nslurmray --pre&#34;)
+
+        # Copy files from the project to the server
+        for file in os.listdir(self.project_path):
+            if file.endswith(&#34;.py&#34;) or file.endswith(&#34;.pkl&#34;) or file.endswith(&#34;.sh&#34;):
+                sftp.put(os.path.join(self.project_path, file), file)
+        # Copy the requirements.txt to the server
+        sftp.put(
+            os.path.join(self.project_path, &#34;requirements.txt&#34;), &#34;requirements.txt&#34;
+        )
+        # Copy the server script to the server
+        sftp.put(
+            os.path.join(self.module_path, &#34;assets&#34;, &#34;slurmray_server.sh&#34;),
+            &#34;slurmray_server.sh&#34;,
+        )
+        # Chmod script
+        sftp.chmod(&#34;slurmray_server.sh&#34;, 0o755)
+
+        # Run the server
+        print(&#34;Running server...&#34;)
+        stdin, stdout, stderr = ssh_client.exec_command(&#34;./slurmray_server.sh&#34;)
+
+        # Read the output in real time
+        while True:
+            line = stdout.readline()
+            if not line:
+                break
+            print(line, end=&#34;&#34;)
+
+        # Downloading result
+        print(&#34;Downloading result...&#34;)
+        sftp.get(
+            &#34;slurmray-server/.slogs/server/result.pkl&#34;,
+            os.path.join(self.project_path, &#34;result.pkl&#34;),
+        )
+        print(&#34;Result downloaded!&#34;)
+
+    def __write_server_script(self):
+        &#34;&#34;&#34;This funtion will write a script with the given specifications to run slurmray on the cluster&#34;&#34;&#34;
+        print(&#34;Writing slurmray server script...&#34;)
+        template_file = os.path.join(
+            self.module_path, &#34;assets&#34;, &#34;slurmray_server_template.py&#34;
+        )
+
+        MODULES = self.modules
+        NODE_NBR = self.node_nbr
+        USE_GPU = self.use_gpu
+        MEMORY = self.memory
+        MAX_RUNNING_TIME = self.max_running_time
+
+        # ===== Modified the template script =====
+        with open(template_file, &#34;r&#34;) as f:
+            text = f.read()
+        text = text.replace(&#34;{{MODULES}}&#34;, str(MODULES))
+        text = text.replace(&#34;{{NODE_NBR}}&#34;, str(NODE_NBR))
+        text = text.replace(&#34;{{USE_GPU}}&#34;, str(USE_GPU))
+        text = text.replace(&#34;{{MEMORY}}&#34;, str(MEMORY))
+        text = text.replace(&#34;{{MAX_RUNNING_TIME}}&#34;, str(MAX_RUNNING_TIME))
+
+        # ===== Save the script =====
+        script_file = &#34;slurmray_server.py&#34;
+        with open(os.path.join(self.project_path, script_file), &#34;w&#34;) as f:
+            f.write(text)
 
 
 # ---------------------------------------------------------------------------- #
 #                             EXAMPLE OF EXECUTION                             #
 # ---------------------------------------------------------------------------- #
 if __name__ == &#34;__main__&#34;:
-    import ray
 
     def example_func(x):
+        import ray
+
         return ray.cluster_resources(), x + 1
 
     launcher = RayLauncher(
@@ -379,6 +495,9 @@ if __name__ == &#34;__main__&#34;:
         use_gpu=True,
         memory=64,
         max_running_time=15,
+        server_run=True,
+        server_ssh=&#34;curnagl.dcsr.unil.ch&#34;,
+        server_username=&#34;hjamet&#34;,
     )
 
     result = launcher()
@@ -396,7 +515,7 @@ if __name__ == &#34;__main__&#34;:
 <dl>
 <dt id="RayLauncher.RayLauncher"><code class="flex name class">
 <span>class <span class="ident">RayLauncher</span></span>
-<span>(</span><span>project_name: str = None, func: Callable = None, args: dict = None, modules: List[str] = [], node_nbr: int = 1, use_gpu: bool = False, memory: int = 64, max_running_time: int = 60)</span>
+<span>(</span><span>project_name: str = None, func: Callable = None, args: dict = None, modules: List[str] = [], node_nbr: int = 1, use_gpu: bool = False, memory: int = 64, max_running_time: int = 60, server_run: bool = True, server_ssh: str = 'curnagl.dcsr.unil.ch', server_username: str = 'hjamet')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>A class that automatically connects RAY workers and executes the function requested by the user</p>
@@ -419,6 +538,12 @@ if __name__ == &#34;__main__&#34;:
 <dd>Amount of RAM to use per node in GigaBytes. Defaults to 64.</dd>
 <dt><strong><code>max_running_time</code></strong> :&ensp;<code>int</code>, optional</dt>
 <dd>Maximum running time of the job in minutes. Defaults to 60.</dd>
+<dt><strong><code>server_run</code></strong> :&ensp;<code>bool</code>, optional</dt>
+<dd>If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster ressources. Defaults to True.</dd>
+<dt><strong><code>server_ssh</code></strong> :&ensp;<code>str</code>, optional</dt>
+<dd>If <code>server_run</code> is set to true, the addess of the <strong>SLURM</strong> server to use.</dd>
+<dt><strong><code>server_username</code></strong> :&ensp;<code>str</code>, optional</dt>
+<dd>If <code>server_run</code> is set to true, the username with which you wish to connect.</dd>
 </dl></div>
 <details class="source">
 <summary>
@@ -437,6 +562,9 @@ if __name__ == &#34;__main__&#34;:
         use_gpu: bool = False,
         memory: int = 64,
         max_running_time: int = 60,
+        server_run: bool = True,
+        server_ssh: str = &#34;curnagl.dcsr.unil.ch&#34;,
+        server_username: str = &#34;hjamet&#34;,
     ):
         &#34;&#34;&#34;Initialize the launcher
 
@@ -449,29 +577,10 @@ if __name__ == &#34;__main__&#34;:
             use_gpu (bool, optional): Use GPU or not. Defaults to False.
             memory (int, optional): Amount of RAM to use per node in GigaBytes. Defaults to 64.
             max_running_time (int, optional): Maximum running time of the job in minutes. Defaults to 60.
+            server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster ressources. Defaults to True.
+            server_ssh (str, optional): If `server_run` is set to true, the addess of the **SLURM** server to use.
+            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect.
         &#34;&#34;&#34;
-        # Check the parameters
-        if project_name is None:
-            raise ValueError(&#34;project_name cannot be None&#34;)
-        if func is None:
-            raise ValueError(&#34;func cannot be None&#34;)
-        if not callable(func):
-            raise ValueError(&#34;func must be callable&#34;)
-        if args is None:
-            args = {}
-        if not isinstance(args, dict):
-            raise ValueError(&#34;args must be a dict&#34;)
-        if not isinstance(modules, list):
-            raise ValueError(&#34;modules must be a list&#34;)
-        if not isinstance(node_nbr, int):
-            raise ValueError(&#34;node_nbr must be an int&#34;)
-        if not isinstance(use_gpu, int):
-            raise ValueError(&#34;gpu_nbr must be an int&#34;)
-        if not isinstance(memory, int):
-            raise ValueError(&#34;memory must be an int&#34;)
-        if not isinstance(max_running_time, int):
-            raise ValueError(&#34;max_running_time must be an int&#34;)
-        
         # Save the parameters
         self.project_name = project_name
         self.func = func
@@ -480,6 +589,9 @@ if __name__ == &#34;__main__&#34;:
         self.use_gpu = use_gpu
         self.memory = memory
         self.max_running_time = max_running_time
+        self.server_run = server_run
+        self.server_ssh = server_ssh
+        self.server_username = server_username
 
         self.modules = [&#34;gcc&#34;, &#34;python/3.9.13&#34;] + [
             mod for mod in modules if mod not in [&#34;gcc&#34;, &#34;python/3.9.13&#34;]
@@ -491,16 +603,18 @@ if __name__ == &#34;__main__&#34;:
         self.cluster = os.path.exists(&#34;/usr/bin/sbatch&#34;)
 
         # Create the project directory if not exists
-        self.pwd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), &#34;..&#34;)
-        self.project_path = os.path.join(self.pwd_path, &#34;logs&#34;, self.project_name)
+        self.module_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), &#34;..&#34;
+        )
+        self.pwd_path = os.getcwd()
+        self.module_path = os.path.dirname(os.path.abspath(__file__))
+        self.project_path = os.path.join(self.pwd_path, &#34;.slogs&#34;, self.project_name)
         if not os.path.exists(self.project_path):
             os.makedirs(self.project_path)
 
-        # Write the python script
-        self.__write_python_script(self.func, self.args)
-
-        # Write the sh script
-        self.script_file, self.job_name = self.__write_slurm_script()
+        if not self.server_run:
+            self.__write_python_script()
+            self.script_file, self.job_name = self.__write_slurm_script()
 
     def __call__(self, cancel_old_jobs: bool = True) -&gt; Any:
         &#34;&#34;&#34;Launch the job and return the result
@@ -511,6 +625,8 @@ if __name__ == &#34;__main__&#34;:
         Returns:
             Any: Result of the function
         &#34;&#34;&#34;
+        # Sereialize function and arguments
+        self.serialize_func_and_args(self.func, self.args)
 
         if self.cluster:
             print(&#34;Cluster detected, running on cluster...&#34;)
@@ -522,10 +638,10 @@ if __name__ == &#34;__main__&#34;:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
-
             # Launch the job
             self.__launch_job(self.script_file, self.job_name)
-
+        elif self.server_run:
+            self.__launch_server(cancel_old_jobs)
         else:
             print(&#34;No cluster detected, running locally...&#34;)
             subprocess.Popen(
@@ -540,21 +656,18 @@ if __name__ == &#34;__main__&#34;:
 
         return result
 
-    def __write_python_script(self, func: Callable = None, args: list = None):
-        &#34;&#34;&#34;Write the python script that will be executed by the job
+    def serialize_func_and_args(self, func: Callable = None, args: list = None):
+        &#34;&#34;&#34;Serialize the function and the arguments
 
         Args:
-            func (Callable, optional): Function to execute. Defaults to None.
+            func (Callable, optional): Function to serialize. Defaults to None.
             args (list, optional): Arguments of the function. Defaults to None.
-
-        Raises:
-            ValueError: If the function is not callable
         &#34;&#34;&#34;
-        print(&#34;Writing python script...&#34;)
+        print(&#34;Serializing function and arguments...&#34;)
 
         # Remove the old python script
         for file in os.listdir(self.project_path):
-            if file.endswith(&#34;.py&#34;) or file.endswith(&#34;.pkl&#34;):
+            if file.endswith(&#34;.pkl&#34;):
                 os.remove(os.path.join(self.project_path, file))
 
         # Pickle the function
@@ -567,8 +680,20 @@ if __name__ == &#34;__main__&#34;:
         with open(os.path.join(self.project_path, &#34;args.pkl&#34;), &#34;wb&#34;) as f:
             dill.dump(args, f)
 
+    def __write_python_script(self):
+        &#34;&#34;&#34;Write the python script that will be executed by the job&#34;&#34;&#34;
+        print(&#34;Writing python script...&#34;)
+
+        # Remove the old python script
+        for file in os.listdir(self.project_path):
+            if file.endswith(&#34;.py&#34;):
+                os.remove(os.path.join(self.project_path, file))
+
         # Write the python script
-        with open(os.path.join(self.pwd_path, &#34;slurmray&#34;, &#34;assets&#34;, &#34;spython_template.py&#34;), &#34;r&#34;) as f:
+        with open(
+            os.path.join(self.module_path, &#34;assets&#34;, &#34;spython_template.py&#34;),
+            &#34;r&#34;,
+        ) as f:
             text = f.read()
 
         text = text.replace(&#34;{{PROJECT_PATH}}&#34;, f&#39;&#34;{self.project_path}&#34;&#39;)
@@ -576,9 +701,9 @@ if __name__ == &#34;__main__&#34;:
             &#34;{{LOCAL_MODE}}&#34;,
             str(
                 f&#34;&#34;
-                if not self.cluster
-                else &#34;\n\taddress=&#39;auto&#39;\n\tinclude_dashboard=True,\n\tdashboard_host=&#39;0.0.0.0&#39;,\n\tdashboard_port=8888,\n&#34;
-            ) + &#34;num_gpus=1&#34; if self.use_gpu is True else &#34;&#34;,
+                if not (self.cluster or self.server_run)
+                else &#34;\n\taddress=&#39;auto&#39;,\n\tinclude_dashboard=True,\n\tdashboard_host=&#39;0.0.0.0&#39;,\n\tdashboard_port=8888,\n&#34;
+            ),
         )
         with open(os.path.join(self.project_path, &#34;spython.py&#34;), &#34;w&#34;) as f:
             f.write(text)
@@ -593,7 +718,7 @@ if __name__ == &#34;__main__&#34;:
             str: Name of the job
         &#34;&#34;&#34;
         print(&#34;Writing slurm script...&#34;)
-        template_file = os.path.join(self.pwd_path, &#34;slurmray&#34;, &#34;assets&#34;, &#34;sbatch_template.sh&#34;)
+        template_file = os.path.join(self.module_path, &#34;assets&#34;, &#34;sbatch_template.sh&#34;)
 
         JOB_NAME = &#34;{{JOB_NAME}}&#34;
         NUM_NODES = &#34;{{NUM_NODES}}&#34;
@@ -672,6 +797,19 @@ if __name__ == &#34;__main__&#34;:
 
         # Wait for log file to be created
         current_queue = None
+        queue_log_file = os.path.join(
+            self.project_path, &#34;{}_queue.log&#34;.format(job_name)
+        )
+        with open(queue_log_file, &#34;w&#34;) as f:
+            f.write(&#34;&#34;)
+        print(
+            &#34;Start to monitor the queue... You can check the queue at: &lt;{}&gt;&#34;.format(
+                queue_log_file
+            )
+        )
+        subprocess.Popen(
+            [&#34;tail&#34;, &#34;-f&#34;, os.path.join(self.project_path, &#34;{}.log&#34;.format(job_name))]
+        )
         while True:
             time.sleep(0.25)
             if os.path.exists(
@@ -723,12 +861,15 @@ if __name__ == &#34;__main__&#34;:
                 )[1:]
                 if current_queue is None or current_queue != to_queue:
                     current_queue = to_queue
-                    print(&#34;Current queue:&#34;)
-                    # Tabulared print
-                    format_row = &#34;{:&gt;30}&#34; * (len(current_queue[0]))
-                    for user, status, nodes, node_list in current_queue:
-                        print(format_row.format(user, status, nodes, node_list))
-                    print()
+                    with open(queue_log_file, &#34;w&#34;) as f:
+                        text = &#34;Current queue:\n&#34;
+                        format_row = &#34;{:&gt;30}&#34; * (len(current_queue[0]))
+                        for user, status, nodes, node_list in current_queue:
+                            text += (
+                                format_row.format(user, status, nodes, node_list) + &#34;\n&#34;
+                            )
+                        text += &#34;\n&#34;
+                        f.write(text)
 
         # Wait for the job to finish while printing the log
         log_cursor_position = 0
@@ -747,8 +888,150 @@ if __name__ == &#34;__main__&#34;:
                         print(text, end=&#34;&#34;)
                     log_cursor_position = f.tell()
 
-        print(&#34;Job finished!&#34;)</code></pre>
+        print(&#34;Job finished!&#34;)
+
+    def __launch_server(self, cancel_old_jobs: bool = True):
+        &#34;&#34;&#34;Launch the server on the cluster and run the function using the ressources.
+
+        Args:
+            cancel_old_jobs (bool, optional): Whether or not to interrupt all the user&#39;s jobs on the cluster.
+        &#34;&#34;&#34;
+        connected = False
+        print(&#34;Connecting to the cluster...&#34;)
+        ssh_client = paramiko.SSHClient()
+        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        while not connected:
+            try:
+                # Add ssh key
+                ssh_key = getpass(&#34;Enter your cluster password: &#34;)
+                ssh_client.connect(
+                    hostname=self.server_ssh,
+                    username=self.server_username,
+                    password=ssh_key,
+                )
+                sftp = ssh_client.open_sftp()
+                connected = True
+            except paramiko.ssh_exception.AuthenticationException:
+                print(&#34;Wrong password, please try again.&#34;)
+
+        # Write server script
+        self.__write_server_script()
+
+        print(&#34;Downloading server...&#34;)
+        # Generate requirements.txt
+        subprocess.run(
+            [f&#34;pip freeze &gt; {self.project_path}/requirements.txt&#34;], shell=True
+        )
+        # Add slurmray --pre
+        with open(f&#34;{self.project_path}/requirements.txt&#34;, &#34;a&#34;) as file:
+            file.write(&#34;\nslurmray --pre&#34;)
+
+        # Copy files from the project to the server
+        for file in os.listdir(self.project_path):
+            if file.endswith(&#34;.py&#34;) or file.endswith(&#34;.pkl&#34;) or file.endswith(&#34;.sh&#34;):
+                sftp.put(os.path.join(self.project_path, file), file)
+        # Copy the requirements.txt to the server
+        sftp.put(
+            os.path.join(self.project_path, &#34;requirements.txt&#34;), &#34;requirements.txt&#34;
+        )
+        # Copy the server script to the server
+        sftp.put(
+            os.path.join(self.module_path, &#34;assets&#34;, &#34;slurmray_server.sh&#34;),
+            &#34;slurmray_server.sh&#34;,
+        )
+        # Chmod script
+        sftp.chmod(&#34;slurmray_server.sh&#34;, 0o755)
+
+        # Run the server
+        print(&#34;Running server...&#34;)
+        stdin, stdout, stderr = ssh_client.exec_command(&#34;./slurmray_server.sh&#34;)
+
+        # Read the output in real time
+        while True:
+            line = stdout.readline()
+            if not line:
+                break
+            print(line, end=&#34;&#34;)
+
+        # Downloading result
+        print(&#34;Downloading result...&#34;)
+        sftp.get(
+            &#34;slurmray-server/.slogs/server/result.pkl&#34;,
+            os.path.join(self.project_path, &#34;result.pkl&#34;),
+        )
+        print(&#34;Result downloaded!&#34;)
+
+    def __write_server_script(self):
+        &#34;&#34;&#34;This funtion will write a script with the given specifications to run slurmray on the cluster&#34;&#34;&#34;
+        print(&#34;Writing slurmray server script...&#34;)
+        template_file = os.path.join(
+            self.module_path, &#34;assets&#34;, &#34;slurmray_server_template.py&#34;
+        )
+
+        MODULES = self.modules
+        NODE_NBR = self.node_nbr
+        USE_GPU = self.use_gpu
+        MEMORY = self.memory
+        MAX_RUNNING_TIME = self.max_running_time
+
+        # ===== Modified the template script =====
+        with open(template_file, &#34;r&#34;) as f:
+            text = f.read()
+        text = text.replace(&#34;{{MODULES}}&#34;, str(MODULES))
+        text = text.replace(&#34;{{NODE_NBR}}&#34;, str(NODE_NBR))
+        text = text.replace(&#34;{{USE_GPU}}&#34;, str(USE_GPU))
+        text = text.replace(&#34;{{MEMORY}}&#34;, str(MEMORY))
+        text = text.replace(&#34;{{MAX_RUNNING_TIME}}&#34;, str(MAX_RUNNING_TIME))
+
+        # ===== Save the script =====
+        script_file = &#34;slurmray_server.py&#34;
+        with open(os.path.join(self.project_path, script_file), &#34;w&#34;) as f:
+            f.write(text)</code></pre>
 </details>
+<h3>Methods</h3>
+<dl>
+<dt id="RayLauncher.RayLauncher.serialize_func_and_args"><code class="name flex">
+<span>def <span class="ident">serialize_func_and_args</span></span>(<span>self, func: Callable = None, args: list = None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Serialize the function and the arguments</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>func</code></strong> :&ensp;<code>Callable</code>, optional</dt>
+<dd>Function to serialize. Defaults to None.</dd>
+<dt><strong><code>args</code></strong> :&ensp;<code>list</code>, optional</dt>
+<dd>Arguments of the function. Defaults to None.</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def serialize_func_and_args(self, func: Callable = None, args: list = None):
+    &#34;&#34;&#34;Serialize the function and the arguments
+
+    Args:
+        func (Callable, optional): Function to serialize. Defaults to None.
+        args (list, optional): Arguments of the function. Defaults to None.
+    &#34;&#34;&#34;
+    print(&#34;Serializing function and arguments...&#34;)
+
+    # Remove the old python script
+    for file in os.listdir(self.project_path):
+        if file.endswith(&#34;.pkl&#34;):
+            os.remove(os.path.join(self.project_path, file))
+
+    # Pickle the function
+    with open(os.path.join(self.project_path, &#34;func.pkl&#34;), &#34;wb&#34;) as f:
+        dill.dump(func, f)
+
+    # Pickle the arguments
+    if args is None:
+        args = {}
+    with open(os.path.join(self.project_path, &#34;args.pkl&#34;), &#34;wb&#34;) as f:
+        dill.dump(args, f)</code></pre>
+</details>
+</dd>
+</dl>
 </dd>
 </dl>
 </section>
@@ -763,6 +1046,9 @@ if __name__ == &#34;__main__&#34;:
 <ul>
 <li>
 <h4><code><a title="RayLauncher.RayLauncher" href="#RayLauncher.RayLauncher">RayLauncher</a></code></h4>
+<ul class="">
+<li><code><a title="RayLauncher.RayLauncher.serialize_func_and_args" href="#RayLauncher.RayLauncher.serialize_func_and_args">serialize_func_and_args</a></code></li>
+</ul>
 </li>
 </ul>
 </li>
