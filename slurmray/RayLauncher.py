@@ -459,11 +459,10 @@ if __name__ == "__main__":
     import torch
 
     def function_inside_function(x):
-        print("Checking if Cuda is available : {'Yes' if torch.cuda.is_available() else 'No'}")
         return ray.cluster_resources(), x + 1
 
     def example_func(x):
-        return function_inside_function(x)
+        return function_inside_function(x), torch.cuda.is_available()
 
     launcher = RayLauncher(
         project_name="example",
