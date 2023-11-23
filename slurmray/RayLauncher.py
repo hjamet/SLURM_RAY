@@ -7,6 +7,8 @@ import dill
 import paramiko
 from getpass import getpass
 
+dill.settings["recurse"] = True
+
 
 class RayLauncher:
     """A class that automatically connects RAY workers and executes the function requested by the user"""
@@ -460,11 +462,13 @@ class RayLauncher:
 #                             EXAMPLE OF EXECUTION                             #
 # ---------------------------------------------------------------------------- #
 if __name__ == "__main__":
+    import ray
+
+    def function_inside_function(x):
+        return ray.cluster_resources(), x + 1
 
     def example_func(x):
-        import ray
-
-        return ray.cluster_resources(), x + 1
+        return function_inside_function(x)
 
     launcher = RayLauncher(
         project_name="example",
@@ -472,9 +476,9 @@ if __name__ == "__main__":
         args={"x": 1},
         modules=[],
         node_nbr=1,
-        use_gpu=True,
-        memory=64,
-        max_running_time=15,
+        use_gpu=False,
+        memory=8,
+        max_running_time=5,
         server_run=True,
         server_ssh="curnagl.dcsr.unil.ch",
         server_username="hjamet",

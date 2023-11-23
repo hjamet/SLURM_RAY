@@ -20,9 +20,9 @@ pip install slurmray
 from slurmray.RayLauncher import RayLauncher
 
 if __name__ == "__main__":
-    import ray
-
     def example_func(x):
+        import ray # All packages and resources must be imported inside the function
+
         return ray.cluster_resources(), x + 1
 
     launcher = RayLauncher(
@@ -34,6 +34,9 @@ if __name__ == "__main__":
         use_gpu=True,
         memory=64,
         max_running_time=15,
+        server_run=True,
+        server_ssh="curnagl.dcsr.unil.ch",
+        server_username="hjamet",
     )
 
     result = launcher()
