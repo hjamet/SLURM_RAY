@@ -161,8 +161,6 @@ class RayLauncher:
         local_mode = ""
         if (self.cluster or self.server_run):
             "\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\n"
-        if self.use_gpu:
-            local_mode += f"num_gpus={self.node_nbr if (self.cluster or self.server_run) else 1},\n"
         text = text.replace(
             "{{LOCAL_MODE}}",
             local_mode,
