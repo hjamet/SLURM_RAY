@@ -456,13 +456,12 @@ class RayLauncher:
 # ---------------------------------------------------------------------------- #
 if __name__ == "__main__":
     import ray
-    import torch
 
     def function_inside_function(x):
         return ray.cluster_resources(), x + 1
 
     def example_func(x):
-        return function_inside_function(x), torch.cuda.is_available()
+        return function_inside_function(x)
 
     launcher = RayLauncher(
         project_name="example",
