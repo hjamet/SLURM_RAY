@@ -382,8 +382,16 @@ class RayLauncher:
             [f"pip freeze > {self.project_path}/requirements.txt"], shell=True
         )
         # Add slurmray --pre
-        with open(f"{self.project_path}/requirements.txt", "a") as file:
-            file.write("\nslurmray --pre")
+        with open(f"{self.project_path}/requirements.txt", "r") as file:
+            requirements  = file.read()
+            requirements += "\nslurmray --pre"
+        # Replace pytorch version with cu118
+        if "torch" in requirements:
+            for m in ["torch", "torchvision", "torchaudio"]:
+                requirements = requirements.replace(
+                    f"\n{m}==", f"\n{m}==2.1.1+cu118"
+                ) 
+            
 
         # Copy files from the project to the server
         for file in os.listdir(self.project_path):
