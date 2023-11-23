@@ -25,5 +25,8 @@ source .venv/bin/activate
 # Install requirements
 pip install -r requirements.txt
 
+# Change torch to cluster version
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 --upgrade
+
 # Run server
 python -u slurmray_server.py

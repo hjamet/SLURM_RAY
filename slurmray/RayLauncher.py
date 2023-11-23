@@ -386,12 +386,6 @@ class RayLauncher:
         with open(f"{self.project_path}/requirements.txt", "r") as file:
             requirements  = file.read()
             requirements += "\nslurmray --pre"
-        # Replace pytorch version with cu118
-        if "torch" in requirements:
-            for m in ["torch", "torchvision", "torchaudio"]:
-                requirements = requirements.replace(
-                    f"\n{m}==", f"\n{m}==2.1.1+cu118"
-                ) 
             
 
         # Copy files from the project to the server
@@ -462,8 +456,10 @@ class RayLauncher:
 # ---------------------------------------------------------------------------- #
 if __name__ == "__main__":
     import ray
+    import torch
 
     def function_inside_function(x):
+        print("Checking if Cuda is available : {'Yes' if torch.cuda.is_available() else 'No'}")
         return ray.cluster_resources(), x + 1
 
     def example_func(x):
