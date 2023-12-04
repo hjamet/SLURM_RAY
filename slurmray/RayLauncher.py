@@ -6,6 +6,7 @@ import os
 import dill
 import paramiko
 from getpass import getpass
+import re
 
 dill.settings["recurse"] = True
 
@@ -61,7 +62,7 @@ class RayLauncher:
             mod for mod in modules if mod not in ["gcc", "python/3.9.13"]
         ]
         if self.use_gpu is True and "cuda" not in self.modules:
-            self.modules += ["cuda/11.8.0", "cudnn"]
+            self.modules += ["cuda", "cudnn"]
 
         # Check if this code is running on a cluster
         self.cluster = os.path.exists("/usr/bin/sbatch")
@@ -90,7 +91,7 @@ class RayLauncher:
             Any: Result of the function
         """
         # Sereialize function and arguments
-        self.__serialize_func_and_args(self.func, self.args)
+        self.serialize_func_and_args(self.func, self.args)
 
         if self.cluster:
             print("Cluster detected, running on cluster...")
@@ -120,17 +121,26 @@ class RayLauncher:
 
         return result
     
-    def __push_file(self, file_path: str, sftp: paramiko.SFTPClient):
+    def __push_file(self, file_path: str, sftp: paramiko.SFTPClient, ssh_client: paramiko.SSHClient):
         """Push a file to the cluster
 
         Args:
             file_path (str): Path to the file to push. This path must be **relative** to the project directory.
         """
         print(f"Pushing file {os.path.basename(file_path)} to the cluster...")
+        
+        # Determine the path to the file
+        local_path = file_path
+        local_path_from_pwd = os.path.relpath(local_path, self.pwd_path)
+        cluster_path = os.path.join("/users", self.server_username, "slurmray-server", ".slogs", "server", local_path_from_pwd)
+        
+        # Create the directory if not exists
+        ssh_client.exec_command(f"mkdir -p '{os.path.dirname(cluster_path)}'")
+        
         # Copy the file to the server
-        sftp.put(file_path, os.path.join("slurmray-server", ".slogs", self.project_name, file_path))
+        sftp.put(file_path, cluster_path)
 
-    def __serialize_func_and_args(self, func: Callable = None, args: list = None):
+    def serialize_func_and_args(self, func: Callable = None, args: list = None):
         """Serialize the function and the arguments
 
         Args:
@@ -395,19 +405,33 @@ class RayLauncher:
         subprocess.run(
             [f"pip freeze > {self.project_path}/requirements.txt"], shell=True
         )
-        # Add slurmray --pre
-        with open(f"{self.project_path}/requirements.txt", "r") as file:
-            requirements  = file.read()
-            requirements += "\nslurmray --pre"
+        
+        with open(f"{self.project_path}/requirements.txt", 'r') as file:
+            lines = file.readlines()
+            # Add slurmray --pre
+            lines.append("slurmray --pre")
+            # Adapt torch version
+            lines = [re.sub(r'\ntorch==.*', 'torch', line) for line in lines]
+            lines = [re.sub(r'\ntorchvision==.*', 'torchvision', line) for line in lines]
+            lines = [re.sub(r'\ntorchaudio==.*', 'torchaudio', line) for line in lines]
+            lines = [re.sub(r'\nbitsandbytes==.*', 'bitsandbytes', line) for line in lines]
             
+        with open(f"{self.project_path}/requirements.txt", 'w') as file:
+            file.writelines(lines)
 
         # Copy files from the project to the server
         for file in os.listdir(self.project_path):
             if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".sh"):
                 sftp.put(os.path.join(self.project_path, file), file)
+                
+        
+        # Create the server directory and remove old files
+        ssh_client.exec_command(
+            "mkdir -p slurmray-server/.slogs/server && rm -rf slurmray-server/.slogs/server/*"
+        )
         # Copy user files to the server
         for file in self.files:
-            self.__push_file(file, sftp)
+            self.__push_file(file, sftp, ssh_client)
         # Copy the requirements.txt to the server
         sftp.put(
             os.path.join(self.project_path, "requirements.txt"), "requirements.txt"
@@ -474,8 +498,8 @@ if __name__ == "__main__":
     import ray
 
     def function_inside_function():
-        with open("Readme.md", "r") as f:
-            return f.read()
+        with open("slurmray/RayLauncher.py", "r") as f:
+            return f.read()[0:10]
 
     def example_func(x):
         result = ray.cluster_resources(), x + 1, function_inside_function()
@@ -485,7 +509,7 @@ if __name__ == "__main__":
         project_name="example",
         func=example_func,
         args={"x": 1},
-        files=["README.md", "LICENSE"],
+        files=["slurmray/RayLauncher.py"],
         modules=[],
         node_nbr=1,
         use_gpu=True,

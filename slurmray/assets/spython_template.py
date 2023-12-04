@@ -1,8 +1,12 @@
 import ray
 import dill
 import os
+import sys
 
 PROJECT_PATH = {{PROJECT_PATH}}
+
+# Add the project path to the python path
+sys.path.append(PROJECT_PATH)
 
 # Start the ray cluster
 ray.init({{LOCAL_MODE}})
