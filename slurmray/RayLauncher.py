@@ -135,7 +135,10 @@ class RayLauncher:
         cluster_path = os.path.join("/users", self.server_username, "slurmray-server", ".slogs", "server", local_path_from_pwd)
         
         # Create the directory if not exists
-        ssh_client.exec_command(f"mkdir -p '{os.path.dirname(cluster_path)}'")
+        
+        stdin, stdout, stderr = ssh_client.exec_command(f"mkdir -p '{os.path.dirname(cluster_path)}'")
+        while not stdout.channel.exit_status_ready():
+            time.sleep(0.25)
         
         # Copy the file to the server
         sftp.put(file_path, cluster_path)
@@ -411,10 +414,11 @@ class RayLauncher:
             # Add slurmray --pre
             lines.append("slurmray --pre")
             # Adapt torch version
-            lines = [re.sub(r'\ntorch==.*', 'torch', line) for line in lines]
-            lines = [re.sub(r'\ntorchvision==.*', 'torchvision', line) for line in lines]
-            lines = [re.sub(r'\ntorchaudio==.*', 'torchaudio', line) for line in lines]
-            lines = [re.sub(r'\nbitsandbytes==.*', 'bitsandbytes', line) for line in lines]
+            lines = [re.sub(r'\ntorch==.*', '`\ntorch', line) for line in lines]
+            lines = [re.sub(r'\ntorchvision==.*', '\ntorchvision', line) for line in lines]
+            lines = [re.sub(r'\ntorchaudio==.*', '\ntorchaudio', line) for line in lines]
+            lines = [re.sub(r'\nbitsandbytes==.*', '\nbitsandbytes', line) for line in lines]
+            lines = [re.sub(r'\nslurmray==.*', '\n', line) for line in lines]
             
         with open(f"{self.project_path}/requirements.txt", 'w') as file:
             file.writelines(lines)
