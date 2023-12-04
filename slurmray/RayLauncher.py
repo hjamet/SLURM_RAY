@@ -421,7 +421,7 @@ class RayLauncher:
             lines = [re.sub(r'\ntorch==.*', '`\ntorch', line) for line in lines]
             lines = [re.sub(r'\ntorchvision==.*', '\ntorchvision', line) for line in lines]
             lines = [re.sub(r'\ntorchaudio==.*', '\ntorchaudio', line) for line in lines]
-            lines = [re.sub(r'\nbitsandbytes==.*', '\nbitsandbytes', line) for line in lines]
+            lines = [re.sub(r'\nbitsandbytes==.*', '\nbitsandbytes --global-option="--cuda_ext"', line) for line in lines]
             lines = [re.sub(r'\nslurmray==.*', '\n', line) for line in lines]
             
         with open(f"{self.project_path}/requirements.txt", 'w') as file:
@@ -504,13 +504,14 @@ class RayLauncher:
 # ---------------------------------------------------------------------------- #
 if __name__ == "__main__":
     import ray
+    import torch
 
     def function_inside_function():
         with open("slurmray/RayLauncher.py", "r") as f:
             return f.read()[0:10]
 
     def example_func(x):
-        result = ray.cluster_resources(), x + 1, function_inside_function()
+        result = ray.cluster_resources(), f"GPU is availalble : {torch.cuda.is_available()}", x + 1, function_inside_function()
         return result
 
     launcher = RayLauncher(

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "slurmray"
-version = "3.5.0"
+version = "3.5.1"
 description = "SlurmRay is a module for effortlessly distributing tasks on a Slurm cluster using the Ray library. "
 authors = ["Henri Jamet <henri.jamet@unil.ch>"]
 license = "Apache License"
@@ -14,6 +14,7 @@ dill = "^0.3.7"
 ray = {extras = ["data", "serve", "train", "tune"], version = "^2.7.1"}
 pdoc3 = "^0.10.0"
 paramiko = "^3.3.1"
+torch = "^2.1.1"
 
 
 [tool.poetry.group.dev.dependencies]
