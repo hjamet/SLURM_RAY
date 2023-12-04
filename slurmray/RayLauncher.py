@@ -132,13 +132,17 @@ class RayLauncher:
         # Determine the path to the file
         local_path = file_path
         local_path_from_pwd = os.path.relpath(local_path, self.pwd_path)
-        cluster_path = os.path.join("/users", self.server_username, "slurmray-server", ".slogs", "server", local_path_from_pwd)
+        cluster_path = os.path.join("/users", self.server_username, "slurmray-server", local_path_from_pwd)
         
         # Create the directory if not exists
         
         stdin, stdout, stderr = ssh_client.exec_command(f"mkdir -p '{os.path.dirname(cluster_path)}'")
-        while not stdout.channel.exit_status_ready():
-            time.sleep(0.25)
+        while True:
+            line = stdout.readline()
+            if not line:
+                break
+            print(line, end="")
+        time.sleep(1) # Wait for the directory to be created
         
         # Copy the file to the server
         sftp.put(file_path, cluster_path)
