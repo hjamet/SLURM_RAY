@@ -17,6 +17,6 @@ if __name__ == "__main__":
     )
     
     # Remove serialization
-    launcher.serialize_func_and_args = lambda *args, **kwargs : print("No serialization done.")
+    launcher.__serialize_func_and_args = lambda *args, **kwargs : print("No serialization done.")
 
     result = launcher()

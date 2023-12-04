@@ -18,6 +18,7 @@ class RayLauncher:
         project_name: str = None,
         func: Callable = None,
         args: dict = None,
+        files: List[str] = [],
         modules: List[str] = [],
         node_nbr: int = 1,
         use_gpu: bool = False,
@@ -33,6 +34,7 @@ class RayLauncher:
             project_name (str, optional): Name of the project. Defaults to None.
             func (Callable, optional): Function to execute. This function should not be remote but can use ray ressources. Defaults to None.
             args (dict, optional): Arguments of the function. Defaults to None.
+            files (List[str], optional): List of files to push to the cluster. This path must be **relative** to the project directory. Defaults to [].
             modules (List[str], optional): List of modules to load on the curnagl Cluster. Use `module spider` to see available modules. Defaults to None.
             node_nbr (int, optional): Number of nodes to use. Defaults to 1.
             use_gpu (bool, optional): Use GPU or not. Defaults to False.
@@ -46,6 +48,7 @@ class RayLauncher:
         self.project_name = project_name
         self.func = func
         self.args = args
+        self.files = files
         self.node_nbr = node_nbr
         self.use_gpu = use_gpu
         self.memory = memory
@@ -87,7 +90,7 @@ class RayLauncher:
             Any: Result of the function
         """
         # Sereialize function and arguments
-        self.serialize_func_and_args(self.func, self.args)
+        self.__serialize_func_and_args(self.func, self.args)
 
         if self.cluster:
             print("Cluster detected, running on cluster...")
@@ -116,8 +119,18 @@ class RayLauncher:
             result = dill.load(f)
 
         return result
+    
+    def __push_file(self, file_path: str, sftp: paramiko.SFTPClient):
+        """Push a file to the cluster
 
-    def serialize_func_and_args(self, func: Callable = None, args: list = None):
+        Args:
+            file_path (str): Path to the file to push. This path must be **relative** to the project directory.
+        """
+        print(f"Pushing file {os.path.basename(file_path)} to the cluster...")
+        # Copy the file to the server
+        sftp.put(file_path, os.path.join("slurmray-server", ".slogs", self.project_name, file_path))
+
+    def __serialize_func_and_args(self, func: Callable = None, args: list = None):
         """Serialize the function and the arguments
 
         Args:
@@ -392,6 +405,9 @@ class RayLauncher:
         for file in os.listdir(self.project_path):
             if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".sh"):
                 sftp.put(os.path.join(self.project_path, file), file)
+        # Copy user files to the server
+        for file in self.files:
+            self.__push_file(file, sftp)
         # Copy the requirements.txt to the server
         sftp.put(
             os.path.join(self.project_path, "requirements.txt"), "requirements.txt"
@@ -457,16 +473,19 @@ class RayLauncher:
 if __name__ == "__main__":
     import ray
 
-    def function_inside_function(x):
-        return ray.cluster_resources(), x + 1
+    def function_inside_function():
+        with open("Readme.md", "r") as f:
+            return f.read()
 
     def example_func(x):
-        return function_inside_function(x)
+        result = ray.cluster_resources(), x + 1, function_inside_function()
+        return result
 
     launcher = RayLauncher(
         project_name="example",
         func=example_func,
         args={"x": 1},
+        files=["README.md", "LICENSE"],
         modules=[],
         node_nbr=1,
         use_gpu=True,
