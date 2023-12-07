@@ -415,14 +415,11 @@ class RayLauncher:
         
         with open(f"{self.project_path}/requirements.txt", 'r') as file:
             lines = file.readlines()
+            # Adapt dependencies for the cluster
+            lines = [re.sub(r'\nbitsandbytes\n.*', '\nbitsandbytes --global-option="--cuda_ext"', line) for line in lines]
+            lines = [re.sub(r'\nslurmray\n.*', '\n', line) for line in lines]
             # Add slurmray --pre
             lines.append("slurmray --pre")
-            # Adapt torch version
-            lines = [re.sub(r'\ntorch==.*', '`\ntorch', line) for line in lines]
-            lines = [re.sub(r'\ntorchvision==.*', '\ntorchvision', line) for line in lines]
-            lines = [re.sub(r'\ntorchaudio==.*', '\ntorchaudio', line) for line in lines]
-            lines = [re.sub(r'\nbitsandbytes==.*', '\nbitsandbytes --global-option="--cuda_ext"', line) for line in lines]
-            lines = [re.sub(r'\nslurmray==.*', '\n', line) for line in lines]
             
         with open(f"{self.project_path}/requirements.txt", 'w') as file:
             file.writelines(lines)
