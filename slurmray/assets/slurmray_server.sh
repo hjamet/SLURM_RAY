@@ -8,7 +8,7 @@ mv -t slurmray-server/.slogs/server func.pkl args.pkl
 cd slurmray-server
 
 # Load modules
-module load gcc python/3.9.13
+module load gcc python/3.9.13 cuda cudnn
 
 # Check if venv exists
 if [ ! -d ".venv" ]; then
@@ -17,10 +17,7 @@ fi
 source .venv/bin/activate
 
 # Install requirements
-pip install -r requirements.txt
-
-# Change torch to cluster version
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 --upgrade
+pip3 install -r requirements.txt
 
 # Run server
 python -u slurmray_server.py
