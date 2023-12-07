@@ -410,7 +410,7 @@ class RayLauncher:
         print("Downloading server...")
         # Generate requirements.txt
         subprocess.run(
-            [f"pip freeze > {self.project_path}/requirements.txt"], shell=True
+            [f"pip-chill --no-version > {self.project_path}/requirements.txt"], shell=True
         )
         
         with open(f"{self.project_path}/requirements.txt", 'r') as file:
