@@ -19,5 +19,9 @@ source .venv/bin/activate
 # Install requirements
 pip3 install -r requirements.txt
 
+# Fix torch bug (https://github.com/pytorch/pytorch/issues/111469)
+export LD_LIBRARY_PATH=$HOME/slurmray-server/.venv/lib/python3.9/site-packages/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH
+
+
 # Run server
 python -u slurmray_server.py

@@ -120,30 +120,36 @@ class RayLauncher:
             result = dill.load(f)
 
         return result
-    
-    def __push_file(self, file_path: str, sftp: paramiko.SFTPClient, ssh_client: paramiko.SSHClient):
+
+    def __push_file(
+        self, file_path: str, sftp: paramiko.SFTPClient, ssh_client: paramiko.SSHClient
+    ):
         """Push a file to the cluster
 
         Args:
             file_path (str): Path to the file to push. This path must be **relative** to the project directory.
         """
         print(f"Pushing file {os.path.basename(file_path)} to the cluster...")
-        
+
         # Determine the path to the file
         local_path = file_path
         local_path_from_pwd = os.path.relpath(local_path, self.pwd_path)
-        cluster_path = os.path.join("/users", self.server_username, "slurmray-server", local_path_from_pwd)
-        
+        cluster_path = os.path.join(
+            "/users", self.server_username, "slurmray-server", local_path_from_pwd
+        )
+
         # Create the directory if not exists
-        
-        stdin, stdout, stderr = ssh_client.exec_command(f"mkdir -p '{os.path.dirname(cluster_path)}'")
+
+        stdin, stdout, stderr = ssh_client.exec_command(
+            f"mkdir -p '{os.path.dirname(cluster_path)}'"
+        )
         while True:
             line = stdout.readline()
             if not line:
                 break
             print(line, end="")
-        time.sleep(1) # Wait for the directory to be created
-        
+        time.sleep(1)  # Wait for the directory to be created
+
         # Copy the file to the server
         sftp.put(file_path, cluster_path)
 
@@ -189,7 +195,7 @@ class RayLauncher:
 
         text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path}"')
         local_mode = ""
-        if (self.cluster or self.server_run):
+        if self.cluster or self.server_run:
             "\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\n"
         text = text.replace(
             "{{LOCAL_MODE}}",
@@ -410,26 +416,34 @@ class RayLauncher:
         print("Downloading server...")
         # Generate requirements.txt
         subprocess.run(
-            [f"pip-chill --no-version > {self.project_path}/requirements.txt"], shell=True
+            [f"pip-chill --no-version > {self.project_path}/requirements.txt"],
+            shell=True,
         )
-        
-        with open(f"{self.project_path}/requirements.txt", 'r') as file:
+
+        with open(f"{self.project_path}/requirements.txt", "r") as file:
             lines = file.readlines()
             # Adapt dependencies for the cluster
-            lines = [re.sub(r'\nbitsandbytes\n.*', '\nbitsandbytes --global-option="--cuda_ext"', line) for line in lines]
-            lines = [re.sub(r'\nslurmray\n.*', '\n', line) for line in lines]
+            # Adapt torch version (not needed anymore)
+            # lines = [re.sub(r"torch\n", "torch==2.0.1\n", line) for line in lines]
+            # lines = [re.sub(r'torchvision\n', 'torchvision --pre --index-url https://download.pytorch.org/whl/nightly/cu121\n', line) for line in lines]
+            # lines = [re.sub(r'torchaudio\n', 'torchaudio --pre --index-url https://download.pytorch.org/whl/nightly/cu121\n', line) for line in lines]
+
+            # lines = [re.sub(r'bitsandbytes\n', 'bitsandbytes --global-option="--cuda_ext"\n', line) for line in lines]
+            lines = [re.sub(r"slurmray\n", "", line) for line in lines]
             # Add slurmray --pre
-            lines.append("slurmray --pre")
-            
-        with open(f"{self.project_path}/requirements.txt", 'w') as file:
+            lines.append("slurmray --pre\n")
+            # Solve torch buf (https://github.com/pytorch/pytorch/issues/111469)
+            if "torchaudio\n" or "torchvision\n" in lines:
+                lines.append("torch==2.0.1\n")
+
+        with open(f"{self.project_path}/requirements.txt", "w") as file:
             file.writelines(lines)
 
         # Copy files from the project to the server
         for file in os.listdir(self.project_path):
             if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".sh"):
                 sftp.put(os.path.join(self.project_path, file), file)
-                
-        
+
         # Create the server directory and remove old files
         ssh_client.exec_command(
             "mkdir -p slurmray-server/.slogs/server && rm -rf slurmray-server/.slogs/server/*"
@@ -508,7 +522,12 @@ if __name__ == "__main__":
             return f.read()[0:10]
 
     def example_func(x):
-        result = ray.cluster_resources(), f"GPU is availalble : {torch.cuda.is_available()}", x + 1, function_inside_function()
+        result = (
+            ray.cluster_resources(),
+            f"GPU is available : {torch.cuda.is_available()}",
+            x + 1,
+            function_inside_function(),
+        )
         return result
 
     launcher = RayLauncher(
