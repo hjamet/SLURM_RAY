@@ -25,6 +25,7 @@ class RayLauncher:
         use_gpu: bool = False,
         memory: int = 64,
         max_running_time: int = 60,
+        runtime_env: dict = {"env_vars": {}},
         server_run: bool = True,
         server_ssh: str = "curnagl.dcsr.unil.ch",
         server_username: str = "hjamet",
@@ -41,6 +42,7 @@ class RayLauncher:
             use_gpu (bool, optional): Use GPU or not. Defaults to False.
             memory (int, optional): Amount of RAM to use per node in GigaBytes. Defaults to 64.
             max_running_time (int, optional): Maximum running time of the job in minutes. Defaults to 60.
+            runtime_env (dict, optional): Environment variables to share between all the workers. Can be useful for issues like https://github.com/ray-project/ray/issues/418. Default to empty.
             server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster ressources. Defaults to True.
             server_ssh (str, optional): If `server_run` is set to true, the addess of the **SLURM** server to use.
             server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect.
@@ -54,6 +56,7 @@ class RayLauncher:
         self.use_gpu = use_gpu
         self.memory = memory
         self.max_running_time = max_running_time
+        self.runtime_env = runtime_env
         self.server_run = server_run
         self.server_ssh = server_ssh
         self.server_username = server_username
@@ -196,7 +199,7 @@ class RayLauncher:
         text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path}"')
         local_mode = ""
         if self.cluster or self.server_run:
-            "\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\n"
+            f"\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\nruntime_env = {self.runtime_env},\n"
         text = text.replace(
             "{{LOCAL_MODE}}",
             local_mode,
@@ -540,6 +543,7 @@ if __name__ == "__main__":
         use_gpu=True,
         memory=8,
         max_running_time=5,
+        runtime_env={"env_vars": {"NCCL_SOCKET_IFNAME": "eno1"}},
         server_run=True,
         server_ssh="curnagl.dcsr.unil.ch",
         server_username="hjamet",
