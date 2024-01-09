@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "slurmray"
-version = "3.5.5"
+version = "3.5.6"
 description = "SlurmRay is a module for effortlessly distributing tasks on a Slurm cluster using the Ray library. "
 authors = ["Henri Jamet <henri.jamet@unil.ch>"]
 license = "Apache License"
