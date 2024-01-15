@@ -437,7 +437,8 @@ class RayLauncher:
             lines.append("slurmray --pre\n")
             # Solve torch buf (https://github.com/pytorch/pytorch/issues/111469)
             if "torchaudio\n" or "torchvision\n" in lines:
-                lines.append("torch==2.0.1\n")
+                lines.append("torch==2.1.1\n")
+                lines.append("--index-url https://download.pytorch.org/whl/cu121\n")
 
         with open(f"{self.project_path}/requirements.txt", "w") as file:
             file.writelines(lines)
