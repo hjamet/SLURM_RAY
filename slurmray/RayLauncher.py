@@ -29,6 +29,7 @@ class RayLauncher:
         server_run: bool = True,
         server_ssh: str = "curnagl.dcsr.unil.ch",
         server_username: str = "hjamet",
+        server_password: str = None,
     ):
         """Initialize the launcher
 
@@ -46,6 +47,7 @@ class RayLauncher:
             server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster ressources. Defaults to True.
             server_ssh (str, optional): If `server_run` is set to true, the addess of the **SLURM** server to use.
             server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect.
+            server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. CAUTION: never write your password in the code. Defaults to None.
         """
         # Save the parameters
         self.project_name = project_name
@@ -60,6 +62,7 @@ class RayLauncher:
         self.server_run = server_run
         self.server_ssh = server_ssh
         self.server_username = server_username
+        self.server_password = server_password
 
         self.modules = ["gcc", "python/3.9.13"] + [
             mod for mod in modules if mod not in ["gcc", "python/3.9.13"]
@@ -401,16 +404,19 @@ class RayLauncher:
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         while not connected:
             try:
-                # Add ssh key
-                ssh_key = getpass("Enter your cluster password: ")
+                if self.server_password is None:
+                    # Add ssh key
+                    self.server_password = getpass("Enter your cluster password: ")
+                
                 ssh_client.connect(
                     hostname=self.server_ssh,
                     username=self.server_username,
-                    password=ssh_key,
+                    password=self.server_password,
                 )
                 sftp = ssh_client.open_sftp()
                 connected = True
             except paramiko.ssh_exception.AuthenticationException:
+                self.server_password = None
                 print("Wrong password, please try again.")
 
         # Write server script
