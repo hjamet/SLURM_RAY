@@ -541,19 +541,20 @@ if __name__ == "__main__":
         return result
 
     launcher = RayLauncher(
-        project_name="example",
-        func=example_func,
-        args={"x": 1},
-        files=["slurmray/RayLauncher.py"],
-        modules=[],
-        node_nbr=1,
-        use_gpu=True,
-        memory=8,
-        max_running_time=5,
-        runtime_env={"env_vars": {"NCCL_SOCKET_IFNAME": "eno1"}},
-        server_run=True,
-        server_ssh="curnagl.dcsr.unil.ch",
-        server_username="hjamet",
+        project_name="example", # Name of the project (will create a directory with this name in the current directory)
+        func=example_func, # Function to execute
+        args={"x": 1}, # Arguments of the function
+        files=["slurmray/RayLauncher.py"], # List of files to push to the cluster (file path will be recreated on the cluster)
+        modules=[], # List of modules to load on the curnagl Cluster (CUDA & CUDNN are automatically added if use_gpu=True)
+        node_nbr=1, # Number of nodes to use
+        use_gpu=True, # If you need A100 GPU, you can set it to True
+        memory=8, # In MegaBytes
+        max_running_time=5, # In minutes
+        runtime_env={"env_vars": {"NCCL_SOCKET_IFNAME": "eno1"}}, # Example of environment variable
+        server_run=True, # To run the code on the cluster and not locally
+        server_ssh="curnagl.dcsr.unil.ch", # Address of the SLURM server
+        server_username="hjamet", # Username to connect to the server
+        server_password=None, # Will be asked in the terminal
     )
 
     result = launcher()

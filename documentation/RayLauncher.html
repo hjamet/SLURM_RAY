@@ -569,19 +569,20 @@ if __name__ == &#34;__main__&#34;:
         return result
 
     launcher = RayLauncher(
-        project_name=&#34;example&#34;,
-        func=example_func,
-        args={&#34;x&#34;: 1},
-        files=[&#34;slurmray/RayLauncher.py&#34;],
-        modules=[],
-        node_nbr=1,
-        use_gpu=True,
-        memory=8,
-        max_running_time=5,
-        runtime_env={&#34;env_vars&#34;: {&#34;NCCL_SOCKET_IFNAME&#34;: &#34;eno1&#34;}},
-        server_run=True,
-        server_ssh=&#34;curnagl.dcsr.unil.ch&#34;,
-        server_username=&#34;hjamet&#34;,
+        project_name=&#34;example&#34;, # Name of the project (will create a directory with this name in the current directory)
+        func=example_func, # Function to execute
+        args={&#34;x&#34;: 1}, # Arguments of the function
+        files=[&#34;slurmray/RayLauncher.py&#34;], # List of files to push to the cluster (file path will be recreated on the cluster)
+        modules=[], # List of modules to load on the curnagl Cluster (CUDA &amp; CUDNN are automatically added if use_gpu=True)
+        node_nbr=1, # Number of nodes to use
+        use_gpu=True, # If you need A100 GPU, you can set it to True
+        memory=8, # In MegaBytes
+        max_running_time=5, # In minutes
+        runtime_env={&#34;env_vars&#34;: {&#34;NCCL_SOCKET_IFNAME&#34;: &#34;eno1&#34;}}, # Example of environment variable
+        server_run=True, # To run the code on the cluster and not locally
+        server_ssh=&#34;curnagl.dcsr.unil.ch&#34;, # Address of the SLURM server
+        server_username=&#34;hjamet&#34;, # Username to connect to the server
+        server_password=None, # Will be asked in the terminal
     )
 
     result = launcher()

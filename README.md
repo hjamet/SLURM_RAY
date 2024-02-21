@@ -18,27 +18,42 @@ pip install slurmray
 
 ```python
 from slurmray.RayLauncher import RayLauncher
+import ray
+import torch
 
-if __name__ == "__main__":
-    def example_func(x):
-        import ray # All packages and resources must be imported inside the function
+def function_inside_function():
+    with open("slurmray/RayLauncher.py", "r") as f:
+        return f.read()[0:10]
 
-        return ray.cluster_resources(), x + 1
-
-    launcher = RayLauncher(
-        project_name="example",
-        func=example_func,
-        args={"x": 1},
-        modules=[],
-        node_nbr=1,
-        use_gpu=True,
-        memory=64,
-        max_running_time=15,
-        server_run=True,
-        server_ssh="curnagl.dcsr.unil.ch",
-        server_username="hjamet",
+def example_func(x):
+    result = (
+        ray.cluster_resources(),
+        f"GPU is available : {torch.cuda.is_available()}",
+        x + 1,
+        function_inside_function(),
     )
+    return result
 
-    result = launcher()
-    print(result)
+launcher = RayLauncher(
+    project_name="example", # Name of the project (will create a directory with this name in the current directory)
+    func=example_func, # Function to execute
+    args={"x": 1}, # Arguments of the function
+    files=["slurmray/RayLauncher.py"], # List of files to push to the cluster (file path will be recreated on the cluster)
+    modules=[], # List of modules to load on the curnagl Cluster (CUDA & CUDNN are automatically added if use_gpu=True)
+    node_nbr=1, # Number of nodes to use
+    use_gpu=True, # If you need A100 GPU, you can set it to True
+    memory=8, # In MegaBytes
+    max_running_time=5, # In minutes
+    runtime_env={"env_vars": {"NCCL_SOCKET_IFNAME": "eno1"}}, # Example of environment variable
+    server_run=True, # To run the code on the cluster and not locally
+    server_ssh="curnagl.dcsr.unil.ch", # Address of the SLURM server
+    server_username="hjamet", # Username to connect to the server
+    server_password=None, # Will be asked in the terminal
+)
+
+result = launcher()
+print(result)
 ```
+## Full documentation
+
+The full documentation is available [here](https://htmlpreview.github.io/?https://raw.githubusercontent.com/hjamet/SLURM_RAY/main/documentation/RayLauncher.html).
