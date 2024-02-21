@@ -54,6 +54,6 @@ launcher = RayLauncher(
 result = launcher()
 print(result)
 ```
-## Full documentation
+## Launcher documentation
 
-The full documentation is available [here](https://htmlpreview.github.io/?https://raw.githubusercontent.com/hjamet/SLURM_RAY/main/documentation/RayLauncher.html).
+The Launcher documentation is available [here](https://htmlpreview.github.io/?https://raw.githubusercontent.com/hjamet/SLURM_RAY/main/documentation/RayLauncher.html).
