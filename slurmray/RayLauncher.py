@@ -97,7 +97,7 @@ class RayLauncher:
             Any: Result of the function
         """
         # Sereialize function and arguments
-        self.serialize_func_and_args(self.func, self.args)
+        self.__serialize_func_and_args(self.func, self.args)
 
         if self.cluster:
             print("Cluster detected, running on cluster...")
@@ -159,7 +159,7 @@ class RayLauncher:
         # Copy the file to the server
         sftp.put(file_path, cluster_path)
 
-    def serialize_func_and_args(self, func: Callable = None, args: list = None):
+    def __serialize_func_and_args(self, func: Callable = None, args: list = None):
         """Serialize the function and the arguments
 
         Args:

@@ -34,6 +34,9 @@ import os
 import dill
 import paramiko
 from getpass import getpass
+import re
+
+dill.settings[&#34;recurse&#34;] = True
 
 
 class RayLauncher:
@@ -44,14 +47,17 @@ class RayLauncher:
         project_name: str = None,
         func: Callable = None,
         args: dict = None,
+        files: List[str] = [],
         modules: List[str] = [],
         node_nbr: int = 1,
         use_gpu: bool = False,
         memory: int = 64,
         max_running_time: int = 60,
+        runtime_env: dict = {&#34;env_vars&#34;: {}},
         server_run: bool = True,
         server_ssh: str = &#34;curnagl.dcsr.unil.ch&#34;,
         server_username: str = &#34;hjamet&#34;,
+        server_password: str = None,
     ):
         &#34;&#34;&#34;Initialize the launcher
 
@@ -59,32 +65,38 @@ class RayLauncher:
             project_name (str, optional): Name of the project. Defaults to None.
             func (Callable, optional): Function to execute. This function should not be remote but can use ray ressources. Defaults to None.
             args (dict, optional): Arguments of the function. Defaults to None.
+            files (List[str], optional): List of files to push to the cluster. This path must be **relative** to the project directory. Defaults to [].
             modules (List[str], optional): List of modules to load on the curnagl Cluster. Use `module spider` to see available modules. Defaults to None.
             node_nbr (int, optional): Number of nodes to use. Defaults to 1.
             use_gpu (bool, optional): Use GPU or not. Defaults to False.
             memory (int, optional): Amount of RAM to use per node in GigaBytes. Defaults to 64.
             max_running_time (int, optional): Maximum running time of the job in minutes. Defaults to 60.
+            runtime_env (dict, optional): Environment variables to share between all the workers. Can be useful for issues like https://github.com/ray-project/ray/issues/418. Default to empty.
             server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster ressources. Defaults to True.
             server_ssh (str, optional): If `server_run` is set to true, the addess of the **SLURM** server to use.
             server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect.
+            server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. CAUTION: never write your password in the code. Defaults to None.
         &#34;&#34;&#34;
         # Save the parameters
         self.project_name = project_name
         self.func = func
         self.args = args
+        self.files = files
         self.node_nbr = node_nbr
         self.use_gpu = use_gpu
         self.memory = memory
         self.max_running_time = max_running_time
+        self.runtime_env = runtime_env
         self.server_run = server_run
         self.server_ssh = server_ssh
         self.server_username = server_username
+        self.server_password = server_password
 
         self.modules = [&#34;gcc&#34;, &#34;python/3.9.13&#34;] + [
             mod for mod in modules if mod not in [&#34;gcc&#34;, &#34;python/3.9.13&#34;]
         ]
         if self.use_gpu is True and &#34;cuda&#34; not in self.modules:
-            self.modules += [&#34;cuda/11.8.0&#34;, &#34;cudnn&#34;]
+            self.modules += [&#34;cuda&#34;, &#34;cudnn&#34;]
 
         # Check if this code is running on a cluster
         self.cluster = os.path.exists(&#34;/usr/bin/sbatch&#34;)
@@ -113,7 +125,7 @@ class RayLauncher:
             Any: Result of the function
         &#34;&#34;&#34;
         # Sereialize function and arguments
-        self.serialize_func_and_args(self.func, self.args)
+        self.__serialize_func_and_args(self.func, self.args)
 
         if self.cluster:
             print(&#34;Cluster detected, running on cluster...&#34;)
@@ -143,7 +155,39 @@ class RayLauncher:
 
         return result
 
-    def serialize_func_and_args(self, func: Callable = None, args: list = None):
+    def __push_file(
+        self, file_path: str, sftp: paramiko.SFTPClient, ssh_client: paramiko.SSHClient
+    ):
+        &#34;&#34;&#34;Push a file to the cluster
+
+        Args:
+            file_path (str): Path to the file to push. This path must be **relative** to the project directory.
+        &#34;&#34;&#34;
+        print(f&#34;Pushing file {os.path.basename(file_path)} to the cluster...&#34;)
+
+        # Determine the path to the file
+        local_path = file_path
+        local_path_from_pwd = os.path.relpath(local_path, self.pwd_path)
+        cluster_path = os.path.join(
+            &#34;/users&#34;, self.server_username, &#34;slurmray-server&#34;, local_path_from_pwd
+        )
+
+        # Create the directory if not exists
+
+        stdin, stdout, stderr = ssh_client.exec_command(
+            f&#34;mkdir -p &#39;{os.path.dirname(cluster_path)}&#39;&#34;
+        )
+        while True:
+            line = stdout.readline()
+            if not line:
+                break
+            print(line, end=&#34;&#34;)
+        time.sleep(1)  # Wait for the directory to be created
+
+        # Copy the file to the server
+        sftp.put(file_path, cluster_path)
+
+    def __serialize_func_and_args(self, func: Callable = None, args: list = None):
         &#34;&#34;&#34;Serialize the function and the arguments
 
         Args:
@@ -184,13 +228,12 @@ class RayLauncher:
             text = f.read()
 
         text = text.replace(&#34;{{PROJECT_PATH}}&#34;, f&#39;&#34;{self.project_path}&#34;&#39;)
+        local_mode = &#34;&#34;
+        if self.cluster or self.server_run:
+            f&#34;\n\taddress=&#39;auto&#39;,\n\tinclude_dashboard=True,\n\tdashboard_host=&#39;0.0.0.0&#39;,\n\tdashboard_port=8888,\nruntime_env = {self.runtime_env},\n&#34;
         text = text.replace(
             &#34;{{LOCAL_MODE}}&#34;,
-            str(
-                f&#34;&#34;
-                if not (self.cluster or self.server_run)
-                else &#34;\n\taddress=&#39;auto&#39;,\n\tinclude_dashboard=True,\n\tdashboard_host=&#39;0.0.0.0&#39;,\n\tdashboard_port=8888,\n&#34;
-            ),
+            local_mode,
         )
         with open(os.path.join(self.project_path, &#34;spython.py&#34;), &#34;w&#34;) as f:
             f.write(text)
@@ -389,16 +432,19 @@ class RayLauncher:
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         while not connected:
             try:
-                # Add ssh key
-                ssh_key = getpass(&#34;Enter your cluster password: &#34;)
+                if self.server_password is None:
+                    # Add ssh key
+                    self.server_password = getpass(&#34;Enter your cluster password: &#34;)
+                
                 ssh_client.connect(
                     hostname=self.server_ssh,
                     username=self.server_username,
-                    password=ssh_key,
+                    password=self.server_password,
                 )
                 sftp = ssh_client.open_sftp()
                 connected = True
             except paramiko.ssh_exception.AuthenticationException:
+                self.server_password = None
                 print(&#34;Wrong password, please try again.&#34;)
 
         # Write server script
@@ -407,16 +453,42 @@ class RayLauncher:
         print(&#34;Downloading server...&#34;)
         # Generate requirements.txt
         subprocess.run(
-            [f&#34;pip freeze &gt; {self.project_path}/requirements.txt&#34;], shell=True
+            [f&#34;pip-chill --no-version &gt; {self.project_path}/requirements.txt&#34;],
+            shell=True,
         )
-        # Add slurmray --pre
-        with open(f&#34;{self.project_path}/requirements.txt&#34;, &#34;a&#34;) as file:
-            file.write(&#34;\nslurmray --pre&#34;)
+
+        with open(f&#34;{self.project_path}/requirements.txt&#34;, &#34;r&#34;) as file:
+            lines = file.readlines()
+            # Adapt dependencies for the cluster
+            # Adapt torch version (not needed anymore)
+            # lines = [re.sub(r&#34;torch\n&#34;, &#34;torch==2.0.1\n&#34;, line) for line in lines]
+            # lines = [re.sub(r&#39;torchvision\n&#39;, &#39;torchvision --pre --index-url https://download.pytorch.org/whl/nightly/cu121\n&#39;, line) for line in lines]
+            # lines = [re.sub(r&#39;torchaudio\n&#39;, &#39;torchaudio --pre --index-url https://download.pytorch.org/whl/nightly/cu121\n&#39;, line) for line in lines]
+
+            # lines = [re.sub(r&#39;bitsandbytes\n&#39;, &#39;bitsandbytes --global-option=&#34;--cuda_ext&#34;\n&#39;, line) for line in lines]
+            lines = [re.sub(r&#34;slurmray\n&#34;, &#34;&#34;, line) for line in lines]
+            # Add slurmray --pre
+            lines.append(&#34;slurmray --pre\n&#34;)
+            # Solve torch buf (https://github.com/pytorch/pytorch/issues/111469)
+            if &#34;torchaudio\n&#34; or &#34;torchvision\n&#34; in lines:
+                lines.append(&#34;torch==2.1.1\n&#34;)
+                lines.append(&#34;--index-url https://download.pytorch.org/whl/cu121\n&#34;)
+
+        with open(f&#34;{self.project_path}/requirements.txt&#34;, &#34;w&#34;) as file:
+            file.writelines(lines)
 
         # Copy files from the project to the server
         for file in os.listdir(self.project_path):
             if file.endswith(&#34;.py&#34;) or file.endswith(&#34;.pkl&#34;) or file.endswith(&#34;.sh&#34;):
                 sftp.put(os.path.join(self.project_path, file), file)
+
+        # Create the server directory and remove old files
+        ssh_client.exec_command(
+            &#34;mkdir -p slurmray-server/.slogs/server &amp;&amp; rm -rf slurmray-server/.slogs/server/*&#34;
+        )
+        # Copy user files to the server
+        for file in self.files:
+            self.__push_file(file, sftp, ssh_client)
         # Copy the requirements.txt to the server
         sftp.put(
             os.path.join(self.project_path, &#34;requirements.txt&#34;), &#34;requirements.txt&#34;
@@ -480,21 +552,33 @@ class RayLauncher:
 #                             EXAMPLE OF EXECUTION                             #
 # ---------------------------------------------------------------------------- #
 if __name__ == &#34;__main__&#34;:
+    import ray
+    import torch
+
+    def function_inside_function():
+        with open(&#34;slurmray/RayLauncher.py&#34;, &#34;r&#34;) as f:
+            return f.read()[0:10]
 
     def example_func(x):
-        import ray
-
-        return ray.cluster_resources(), x + 1
+        result = (
+            ray.cluster_resources(),
+            f&#34;GPU is available : {torch.cuda.is_available()}&#34;,
+            x + 1,
+            function_inside_function(),
+        )
+        return result
 
     launcher = RayLauncher(
         project_name=&#34;example&#34;,
         func=example_func,
         args={&#34;x&#34;: 1},
+        files=[&#34;slurmray/RayLauncher.py&#34;],
         modules=[],
         node_nbr=1,
         use_gpu=True,
-        memory=64,
-        max_running_time=15,
+        memory=8,
+        max_running_time=5,
+        runtime_env={&#34;env_vars&#34;: {&#34;NCCL_SOCKET_IFNAME&#34;: &#34;eno1&#34;}},
         server_run=True,
         server_ssh=&#34;curnagl.dcsr.unil.ch&#34;,
         server_username=&#34;hjamet&#34;,
@@ -515,7 +599,7 @@ if __name__ == &#34;__main__&#34;:
 <dl>
 <dt id="RayLauncher.RayLauncher"><code class="flex name class">
 <span>class <span class="ident">RayLauncher</span></span>
-<span>(</span><span>project_name: str = None, func: Callable = None, args: dict = None, modules: List[str] = [], node_nbr: int = 1, use_gpu: bool = False, memory: int = 64, max_running_time: int = 60, server_run: bool = True, server_ssh: str = 'curnagl.dcsr.unil.ch', server_username: str = 'hjamet')</span>
+<span>(</span><span>project_name: str = None, func: Callable = None, args: dict = None, files: List[str] = [], modules: List[str] = [], node_nbr: int = 1, use_gpu: bool = False, memory: int = 64, max_running_time: int = 60, runtime_env: dict = {'env_vars': {}}, server_run: bool = True, server_ssh: str = 'curnagl.dcsr.unil.ch', server_username: str = 'hjamet', server_password: str = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>A class that automatically connects RAY workers and executes the function requested by the user</p>
@@ -528,6 +612,8 @@ if __name__ == &#34;__main__&#34;:
 <dd>Function to execute. This function should not be remote but can use ray ressources. Defaults to None.</dd>
 <dt><strong><code>args</code></strong> :&ensp;<code>dict</code>, optional</dt>
 <dd>Arguments of the function. Defaults to None.</dd>
+<dt><strong><code>files</code></strong> :&ensp;<code>List[str]</code>, optional</dt>
+<dd>List of files to push to the cluster. This path must be <strong>relative</strong> to the project directory. Defaults to [].</dd>
 <dt><strong><code>modules</code></strong> :&ensp;<code>List[str]</code>, optional</dt>
 <dd>List of modules to load on the curnagl Cluster. Use <code>module spider</code> to see available modules. Defaults to None.</dd>
 <dt><strong><code>node_nbr</code></strong> :&ensp;<code>int</code>, optional</dt>
@@ -538,12 +624,16 @@ if __name__ == &#34;__main__&#34;:
 <dd>Amount of RAM to use per node in GigaBytes. Defaults to 64.</dd>
 <dt><strong><code>max_running_time</code></strong> :&ensp;<code>int</code>, optional</dt>
 <dd>Maximum running time of the job in minutes. Defaults to 60.</dd>
+<dt><strong><code>runtime_env</code></strong> :&ensp;<code>dict</code>, optional</dt>
+<dd>Environment variables to share between all the workers. Can be useful for issues like <a href="https://github.com/ray-project/ray/issues/418.">https://github.com/ray-project/ray/issues/418.</a> Default to empty.</dd>
 <dt><strong><code>server_run</code></strong> :&ensp;<code>bool</code>, optional</dt>
 <dd>If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster ressources. Defaults to True.</dd>
 <dt><strong><code>server_ssh</code></strong> :&ensp;<code>str</code>, optional</dt>
 <dd>If <code>server_run</code> is set to true, the addess of the <strong>SLURM</strong> server to use.</dd>
 <dt><strong><code>server_username</code></strong> :&ensp;<code>str</code>, optional</dt>
 <dd>If <code>server_run</code> is set to true, the username with which you wish to connect.</dd>
+<dt><strong><code>server_password</code></strong> :&ensp;<code>str</code>, optional</dt>
+<dd>If <code>server_run</code> is set to true, the password of the user to connect to the server. CAUTION: never write your password in the code. Defaults to None.</dd>
 </dl></div>
 <details class="source">
 <summary>
@@ -557,14 +647,17 @@ if __name__ == &#34;__main__&#34;:
         project_name: str = None,
         func: Callable = None,
         args: dict = None,
+        files: List[str] = [],
         modules: List[str] = [],
         node_nbr: int = 1,
         use_gpu: bool = False,
         memory: int = 64,
         max_running_time: int = 60,
+        runtime_env: dict = {&#34;env_vars&#34;: {}},
         server_run: bool = True,
         server_ssh: str = &#34;curnagl.dcsr.unil.ch&#34;,
         server_username: str = &#34;hjamet&#34;,
+        server_password: str = None,
     ):
         &#34;&#34;&#34;Initialize the launcher
 
@@ -572,32 +665,38 @@ if __name__ == &#34;__main__&#34;:
             project_name (str, optional): Name of the project. Defaults to None.
             func (Callable, optional): Function to execute. This function should not be remote but can use ray ressources. Defaults to None.
             args (dict, optional): Arguments of the function. Defaults to None.
+            files (List[str], optional): List of files to push to the cluster. This path must be **relative** to the project directory. Defaults to [].
             modules (List[str], optional): List of modules to load on the curnagl Cluster. Use `module spider` to see available modules. Defaults to None.
             node_nbr (int, optional): Number of nodes to use. Defaults to 1.
             use_gpu (bool, optional): Use GPU or not. Defaults to False.
             memory (int, optional): Amount of RAM to use per node in GigaBytes. Defaults to 64.
             max_running_time (int, optional): Maximum running time of the job in minutes. Defaults to 60.
+            runtime_env (dict, optional): Environment variables to share between all the workers. Can be useful for issues like https://github.com/ray-project/ray/issues/418. Default to empty.
             server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster ressources. Defaults to True.
             server_ssh (str, optional): If `server_run` is set to true, the addess of the **SLURM** server to use.
             server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect.
+            server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. CAUTION: never write your password in the code. Defaults to None.
         &#34;&#34;&#34;
         # Save the parameters
         self.project_name = project_name
         self.func = func
         self.args = args
+        self.files = files
         self.node_nbr = node_nbr
         self.use_gpu = use_gpu
         self.memory = memory
         self.max_running_time = max_running_time
+        self.runtime_env = runtime_env
         self.server_run = server_run
         self.server_ssh = server_ssh
         self.server_username = server_username
+        self.server_password = server_password
 
         self.modules = [&#34;gcc&#34;, &#34;python/3.9.13&#34;] + [
             mod for mod in modules if mod not in [&#34;gcc&#34;, &#34;python/3.9.13&#34;]
         ]
         if self.use_gpu is True and &#34;cuda&#34; not in self.modules:
-            self.modules += [&#34;cuda/11.8.0&#34;, &#34;cudnn&#34;]
+            self.modules += [&#34;cuda&#34;, &#34;cudnn&#34;]
 
         # Check if this code is running on a cluster
         self.cluster = os.path.exists(&#34;/usr/bin/sbatch&#34;)
@@ -626,7 +725,7 @@ if __name__ == &#34;__main__&#34;:
             Any: Result of the function
         &#34;&#34;&#34;
         # Sereialize function and arguments
-        self.serialize_func_and_args(self.func, self.args)
+        self.__serialize_func_and_args(self.func, self.args)
 
         if self.cluster:
             print(&#34;Cluster detected, running on cluster...&#34;)
@@ -656,7 +755,39 @@ if __name__ == &#34;__main__&#34;:
 
         return result
 
-    def serialize_func_and_args(self, func: Callable = None, args: list = None):
+    def __push_file(
+        self, file_path: str, sftp: paramiko.SFTPClient, ssh_client: paramiko.SSHClient
+    ):
+        &#34;&#34;&#34;Push a file to the cluster
+
+        Args:
+            file_path (str): Path to the file to push. This path must be **relative** to the project directory.
+        &#34;&#34;&#34;
+        print(f&#34;Pushing file {os.path.basename(file_path)} to the cluster...&#34;)
+
+        # Determine the path to the file
+        local_path = file_path
+        local_path_from_pwd = os.path.relpath(local_path, self.pwd_path)
+        cluster_path = os.path.join(
+            &#34;/users&#34;, self.server_username, &#34;slurmray-server&#34;, local_path_from_pwd
+        )
+
+        # Create the directory if not exists
+
+        stdin, stdout, stderr = ssh_client.exec_command(
+            f&#34;mkdir -p &#39;{os.path.dirname(cluster_path)}&#39;&#34;
+        )
+        while True:
+            line = stdout.readline()
+            if not line:
+                break
+            print(line, end=&#34;&#34;)
+        time.sleep(1)  # Wait for the directory to be created
+
+        # Copy the file to the server
+        sftp.put(file_path, cluster_path)
+
+    def __serialize_func_and_args(self, func: Callable = None, args: list = None):
         &#34;&#34;&#34;Serialize the function and the arguments
 
         Args:
@@ -697,13 +828,12 @@ if __name__ == &#34;__main__&#34;:
             text = f.read()
 
         text = text.replace(&#34;{{PROJECT_PATH}}&#34;, f&#39;&#34;{self.project_path}&#34;&#39;)
+        local_mode = &#34;&#34;
+        if self.cluster or self.server_run:
+            f&#34;\n\taddress=&#39;auto&#39;,\n\tinclude_dashboard=True,\n\tdashboard_host=&#39;0.0.0.0&#39;,\n\tdashboard_port=8888,\nruntime_env = {self.runtime_env},\n&#34;
         text = text.replace(
             &#34;{{LOCAL_MODE}}&#34;,
-            str(
-                f&#34;&#34;
-                if not (self.cluster or self.server_run)
-                else &#34;\n\taddress=&#39;auto&#39;,\n\tinclude_dashboard=True,\n\tdashboard_host=&#39;0.0.0.0&#39;,\n\tdashboard_port=8888,\n&#34;
-            ),
+            local_mode,
         )
         with open(os.path.join(self.project_path, &#34;spython.py&#34;), &#34;w&#34;) as f:
             f.write(text)
@@ -902,16 +1032,19 @@ if __name__ == &#34;__main__&#34;:
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         while not connected:
             try:
-                # Add ssh key
-                ssh_key = getpass(&#34;Enter your cluster password: &#34;)
+                if self.server_password is None:
+                    # Add ssh key
+                    self.server_password = getpass(&#34;Enter your cluster password: &#34;)
+                
                 ssh_client.connect(
                     hostname=self.server_ssh,
                     username=self.server_username,
-                    password=ssh_key,
+                    password=self.server_password,
                 )
                 sftp = ssh_client.open_sftp()
                 connected = True
             except paramiko.ssh_exception.AuthenticationException:
+                self.server_password = None
                 print(&#34;Wrong password, please try again.&#34;)
 
         # Write server script
@@ -920,16 +1053,42 @@ if __name__ == &#34;__main__&#34;:
         print(&#34;Downloading server...&#34;)
         # Generate requirements.txt
         subprocess.run(
-            [f&#34;pip freeze &gt; {self.project_path}/requirements.txt&#34;], shell=True
+            [f&#34;pip-chill --no-version &gt; {self.project_path}/requirements.txt&#34;],
+            shell=True,
         )
-        # Add slurmray --pre
-        with open(f&#34;{self.project_path}/requirements.txt&#34;, &#34;a&#34;) as file:
-            file.write(&#34;\nslurmray --pre&#34;)
+
+        with open(f&#34;{self.project_path}/requirements.txt&#34;, &#34;r&#34;) as file:
+            lines = file.readlines()
+            # Adapt dependencies for the cluster
+            # Adapt torch version (not needed anymore)
+            # lines = [re.sub(r&#34;torch\n&#34;, &#34;torch==2.0.1\n&#34;, line) for line in lines]
+            # lines = [re.sub(r&#39;torchvision\n&#39;, &#39;torchvision --pre --index-url https://download.pytorch.org/whl/nightly/cu121\n&#39;, line) for line in lines]
+            # lines = [re.sub(r&#39;torchaudio\n&#39;, &#39;torchaudio --pre --index-url https://download.pytorch.org/whl/nightly/cu121\n&#39;, line) for line in lines]
+
+            # lines = [re.sub(r&#39;bitsandbytes\n&#39;, &#39;bitsandbytes --global-option=&#34;--cuda_ext&#34;\n&#39;, line) for line in lines]
+            lines = [re.sub(r&#34;slurmray\n&#34;, &#34;&#34;, line) for line in lines]
+            # Add slurmray --pre
+            lines.append(&#34;slurmray --pre\n&#34;)
+            # Solve torch buf (https://github.com/pytorch/pytorch/issues/111469)
+            if &#34;torchaudio\n&#34; or &#34;torchvision\n&#34; in lines:
+                lines.append(&#34;torch==2.1.1\n&#34;)
+                lines.append(&#34;--index-url https://download.pytorch.org/whl/cu121\n&#34;)
+
+        with open(f&#34;{self.project_path}/requirements.txt&#34;, &#34;w&#34;) as file:
+            file.writelines(lines)
 
         # Copy files from the project to the server
         for file in os.listdir(self.project_path):
             if file.endswith(&#34;.py&#34;) or file.endswith(&#34;.pkl&#34;) or file.endswith(&#34;.sh&#34;):
                 sftp.put(os.path.join(self.project_path, file), file)
+
+        # Create the server directory and remove old files
+        ssh_client.exec_command(
+            &#34;mkdir -p slurmray-server/.slogs/server &amp;&amp; rm -rf slurmray-server/.slogs/server/*&#34;
+        )
+        # Copy user files to the server
+        for file in self.files:
+            self.__push_file(file, sftp, ssh_client)
         # Copy the requirements.txt to the server
         sftp.put(
             os.path.join(self.project_path, &#34;requirements.txt&#34;), &#34;requirements.txt&#34;
@@ -988,50 +1147,6 @@ if __name__ == &#34;__main__&#34;:
         with open(os.path.join(self.project_path, script_file), &#34;w&#34;) as f:
             f.write(text)</code></pre>
 </details>
-<h3>Methods</h3>
-<dl>
-<dt id="RayLauncher.RayLauncher.serialize_func_and_args"><code class="name flex">
-<span>def <span class="ident">serialize_func_and_args</span></span>(<span>self, func: Callable = None, args: list = None)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Serialize the function and the arguments</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>func</code></strong> :&ensp;<code>Callable</code>, optional</dt>
-<dd>Function to serialize. Defaults to None.</dd>
-<dt><strong><code>args</code></strong> :&ensp;<code>list</code>, optional</dt>
-<dd>Arguments of the function. Defaults to None.</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def serialize_func_and_args(self, func: Callable = None, args: list = None):
-    &#34;&#34;&#34;Serialize the function and the arguments
-
-    Args:
-        func (Callable, optional): Function to serialize. Defaults to None.
-        args (list, optional): Arguments of the function. Defaults to None.
-    &#34;&#34;&#34;
-    print(&#34;Serializing function and arguments...&#34;)
-
-    # Remove the old python script
-    for file in os.listdir(self.project_path):
-        if file.endswith(&#34;.pkl&#34;):
-            os.remove(os.path.join(self.project_path, file))
-
-    # Pickle the function
-    with open(os.path.join(self.project_path, &#34;func.pkl&#34;), &#34;wb&#34;) as f:
-        dill.dump(func, f)
-
-    # Pickle the arguments
-    if args is None:
-        args = {}
-    with open(os.path.join(self.project_path, &#34;args.pkl&#34;), &#34;wb&#34;) as f:
-        dill.dump(args, f)</code></pre>
-</details>
-</dd>
-</dl>
 </dd>
 </dl>
 </section>
@@ -1046,9 +1161,6 @@ if __name__ == &#34;__main__&#34;:
 <ul>
 <li>
 <h4><code><a title="RayLauncher.RayLauncher" href="#RayLauncher.RayLauncher">RayLauncher</a></code></h4>
-<ul class="">
-<li><code><a title="RayLauncher.RayLauncher.serialize_func_and_args" href="#RayLauncher.RayLauncher.serialize_func_and_args">serialize_func_and_args</a></code></li>
-</ul>
 </li>
 </ul>
 </li>
