@@ -407,7 +407,7 @@ class RayLauncher:
                 if self.server_password is None:
                     # Add ssh key
                     self.server_password = getpass("Enter your cluster password: ")
-                
+
                 ssh_client.connect(
                     hostname=self.server_ssh,
                     username=self.server_username,
@@ -440,11 +440,12 @@ class RayLauncher:
             # lines = [re.sub(r'bitsandbytes\n', 'bitsandbytes --global-option="--cuda_ext"\n', line) for line in lines]
             lines = [re.sub(r"slurmray\n", "", line) for line in lines]
             # Add slurmray --pre
-            lines.append("slurmray --pre\n")
+            lines.append("slurmray --pre \n")
             # Solve torch buf (https://github.com/pytorch/pytorch/issues/111469)
             if "torchaudio\n" or "torchvision\n" in lines:
-                lines.append("torch==2.1.1\n")
-                lines.append("--index-url https://download.pytorch.org/whl/cu121\n")
+                lines.append(
+                    "torch==2.1.1 --index-url https://download.pytorch.org/whl/cu121\n"
+                )
 
         with open(f"{self.project_path}/requirements.txt", "w") as file:
             file.writelines(lines)
@@ -483,6 +484,17 @@ class RayLauncher:
             if not line:
                 break
             print(line, end="")
+
+        # Check for errors
+        stderr_lines = stderr.readlines()
+        if stderr_lines:
+            print("\nErrors:\n")
+            for line in stderr_lines:
+                print(line, end="")
+            print("An error occured, please check the logs.")
+            return
+
+        stdout.channel.recv_exit_status()
 
         # Downloading result
         print("Downloading result...")
@@ -541,20 +553,24 @@ if __name__ == "__main__":
         return result
 
     launcher = RayLauncher(
-        project_name="example", # Name of the project (will create a directory with this name in the current directory)
-        func=example_func, # Function to execute
-        args={"x": 1}, # Arguments of the function
-        files=["slurmray/RayLauncher.py"], # List of files to push to the cluster (file path will be recreated on the cluster)
-        modules=[], # List of modules to load on the curnagl Cluster (CUDA & CUDNN are automatically added if use_gpu=True)
-        node_nbr=1, # Number of nodes to use
-        use_gpu=True, # If you need A100 GPU, you can set it to True
-        memory=8, # In MegaBytes
-        max_running_time=5, # In minutes
-        runtime_env={"env_vars": {"NCCL_SOCKET_IFNAME": "eno1"}}, # Example of environment variable
-        server_run=True, # To run the code on the cluster and not locally
-        server_ssh="curnagl.dcsr.unil.ch", # Address of the SLURM server
-        server_username="hjamet", # Username to connect to the server
-        server_password=None, # Will be asked in the terminal
+        project_name="example",  # Name of the project (will create a directory with this name in the current directory)
+        func=example_func,  # Function to execute
+        args={"x": 1},  # Arguments of the function
+        files=[
+            "slurmray/RayLauncher.py"
+        ],  # List of files to push to the cluster (file path will be recreated on the cluster)
+        modules=[],  # List of modules to load on the curnagl Cluster (CUDA & CUDNN are automatically added if use_gpu=True)
+        node_nbr=1,  # Number of nodes to use
+        use_gpu=True,  # If you need A100 GPU, you can set it to True
+        memory=8,  # In MegaBytes
+        max_running_time=5,  # In minutes
+        runtime_env={
+            "env_vars": {"NCCL_SOCKET_IFNAME": "eno1"}
+        },  # Example of environment variable
+        server_run=True,  # To run the code on the cluster and not locally
+        server_ssh="curnagl.dcsr.unil.ch",  # Address of the SLURM server
+        server_username="hjamet",  # Username to connect to the server
+        server_password=None,  # Will be asked in the terminal
     )
 
     result = launcher()

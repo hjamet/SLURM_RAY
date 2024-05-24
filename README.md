@@ -1,6 +1,6 @@
 # SLURM_RAY
 
-👉[Full documentation](https://henri-jamet.vercel.app/cards/documentation/slurm-ray/slurm-ray/)
+👉[Full documentation](https://www.henri-jamet.com/docs/slurmray/slurm-ray/)
 
 ## Description
 
