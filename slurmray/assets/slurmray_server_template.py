@@ -16,4 +16,4 @@ if __name__ == "__main__":
         server_username=None,
     )
 
-    result = launcher()
+    result = launcher(serialize=False)

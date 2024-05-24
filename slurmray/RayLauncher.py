@@ -87,17 +87,19 @@ class RayLauncher:
             self.__write_python_script()
             self.script_file, self.job_name = self.__write_slurm_script()
 
-    def __call__(self, cancel_old_jobs: bool = True) -> Any:
+    def __call__(self, cancel_old_jobs: bool = True, serialize: bool = True) -> Any:
         """Launch the job and return the result
 
         Args:
             cancel_old_jobs (bool, optional): Cancel the old jobs. Defaults to True.
+            serialize (bool, optional): Serialize the function and the arguments. This should be set to False if the function is automatically called by the server. Defaults to True.
 
         Returns:
             Any: Result of the function
         """
         # Sereialize function and arguments
-        self.__serialize_func_and_args(self.func, self.args)
+        if serialize:
+            self.__serialize_func_and_args(self.func, self.args)
 
         if self.cluster:
             print("Cluster detected, running on cluster...")
@@ -167,13 +169,6 @@ class RayLauncher:
             args (list, optional): Arguments of the function. Defaults to None.
         """
         print("Serializing function and arguments...")
-
-        # Check if there is already a func.pkl and args.pkl file
-        if os.path.exists(
-            os.path.join(self.project_path, "func.pkl")
-        ) and os.path.exists(os.path.join(self.project_path, "args.pkl")):
-            print("Function and arguments already serialized.")
-            return
 
         # Pickle the function
         with open(os.path.join(self.project_path, "func.pkl"), "wb") as f:
@@ -312,6 +307,7 @@ class RayLauncher:
         subprocess.Popen(
             ["tail", "-f", os.path.join(self.project_path, "{}.log".format(job_name))]
         )
+        start_time = time.time()
         while True:
             time.sleep(0.25)
             if os.path.exists(
@@ -361,6 +357,12 @@ class RayLauncher:
                         node_list,
                     )
                 )[1:]
+
+                # Update the queue log
+                if time.time() - start_time > 60:
+                    start_time = time.time()
+                    print("Update time: {}".format(time.strftime("%H:%M:%S")))
+
                 if current_queue is None or current_queue != to_queue:
                     current_queue = to_queue
                     with open(queue_log_file, "w") as f:
@@ -559,13 +561,13 @@ if __name__ == "__main__":
     launcher = RayLauncher(
         project_name="example",  # Name of the project (will create a directory with this name in the current directory)
         func=example_func,  # Function to execute
-        args={"x": 1},  # Arguments of the function
+        args={"x": 5},  # Arguments of the function
         files=[
             "slurmray/RayLauncher.py"
         ],  # List of files to push to the cluster (file path will be recreated on the cluster)
         modules=[],  # List of modules to load on the curnagl Cluster (CUDA & CUDNN are automatically added if use_gpu=True)
         node_nbr=1,  # Number of nodes to use
-        use_gpu=False,  # If you need A100 GPU, you can set it to True
+        use_gpu=True,  # If you need A100 GPU, you can set it to True
         memory=8,  # In MegaBytes
         max_running_time=5,  # In minutes
         runtime_env={
