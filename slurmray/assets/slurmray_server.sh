@@ -17,16 +17,15 @@ fi
 source .venv/bin/activate
 
 # Install requirements
-pip3 install --upgrade pip
-# Load all installed packages into a variable
+## Load all installed packages into a variable
 installed_packages=$(pip3 list --format=freeze)
-# Function to check if a package is installed
+## Function to check if a package is installed
 is_package_installed() {
   package=$1
   echo "$installed_packages" | grep -i "^$package==" &> /dev/null
   return $?
 }
-# Read the requirements.txt file line by line
+## Read the requirements.txt file line by line
 while IFS= read -r package
 do
   # Check if the line is not empty

@@ -168,10 +168,12 @@ class RayLauncher:
         """
         print("Serializing function and arguments...")
 
-        # Remove the old python script
-        for file in os.listdir(self.project_path):
-            if file.endswith(".pkl"):
-                os.remove(os.path.join(self.project_path, file))
+        # Check if there is already a func.pkl and args.pkl file
+        if os.path.exists(
+            os.path.join(self.project_path, "func.pkl")
+        ) and os.path.exists(os.path.join(self.project_path, "args.pkl")):
+            print("Function and arguments already serialized.")
+            return
 
         # Pickle the function
         with open(os.path.join(self.project_path, "func.pkl"), "wb") as f:
@@ -299,9 +301,7 @@ class RayLauncher:
 
         # Wait for log file to be created
         current_queue = None
-        queue_log_file = os.path.join(
-            self.project_path, "{}_queue.log".format(job_name)
-        )
+        queue_log_file = os.path.join(self.project_path, "queue.log")
         with open(queue_log_file, "w") as f:
             f.write("")
         print(
@@ -373,7 +373,11 @@ class RayLauncher:
                         text += "\n"
                         f.write(text)
 
+                        # Print the queue
+                        print(text)
+
         # Wait for the job to finish while printing the log
+        print("Job started! Waiting for the job to finish...")
         log_cursor_position = 0
         job_finished = False
         while not job_finished:
@@ -485,24 +489,24 @@ class RayLauncher:
                 break
             print(line, end="")
 
-        # Check for errors
-        stderr_lines = stderr.readlines()
-        if stderr_lines:
-            print("\nErrors:\n")
-            for line in stderr_lines:
-                print(line, end="")
-            print("An error occured, please check the logs.")
-            return
-
         stdout.channel.recv_exit_status()
 
         # Downloading result
         print("Downloading result...")
-        sftp.get(
-            "slurmray-server/.slogs/server/result.pkl",
-            os.path.join(self.project_path, "result.pkl"),
-        )
-        print("Result downloaded!")
+        try:
+            sftp.get(
+                "slurmray-server/.slogs/server/result.pkl",
+                os.path.join(self.project_path, "result.pkl"),
+            )
+            print("Result downloaded!")
+        except FileNotFoundError:
+            # Check for errors
+            stderr_lines = stderr.readlines()
+            if stderr_lines:
+                print("\nErrors:\n")
+                for line in stderr_lines:
+                    print(line, end="")
+                print("An error occured, please check the logs.")
 
     def __write_server_script(self):
         """This funtion will write a script with the given specifications to run slurmray on the cluster"""
@@ -561,7 +565,7 @@ if __name__ == "__main__":
         ],  # List of files to push to the cluster (file path will be recreated on the cluster)
         modules=[],  # List of modules to load on the curnagl Cluster (CUDA & CUDNN are automatically added if use_gpu=True)
         node_nbr=1,  # Number of nodes to use
-        use_gpu=True,  # If you need A100 GPU, you can set it to True
+        use_gpu=False,  # If you need A100 GPU, you can set it to True
         memory=8,  # In MegaBytes
         max_running_time=5,  # In minutes
         runtime_env={
