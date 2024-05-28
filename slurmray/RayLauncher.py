@@ -366,7 +366,7 @@ class RayLauncher:
                 if current_queue is None or current_queue != to_queue:
                     current_queue = to_queue
                     with open(queue_log_file, "w") as f:
-                        text = "Current queue:\n"
+                        text = f"Current queue ({time.strftime('%H:%M:%S')}):\n"
                         format_row = "{:>30}" * (len(current_queue[0]))
                         for user, status, nodes, node_list in current_queue:
                             text += (
