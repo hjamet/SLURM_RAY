@@ -64,8 +64,8 @@ class RayLauncher:
         self.server_username = server_username
         self.server_password = server_password
 
-        self.modules = ["gcc", "python/3.9.13"] + [
-            mod for mod in modules if mod not in ["gcc", "python/3.9.13"]
+        self.modules = ["gcc", "python/3.11.6"] + [
+            mod for mod in modules if mod not in ["gcc", "python/3.11.6"]
         ]
         if self.use_gpu is True and "cuda" not in self.modules:
             self.modules += ["cuda", "cudnn"]
@@ -74,9 +74,6 @@ class RayLauncher:
         self.cluster = os.path.exists("/usr/bin/sbatch")
 
         # Create the project directory if not exists
-        self.module_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), ".."
-        )
         self.pwd_path = os.getcwd()
         self.module_path = os.path.dirname(os.path.abspath(__file__))
         self.project_path = os.path.join(self.pwd_path, ".slogs", self.project_name)
@@ -444,14 +441,12 @@ class RayLauncher:
             # lines = [re.sub(r'torchaudio\n', 'torchaudio --pre --index-url https://download.pytorch.org/whl/nightly/cu121\n', line) for line in lines]
 
             # lines = [re.sub(r'bitsandbytes\n', 'bitsandbytes --global-option="--cuda_ext"\n', line) for line in lines]
-            lines = [re.sub(r"slurmray\n", "", line) for line in lines]
-            # Add slurmray --pre
-            lines.append("slurmray --pre \n")
             # Solve torch buf (https://github.com/pytorch/pytorch/issues/111469)
-            if "torchaudio\n" or "torchvision\n" in lines:
-                lines.append(
-                    "torch==2.1.1 --index-url https://download.pytorch.org/whl/cu121\n"
-                )
+            # if "torchaudio\n" or "torchvision\n" in lines:
+            #     lines.append(
+            #         "torch==2.1.1 --index-url https://download.pytorch.org/whl/cu121\n"
+            #     )
+            lines.append("slurmray\n")
 
         with open(f"{self.project_path}/requirements.txt", "w") as file:
             file.writelines(lines)
@@ -546,7 +541,7 @@ if __name__ == "__main__":
     import torch
 
     def function_inside_function():
-        with open("slurmray/RayLauncher.py", "r") as f:
+        with open("documentation/RayLauncher.html", "r") as f:
             return f.read()[0:10]
 
     def example_func(x):
@@ -563,7 +558,7 @@ if __name__ == "__main__":
         func=example_func,  # Function to execute
         args={"x": 5},  # Arguments of the function
         files=[
-            "slurmray/RayLauncher.py"
+            "documentation/RayLauncher.html"
         ],  # List of files to push to the cluster (file path will be recreated on the cluster)
         modules=[],  # List of modules to load on the curnagl Cluster (CUDA & CUDNN are automatically added if use_gpu=True)
         node_nbr=1,  # Number of nodes to use

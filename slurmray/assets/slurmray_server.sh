@@ -8,7 +8,7 @@ mv -t slurmray-server/.slogs/server func.pkl args.pkl
 cd slurmray-server
 
 # Load modules
-module load gcc python/3.9.13 cuda cudnn
+module load gcc rust python/3.11.6 cuda cudnn
 
 # Check if venv exists
 if [ ! -d ".venv" ]; then
@@ -17,6 +17,8 @@ fi
 source .venv/bin/activate
 
 # Install requirements
+pip install wheel
+pip install -r requirements.txt
 ## Load all installed packages into a variable
 installed_packages=$(pip3 list --format=freeze)
 ## Function to check if a package is installed
