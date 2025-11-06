@@ -27,6 +27,24 @@ tasks:
     task_file: "optimiser-gestion-stockage-nettoyage.md"
     output_file: "rapport-optimiser-gestion-stockage-nettoyage.md"
     deadline: null
+  - id: "task-0d"
+    title: "Corriger et rediriger automatiquement le dashboard Ray vers local"
+    description: "Corriger le bug de configuration du dashboard dans RayLauncher.py (ligne 199) et implémenter une redirection automatique du dashboard Ray vers la machine locale via port forwarding SSH, permettant l'accès sur http://localhost:8888 pendant l'exécution du job"
+    state: "todo"
+    dependencies: ["task-0"]
+    dependencies-results: []
+    task_file: "corriger-et-rediriger-dashboard-ray.md"
+    output_file: "rapport-corriger-et-rediriger-dashboard-ray.md"
+    deadline: null
+  - id: "task-0e"
+    title: "Implémenter un système de logging dans un fichier"
+    description: "Implémenter un système de logging centralisé dans un fichier constamment réécrit pour suivre toutes les étapes (installation serveur, connexion SSH, upload fichiers, attente nœuds, etc.) sans saturer la console. Ajouter un paramètre log_file au constructeur RayLauncher avec default logs/RayLauncher.log"
+    state: "todo"
+    dependencies: ["task-0"]
+    dependencies-results: []
+    task_file: "implementer-systeme-logging-fichier.md"
+    output_file: "rapport-implementer-systeme-logging-fichier.md"
+    deadline: null
   - id: "task-1"
     title: "Tester le package SLURM_RAY sur CPU et GPU"
     description: "Créer et exécuter des tests fonctionnels pour vérifier que le package fonctionne correctement avec des fonctions simples sur CPU et/ou GPU via Ray sur un cluster SLURM"
