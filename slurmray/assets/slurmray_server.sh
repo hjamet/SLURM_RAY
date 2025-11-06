@@ -8,7 +8,7 @@ mv -t slurmray-server/.slogs/server func.pkl args.pkl
 cd slurmray-server
 
 # Load modules
-module load gcc rust python/3.11.6 cuda cudnn
+module load gcc rust python/3.12.1 cuda cudnn
 
 # Check if venv exists
 if [ ! -d ".venv" ]; then

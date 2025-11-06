@@ -54,6 +54,123 @@ launcher = RayLauncher(
 result = launcher()
 print(result)
 ```
+
+## Tests
+
+The project includes simple "hello world" tests to quickly validate that SLURM_RAY works correctly after major modifications. These tests can be executed directly or via pytest.
+
+### Running tests directly
+
+```bash
+# Test CPU
+poetry run python tests/test_hello_world_cpu.py
+
+# Test GPU
+poetry run python tests/test_hello_world_gpu.py
+```
+
+### Running tests with pytest
+
+```bash
+# Run all tests
+poetry run pytest tests/
+
+# Run specific test
+poetry run pytest tests/test_hello_world_cpu.py
+poetry run pytest tests/test_hello_world_gpu.py
+```
+
+The tests require credentials for the cluster. You can provide them via a `.env` file with `CURNAGL_USERNAME` and `CURNAGL_PASSWORD`, or they will be prompted interactively.
+
+## Publishing to PyPI
+
+This project uses [Poetry](https://python-poetry.org/) for package management and publishing. Follow these steps to publish a new version to PyPI:
+
+### 1. Update the version
+
+Increment the version in `pyproject.toml` according to the type of change:
+
+```bash
+# Automatic version bumping
+poetry version patch   # 3.6.4 -> 3.6.5 (bugfix)
+poetry version minor   # 3.6.4 -> 3.7.0 (new feature)
+poetry version major   # 3.6.4 -> 4.0.0 (breaking change)
+```
+
+Or manually edit the `version` field in `pyproject.toml`.
+
+### 2. Build the package
+
+```bash
+poetry build
+```
+
+This creates distribution files in the `dist/` directory:
+- `slurmray-{version}.tar.gz` (source distribution)
+- `slurmray-{version}-py3-none-any.whl` (wheel)
+
+### 3. Configure PyPI credentials
+
+**First-time setup:**
+
+1. Create an API token on [PyPI](https://pypi.org/manage/account/token/)
+2. Configure Poetry to use the token:
+
+```bash
+poetry config pypi-token.pypi your-token-here
+```
+
+**Alternative:** Poetry will prompt for credentials during publishing. Use `__token__` as username and your API token as password.
+
+### 4. Publish to PyPI
+
+**Production (PyPI):**
+
+```bash
+poetry publish
+```
+
+**Testing (TestPyPI):**
+
+To test the publishing process without affecting production:
+
+```bash
+poetry publish --repository testpypi
+```
+
+### Pre-publication checklist
+
+Before publishing, ensure:
+
+- [ ] Version incremented in `pyproject.toml`
+- [ ] All tests pass (`poetry run pytest tests/`)
+- [ ] README.md is up to date
+- [ ] Code tested locally
+- [ ] `poetry build` completes without errors
+- [ ] PyPI credentials configured
+
+### Quick reference
+
+```bash
+# Complete publishing workflow
+poetry version patch          # Update version
+poetry build                  # Build package
+poetry publish                # Publish to PyPI
+
+# Optional: test on TestPyPI first
+poetry publish --repository testpypi
+```
+
+**Important notes:**
+
+- Each version must be unique on PyPI (versions cannot be overwritten)
+- TestPyPI is useful for testing the publishing process
+- Consider creating a Git tag after publishing:
+  ```bash
+  git tag v3.6.5
+  git push origin v3.6.5
+  ```
+
 ## Launcher documentation
 
 The Launcher documentation is available [here](https://htmlpreview.github.io/?https://raw.githubusercontent.com/hjamet/SLURM_RAY/main/documentation/RayLauncher.html).

@@ -7,8 +7,116 @@ import dill
 import paramiko
 from getpass import getpass
 import re
+import threading
 
 dill.settings["recurse"] = True
+
+
+class SSHTunnel:
+    """Context manager for SSH port forwarding using Paramiko"""
+    
+    def __init__(
+        self,
+        ssh_host: str,
+        ssh_username: str,
+        ssh_password: str,
+        remote_host: str,
+        local_port: int = 8888,
+        remote_port: int = 8888,
+    ):
+        """Initialize SSH tunnel
+        
+        Args:
+            ssh_host: SSH server hostname
+            ssh_username: SSH username
+            ssh_password: SSH password
+            remote_host: Remote hostname to forward to
+            local_port: Local port to bind (default: 8888)
+            remote_port: Remote port to forward (default: 8888)
+        """
+        self.ssh_host = ssh_host
+        self.ssh_username = ssh_username
+        self.ssh_password = ssh_password
+        self.remote_host = remote_host
+        self.local_port = local_port
+        self.remote_port = remote_port
+        self.ssh_client = None
+        self.forward_server = None
+    
+    def __enter__(self):
+        """Create SSH tunnel"""
+        try:
+            self.ssh_client = paramiko.SSHClient()
+            self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.ssh_client.connect(
+                hostname=self.ssh_host,
+                username=self.ssh_username,
+                password=self.ssh_password,
+            )
+            
+            # Create local port forwarding
+            transport = self.ssh_client.get_transport()
+            self.forward_server = transport.request_port_forward("127.0.0.1", self.local_port)
+            
+            # Start forwarding in a separate thread
+            import threading
+            def forward_handler(channel, remote_host, remote_port):
+                try:
+                    remote_channel = transport.open_channel(
+                        "direct-tcpip",
+                        (remote_host, remote_port),
+                        channel.getpeername(),
+                    )
+                    while True:
+                        data = channel.recv(1024)
+                        if not data:
+                            break
+                        remote_channel.send(data)
+                    remote_channel.close()
+                except Exception:
+                    pass
+                finally:
+                    channel.close()
+            
+            def accept_handler():
+                while True:
+                    try:
+                        channel = self.forward_server.accept(1.0)
+                        if channel is None:
+                            continue
+                        thread = threading.Thread(
+                            target=forward_handler,
+                            args=(channel, self.remote_host, self.remote_port),
+                            daemon=True,
+                        )
+                        thread.start()
+                    except Exception:
+                        break
+            
+            forward_thread = threading.Thread(target=accept_handler, daemon=True)
+            forward_thread.start()
+            
+            print(f"SSH tunnel established: localhost:{self.local_port} -> {self.remote_host}:{self.remote_port}")
+            return self
+        except Exception as e:
+            print(f"Warning: Failed to create SSH tunnel: {e}")
+            print("Dashboard will not be accessible via port forwarding")
+            if self.ssh_client:
+                self.ssh_client.close()
+            self.ssh_client = None
+            self.forward_server = None
+            return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Close SSH tunnel"""
+        if self.forward_server:
+            try:
+                self.forward_server.close()
+            except Exception:
+                pass
+        if self.ssh_client:
+            self.ssh_client.close()
+        return False
 
 
 class RayLauncher:
@@ -64,8 +172,8 @@ class RayLauncher:
         self.server_username = server_username
         self.server_password = server_password
 
-        self.modules = ["gcc", "python/3.11.6"] + [
-            mod for mod in modules if mod not in ["gcc", "python/3.11.6"]
+        self.modules = ["gcc", "python/3.12.1"] + [
+            mod for mod in modules if mod not in ["gcc", "python/3.12.1"]
         ]
         if self.use_gpu is True and "cuda" not in self.modules:
             self.modules += ["cuda", "cudnn"]
@@ -196,7 +304,7 @@ class RayLauncher:
         text = text.replace("{{PROJECT_PATH}}", f'"{self.project_path}"')
         local_mode = ""
         if self.cluster or self.server_run:
-            f"\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\nruntime_env = {self.runtime_env},\n"
+            local_mode = f"\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\nruntime_env = {self.runtime_env},\n"
         text = text.replace(
             "{{LOCAL_MODE}}",
             local_mode,
@@ -274,6 +382,66 @@ class RayLauncher:
 
         return script_file, job_name
 
+    def __get_head_node_from_job_id(self, job_id: str, ssh_client: paramiko.SSHClient = None) -> str:
+        """Get the head node name from a SLURM job ID
+        
+        Args:
+            job_id: SLURM job ID
+            ssh_client: Optional SSH client for remote execution. If None, executes locally.
+        
+        Returns:
+            Head node name, or None if not found
+        """
+        try:
+            # Execute scontrol show job
+            if ssh_client:
+                stdin, stdout, stderr = ssh_client.exec_command(f"scontrol show job {job_id}")
+                output = stdout.read().decode("utf-8")
+                if stderr.read().decode("utf-8"):
+                    return None
+            else:
+                result = subprocess.run(
+                    ["scontrol", "show", "job", job_id],
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode != 0:
+                    return None
+                output = result.stdout
+            
+            # Extract NodeList from output
+            node_list_match = re.search(r"NodeList=([^\s]+)", output)
+            if not node_list_match:
+                return None
+            
+            node_list = node_list_match.group(1)
+            
+            # Get hostnames from NodeList using scontrol show hostnames
+            if ssh_client:
+                stdin, stdout, stderr = ssh_client.exec_command(f"scontrol show hostnames {node_list}")
+                hostnames_output = stdout.read().decode("utf-8")
+                if stderr.read().decode("utf-8"):
+                    return None
+            else:
+                result = subprocess.run(
+                    ["scontrol", "show", "hostnames", node_list],
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode != 0:
+                    return None
+                hostnames_output = result.stdout
+            
+            # Get first hostname (head node)
+            hostnames = hostnames_output.strip().split("\n")
+            if hostnames and hostnames[0]:
+                return hostnames[0].strip()
+            
+            return None
+        except Exception as e:
+            print(f"Warning: Failed to get head node from job ID {job_id}: {e}")
+            return None
+
     def __launch_job(self, script_file: str = None, job_name: str = None):
         """Launch the job
 
@@ -283,7 +451,27 @@ class RayLauncher:
         """
         # ===== Submit the job =====
         print("Start to submit job!")
-        subprocess.Popen(["sbatch", os.path.join(self.project_path, script_file)])
+        result = subprocess.run(
+            ["sbatch", os.path.join(self.project_path, script_file)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"Error submitting job: {result.stderr}")
+            return
+        
+        # Extract job ID from output (format: "Submitted batch job 12345")
+        job_id = None
+        if result.stdout:
+            match = re.search(r"Submitted batch job (\d+)", result.stdout)
+            if match:
+                job_id = match.group(1)
+        
+        if job_id:
+            print(f"Job submitted with ID: {job_id}")
+        else:
+            print("Warning: Could not extract job ID from sbatch output")
+        
         print(
             "Job submitted! Script file is at: <{}>. Log file is at: <{}>".format(
                 os.path.join(self.project_path, script_file),
