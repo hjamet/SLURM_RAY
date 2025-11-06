@@ -45,6 +45,15 @@ tasks:
     task_file: "implementer-systeme-logging-fichier.md"
     output_file: "rapport-implementer-systeme-logging-fichier.md"
     deadline: null
+  - id: "task-0f"
+    title: "Réorganiser les tests dans un dossier tests/ exécutable via pytest"
+    description: "Déplacer test_cpu.py et test_gpu.py dans un dossier tests/ structuré et les adapter pour qu'ils soient exécutables via pytest, avec configuration appropriée dans pyproject.toml"
+    state: "todo"
+    dependencies: ["task-0"]
+    dependencies-results: []
+    task_file: "reorganiser-tests-pytest.md"
+    output_file: "rapport-reorganiser-tests-pytest.md"
+    deadline: null
   - id: "task-1"
     title: "Tester le package SLURM_RAY sur CPU et GPU"
     description: "Créer et exécuter des tests fonctionnels pour vérifier que le package fonctionne correctement avec des fonctions simples sur CPU et/ou GPU via Ray sur un cluster SLURM"
