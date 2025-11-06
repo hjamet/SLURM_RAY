@@ -8,6 +8,7 @@ import paramiko
 from getpass import getpass
 import re
 import threading
+import socket
 
 dill.settings["recurse"] = True
 
@@ -54,39 +55,66 @@ class SSHTunnel:
                 password=self.ssh_password,
             )
             
-            # Create local port forwarding
+            # Create local port forwarding using socket server
             transport = self.ssh_client.get_transport()
-            self.forward_server = transport.request_port_forward("127.0.0.1", self.local_port)
             
-            # Start forwarding in a separate thread
-            import threading
-            def forward_handler(channel, remote_host, remote_port):
+            # Create a local socket server
+            local_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            local_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            local_socket.bind(("127.0.0.1", self.local_port))
+            local_socket.listen(5)
+            self.forward_server = local_socket
+            
+            def forward_handler(client_socket):
                 try:
-                    remote_channel = transport.open_channel(
+                    # Create SSH channel to remote host
+                    channel = transport.open_channel(
                         "direct-tcpip",
-                        (remote_host, remote_port),
-                        channel.getpeername(),
+                        (self.remote_host, self.remote_port),
+                        client_socket.getpeername(),
                     )
-                    while True:
-                        data = channel.recv(1024)
-                        if not data:
-                            break
-                        remote_channel.send(data)
-                    remote_channel.close()
+                    
+                    # Forward data bidirectionally
+                    def forward_data(source, dest):
+                        try:
+                            while True:
+                                data = source.recv(1024)
+                                if not data:
+                                    break
+                                dest.send(data)
+                        except Exception:
+                            pass
+                        finally:
+                            source.close()
+                            dest.close()
+                    
+                    # Start forwarding in both directions
+                    thread1 = threading.Thread(
+                        target=forward_data,
+                        args=(client_socket, channel),
+                        daemon=True,
+                    )
+                    thread2 = threading.Thread(
+                        target=forward_data,
+                        args=(channel, client_socket),
+                        daemon=True,
+                    )
+                    thread1.start()
+                    thread2.start()
+                    thread1.join()
+                    thread2.join()
                 except Exception:
                     pass
                 finally:
-                    channel.close()
+                    client_socket.close()
             
             def accept_handler():
                 while True:
                     try:
-                        channel = self.forward_server.accept(1.0)
-                        if channel is None:
-                            continue
+                        client_socket, addr = self.forward_server.accept()
                         thread = threading.Thread(
                             target=forward_handler,
-                            args=(channel, self.remote_host, self.remote_port),
+                            args=(client_socket,),
                             daemon=True,
                         )
                         thread.start()
@@ -479,7 +507,7 @@ class RayLauncher:
             )
         )
 
-        # Wait for log file to be created
+        # Wait for log file to be created and job to start running
         current_queue = None
         queue_log_file = os.path.join(self.project_path, "queue.log")
         with open(queue_log_file, "w") as f:
@@ -493,6 +521,9 @@ class RayLauncher:
             ["tail", "-f", os.path.join(self.project_path, "{}.log".format(job_name))]
         )
         start_time = time.time()
+        job_running = False
+        tunnel = None
+        
         while True:
             time.sleep(0.25)
             if os.path.exists(
@@ -542,6 +573,21 @@ class RayLauncher:
                         node_list,
                     )
                 )[1:]
+                
+                # Check if our job is running (status "R")
+                if job_id and not job_running:
+                    for i, (user, stat, node_count, node_lst) in enumerate(to_queue):
+                        # Find our job by checking job IDs in squeue output
+                        if i < len(df) - 1:
+                            job_line = df[i + 1]
+                            if job_id in job_line and stat == "R":
+                                job_running = True
+                                # Get head node
+                                head_node = self.__get_head_node_from_job_id(job_id)
+                                if head_node:
+                                    print(f"Job is running on node {head_node}.")
+                                    print(f"Dashboard should be accessible at http://{head_node}:8888 (if running on cluster)")
+                                break
 
                 # Update the queue log
                 if time.time() - start_time > 60:
@@ -667,14 +713,93 @@ class RayLauncher:
         print("Running server...")
         stdin, stdout, stderr = ssh_client.exec_command("./slurmray_server.sh")
 
-        # Read the output in real time
+        # Read the output in real time and capture job ID
+        job_id = None
+        tunnel = None
+        output_lines = []
+        
+        # Read output line by line to capture job ID
         while True:
             line = stdout.readline()
             if not line:
                 break
+            output_lines.append(line)
             print(line, end="")
+            
+            # Try to extract job ID from output (format: "Submitted batch job 12345")
+            if not job_id:
+                match = re.search(r"Submitted batch job (\d+)", line)
+                if match:
+                    job_id = match.group(1)
+                    print(f"\nJob ID detected: {job_id}")
 
         stdout.channel.recv_exit_status()
+        
+        # If job ID not found in output, try to find it via squeue
+        if not job_id:
+            print("Job ID not found in output, trying to find via squeue...")
+            stdin, stdout, stderr = ssh_client.exec_command(f"squeue -u {self.server_username} -o '%i %j' --noheader")
+            squeue_output = stdout.read().decode("utf-8")
+            # Try to find job matching project name pattern
+            if self.project_name:
+                for line in squeue_output.strip().split("\n"):
+                    parts = line.strip().split()
+                    if len(parts) >= 2 and self.project_name in parts[1]:
+                        job_id = parts[0]
+                        print(f"Found job ID via squeue: {job_id}")
+                        break
+        
+        # If job ID found, wait for job to be running and set up tunnel
+        if job_id:
+            print(f"Waiting for job {job_id} to start running...")
+            max_wait_time = 300  # Wait up to 5 minutes
+            wait_start = time.time()
+            job_running = False
+            
+            while time.time() - wait_start < max_wait_time:
+                time.sleep(2)
+                stdin, stdout, stderr = ssh_client.exec_command(f"squeue -j {job_id} -o '%T' --noheader")
+                status_output = stdout.read().decode("utf-8").strip()
+                if status_output == "R":
+                    job_running = True
+                    break
+            
+            if job_running:
+                # Get head node
+                head_node = self.__get_head_node_from_job_id(job_id, ssh_client)
+                if head_node:
+                    print(f"Job is running on node {head_node}. Setting up SSH tunnel for dashboard...")
+                    try:
+                        tunnel = SSHTunnel(
+                            ssh_host=self.server_ssh,
+                            ssh_username=self.server_username,
+                            ssh_password=self.server_password,
+                            remote_host=head_node,
+                            local_port=8888,
+                            remote_port=8888,
+                        )
+                        tunnel.__enter__()
+                        print("Dashboard accessible at http://localhost:8888")
+                        
+                        # Wait for job to complete while maintaining tunnel
+                        # Check periodically if job is still running
+                        while True:
+                            time.sleep(5)
+                            stdin, stdout, stderr = ssh_client.exec_command(f"squeue -j {job_id} -o '%T' --noheader")
+                            status_output = stdout.read().decode("utf-8").strip()
+                            if status_output != "R":
+                                # Job finished or no longer running
+                                break
+                    except Exception as e:
+                        print(f"Warning: Could not create SSH tunnel: {e}")
+                        print("Dashboard will not be accessible via port forwarding")
+                        tunnel = None
+            else:
+                print("Warning: Job did not start running within timeout, skipping tunnel setup")
+        
+        # Close tunnel if it was created
+        if tunnel:
+            tunnel.__exit__(None, None, None)
 
         # Downloading result
         print("Downloading result...")
