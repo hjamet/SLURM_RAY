@@ -1,0 +1,152 @@
+---
+alwaysApply: true
+---
+
+# README upkeep rule
+
+Tu dois maintenir le fichier [README.md](mdc:README.md) **constamment à jour** : à chaque modification du code (nouveau fichier, suppression, changement de logique, ajout/suppression de dépendances, services, bases de données, ou modification des scripts d'installation / variables d'environnement), tu mets à jour le `README.md`.
+
+Directives générales :
+- **Sois clair et concis** : garde le README lisible et proportionné ; fournis l'information essentielle sans digresser.
+- **Fais en sorte qu'il reflète l'état du dépôt** : le README doit être la source unique de vérité pour la vue d'ensemble du projet.
+- **Sois proportionnel** : inclus les informations essentielles et pousse les détails longs dans `documentation/` en créant des liens.
+
+Sections minimales obligatoires (et ce que tu dois y mettre) :
+
+- **Titre et description courte** : une ligne de titre + 4–5 phrases expliquant l'objectif du projet.
+
+- **Architecture du dépôt & emplacement des fichiers** : décris d'abord l'architecture générale et l'utilité de chaque dossier. Pour chaque dossier, indique ce qu'il contient, comment il est structuré et des exemples d'usage.
+  - `src/` : code applicatif (services, routes, modèles). *Contient le coeur de l'application — organise en sous-dossiers par domaine (ex. `src/services/`, `src/controllers/`, `src/models/`).*
+  - `tests/` : tests unitaires et d'intégration. *Placez les tests miroir du code (ex. `tests/unit/`, `tests/integration/`).*
+  - `scripts/` : utilitaires (migrations, maintenance). *Exécute des tâches récurrentes: `scripts/migrate.sh`, `scripts/seed.sh`.*
+  - `documentation/` : guides et docs longues (architecture détaillée, procédures). *Ne répète pas le README — référence les guides approfondis ici.*
+  - `.cursor/rules/` : règles utilisées par l'agent (comme celle-ci). *Règles et conventions pour l'agent.*
+
+  Exemple d'architecture courte à inclure dans le README :
+
+```
+root/
+├─ src/               # application code (services, controllers, models)
+├─ tests/             # unit & integration tests
+├─ scripts/           # maintenance scripts (migrations, seeds)
+├─ documentation/     # docs longues et guides
+├─ install.sh         # installation helper
+└─ package.json       # project metadata and scripts
+```
+
+*Le diagramme ci‑dessus donne une vue rapide de la structure et facilite la navigation pour un nouveau contributeur.*
+
+- **Fichiers importants et points centraux** : liste les fichiers/répertoires critiques et détaille leur rôle, les fonctions/classes exportées clés et exemples d'utilisation. Indique aussi les « noeuds » centraux qui sont souvent modifiés ou importés.
+  - `[package.json](mdc:package.json)` : métadonnées du projet et scripts.
+    - *Rôle* : point d'entrée des scripts (build/test/start/lint).
+    - *Points d'attention* : mises à jour des dépendances, scripts CI.
+    - *Exemple* : `npm run lint` — *exécute le linter configuré.*
+  - `[install.sh](mdc:install.sh)` : script d'installation automatisé.
+    - *Rôle* : installe dépendances et effectue les préparations initiales.
+    - *Exemple* : `./install.sh` — *installe et prépare l'environnement local.*
+  - `src/` : code source principal.
+    - *Noeuds centraux* : `src/server.js` (ou `src/index.js`) qui initialise l'application, `src/config/` pour la configuration partagée, `src/db/` pour l'accès aux données.
+    - *Exemple* : `createServer(config)` exporté par `src/server.js` — *sert à démarrer le serveur avec la configuration fournie.*
+  - `documentation/` : guides détaillés (migrations, architecture, API).
+    - *Rôle* : héberge les procédures longues et exemples d'usage avancés.
+
+  Pour chaque fichier critique, ajoute une petite note sur les cas où le modifier (ex. : changer `src/config` quand tu ajoutes une variable d'environnement) et un exemple de commande liée.
+
+- **Commandes principales** : détaille les commandes usuelles pour utiliser le projet, avec des exemples dans des blocs de code et une courte explication en italique sous chaque bloc.
+
+  - Installer les dépendances :
+
+```
+npm install
+```
+
+  *Installe les dépendances listées dans `package.json`.*
+
+  - Construire le projet :
+
+```
+npm run build
+```
+
+  *Produit l'artifact de production (ex. transpile dans `dist/`) prêt à être déployé.*
+
+  - Lancer les tests :
+
+```
+npm run test
+```
+
+  *Exécute les tests unitaires et d'intégration définis dans `tests/`.*
+
+  - Démarrer en mode développement :
+
+```
+npm start
+```
+
+  *Démarre le serveur localement ; vérifie les variables d'environnement nécessaires comme `PORT` ou `DB_URL`.*
+
+  - Exemples de scripts utilitaires (migrations, seeds) :
+
+```
+./scripts/migrate.sh
+./scripts/seed.sh
+```
+
+  *Effectue les migrations de base de données et peuple les jeux de données de test.*
+
+- **Services & bases de données** : liste les services externes, hôtes/ports par défaut, et comment les lancer en local (ex. via `docker-compose`). Fournis des commandes d'exemple et les variables d'environnement requises.
+
+- **Variables d'environnement** : énumère les variables essentielles et leur rôle. Exemple :
+
+```
+PORT=3000        # port d'écoute du serveur
+DB_URL=postgres://user:pass@localhost:5432/dbname
+```
+
+- **Guide de déploiement / exécution** : étapes succinctes pour déployer ou lancer l'application localement ou en production (build → test → release). Ajoute des exemples de commandes et liens vers `documentation/` si nécessaire.
+
+- **Changelog sommaire** : mentionne les changements majeurs ou renvoie vers `CHANGELOG.md` si présent.
+
+Bonnes pratiques obligatoires :
+- Quand tu ajoutes une nouvelle commande, dépendance ou service, ajoute un exemple d'utilisation dans `Commandes principales` et mets à jour `Prérequis & installation`.
+- Si tu changes les étapes d'installation ou de build, mets à jour immédiatement la section correspondante.
+- Fournis des exemples d'utilisation courts, testables et reproductibles.
+
+Exemple de template minimal à appliquer :
+
+```
+# Project Title — one line summary
+
+Short description (1-2 lines).
+
+## Prerequisites & Installation
+
+Commands to install dependencies and any environment setup.
+
+## Architecture
+
+Short overview of folder structure and where to place new code.
+
+## Important files
+
+List key files, roles and example usages.
+
+## Main commands
+
+List main scripts with examples and short italic explanations.
+
+## Services & Databases
+
+List services/databases used and their default names/ports and how to run them locally.
+
+## Environment variables
+
+List and describe important vars with example values.
+
+```
+
+Si le README devient trop long, déplace la documentation détaillée dans `documentation/` et crée des liens depuis le README.
+
+Respecte cette règle de manière systématique : **toute modification de code significative doit entraîner une mise à jour correspondante du `README.md`**.
+

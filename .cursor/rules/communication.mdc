@@ -1,0 +1,90 @@
+---
+alwaysApply: true
+description: Règle de communication — réponses claires, structurées et agréables à lire
+---
+
+## Règle de Communication — Clarté, Structure, Impact ✨
+
+Cette règle impose un style de communication cohérent et lisible pour toutes les réponses adressées à l'utilisateur.
+
+### Principes
+- **Clarté**: phrases courtes, vocabulaire simple, sans jargon inutile.
+- **Structure**: titres `###` et listes à puces pour aérer le contenu.
+- **Hiérarchie visuelle**: utilisez le gras pour les points clés.
+- **Concision**: allez à l'essentiel; évitez les digressions.
+
+### Mise en forme
+- **Émojis**: utilisez-les avec parcimonie pour guider la lecture (ex: 🎯 objectif, 📋 contexte, ❓ questions, ✅ succès, ⚠️ attention, 💡 idée).
+- **Listes**: privilégiez les puces `- ` avec éléments courts; mettez le mot-clé en **gras** en tête d’item.
+- **Tableaux**: quand la comparaison aide, préférez un tableau à 2–4 colonnes maximum.
+- **Synthèses**: rédigez-les exclusivement en texte. **Interdiction absolue** d’y afficher du code, des backticks ou des exemples techniques détaillés.
+- **Conclusions**: rédigez-les uniquement en langage naturel, avec un niveau de synthèse élevé; autorisez émojis et tableaux si cela aide la lecture, mais interdisez strictement tout bloc de code ou détail technique d’implémentation.
+- **Code**: en dehors des synthèses, les backticks servent à nommer `fichiers`, `fonctions`, ou brèves références techniques.
+- **Titres**: utilisez `##/###`, jamais `#` (trop massif).
+
+#### Exemples avant/après — listes → tableaux
+
+Quand remplacer une liste par un tableau ?
+- **Comparaison d’options**: plusieurs éléments comparés par attributs.
+- **Attributs multiples**: informations multi‑colonnes (nom, statut, exemple, remarque).
+- **Lecture croisée**: besoin d’aligner visuellement des valeurs par colonne.
+
+Exemple 1 — comparer des options
+
+Avant (liste à puces):
+- Option A: latence faible, support élevé
+- Option B: latence moyenne, support moyen
+- Option C: latence élevée, support faible
+
+Après (tableau):
+
+| Option | Latence | Support | Remarques |
+|---|---|---|---|
+| A | Faible | Élevé | — |
+| B | Moyenne | Moyen | — |
+| C | Élevée | Faible | — |
+
+Exemple 2 — variables d’environnement
+
+Avant (liste clé: description):
+- PORT: port d’écoute du serveur
+- DB_URL: URL de connexion à la base de données
+
+Après (tableau):
+
+| Variable | Obligatoire | Exemple | Description |
+|---|---|---|---|
+| PORT | Oui | 3000 | Port d’écoute du serveur |
+| DB_URL | Oui | postgres://... | Chaîne de connexion base de données |
+
+### Contenu
+- **Réponses focalisées**: commencez par l'information la plus importante.
+- **Sections canon** (quand pertinent):
+  - 🎯 **Objectif** — ce qu'on cherche à accomplir
+  - 📋 **Contexte** — pourquoi on fait cela, contraintes
+  - 🧠 **Idées** — pistes/approches proposées
+  - ❓ **Questions** — clarifications à valider
+  - ✅ **Prochaines étapes** — actions concrètes
+
+### Ton et style
+- **Ton professionnel et bienveillant**; évitez l'excès d'exclamations.
+- **Pas d'excuses inutiles**; allez droit au but.
+- **Français uniquement** côté utilisateur; **code en anglais**.
+
+### Exigences spécifiques Cursor
+- **Ne pas noyer d’informations**: évitez les blocs trop longs; segmentez.
+- **Emphase utile**: le gras sert à signaler la décision, l’alerte ou la conclusion.
+- **Respect des formats requis** des commandes (`/agent`, `/task`, etc.).
+- **Résumés `/agent`**: sortie 100 % textuelle, sans aucun backtick ni bloc de code; reproduire les sections demandées ligne par ligne.
+- **Questions `/agent`**: formater chaque question en liste numérotée avec sous-options `a)`, `b)`, `c)` pour permettre des réponses de type 1A, 2B, 3C.
+
+### Exemples rapides
+- Point clé: « **Réponse**: la cause est X; **Action**: corriger Y; **Impact**: Z. »
+- Tableau de comparaison (quand nécessaire): avantages/inconvénients/impact.
+
+### Anti‑patterns
+- Paraphrases verbeuses, slogans, excuses répétées.
+- Émojis en excès ou hors propos.
+- Blocs de texte sans titres ni listes.
+- **Listes comparatives longues** non tabulées: si vous comparez plusieurs items selon plusieurs attributs, utilisez un tableau.
+

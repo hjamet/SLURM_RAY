@@ -1,0 +1,48 @@
+version: "1.0"
+tasks:
+  - id: "task-0"
+    title: "Installer le projet et vérifier que tout fonctionne"
+    description: "Installer le projet SLURM_RAY, mettre à jour les dépendances dans pyproject.toml et requirements.txt, vérifier que l'installation fonctionne correctement et identifier d'éventuels problèmes de compatibilité"
+    state: "todo"
+    dependencies: []
+    dependencies-results: []
+    task_file: "installer-et-verifier-projet.md"
+    output_file: "rapport-installer-et-verifier-projet.md"
+    deadline: null
+  - id: "task-0b"
+    title: "Corriger les incompatibilités avec Curnagl"
+    description: "Analyser et corriger les incompatibilités entre le code actuel et la documentation Curnagl actuelle (versions Python, modules, arguments SLURM, partitions)"
+    state: "todo"
+    dependencies: ["task-0"]
+    dependencies-results: []
+    task_file: "corriger-incompatibilites-curnagl.md"
+    output_file: "rapport-corriger-incompatibilites-curnagl.md"
+    deadline: null
+  - id: "task-1"
+    title: "Tester le package SLURM_RAY sur CPU et GPU"
+    description: "Créer et exécuter des tests fonctionnels pour vérifier que le package fonctionne correctement avec des fonctions simples sur CPU et/ou GPU via Ray sur un cluster SLURM"
+    state: "todo"
+    dependencies: ["task-0", "task-0b"]
+    dependencies-results: []
+    task_file: "tester-package-cpu-gpu.md"
+    output_file: "rapport-tester-package-cpu-gpu.md"
+    deadline: null
+  - id: "task-2"
+    title: "Améliorer la gestion des credentials (username/password) via .env"
+    description: "Modifier RayLauncher pour charger automatiquement server_username et server_password depuis un fichier .env, tout en gardant la rétrocompatibilité avec les paramètres explicites"
+    state: "todo"
+    dependencies: ["task-0"]
+    dependencies-results: []
+    task_file: "ameliorer-gestion-env-credentials.md"
+    output_file: "rapport-ameliorer-gestion-env-credentials.md"
+    deadline: null
+  - id: "task-3"
+    title: "Mettre à jour la documentation pour tout avoir dans le repo"
+    description: "Remplacer les liens externes dans README.md par du contenu local, intégrer la documentation de RayLauncher directement dans le repository pour éviter les dépendances vers des sites externes"
+    state: "todo"
+    dependencies: ["task-1", "task-2", "task-0b"]
+    dependencies-results: []
+    task_file: "mettre-a-jour-documentation-repo.md"
+    output_file: "rapport-mettre-a-jour-documentation-repo.md"
+    deadline: null
+

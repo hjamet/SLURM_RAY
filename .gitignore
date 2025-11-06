@@ -161,3 +161,8 @@ cython_debug/
 
 # Project logs
 .slogs
+
+# Cursor Memory Bank
+.cursor/mcp
+.cursor/mcp.json
+.cursor/screenshots
