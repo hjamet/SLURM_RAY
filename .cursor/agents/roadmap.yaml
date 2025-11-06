@@ -9,6 +9,15 @@ tasks:
     task_file: "corriger-incompatibilites-curnagl.md"
     output_file: "rapport-corriger-incompatibilites-curnagl.md"
     deadline: null
+  - id: "task-9"
+    title: "Créer des tests hello world CPU et GPU"
+    description: "Créer deux tests fonctionnels simples 'hello world' : un pour CPU et un pour GPU, qui exécutent des fonctions minimales via Ray sur un cluster SLURM. Ces tests doivent être rapides à exécuter et permettre de valider rapidement que le système fonctionne correctement après chaque modification majeure"
+    state: "todo"
+    dependencies: []
+    dependencies-results: []
+    task_file: "creer-tests-hello-world-cpu-gpu.md"
+    output_file: "rapport-creer-tests-hello-world-cpu-gpu.md"
+    deadline: null
   - id: "task-0c"
     title: "Optimiser la gestion du stockage et le nettoyage des fichiers"
     description: "Optimiser la gestion du stockage et du nettoyage pour améliorer les performances : implémenter un cache intelligent pour réutiliser le venv entre exécutions, nettoyer les fichiers temporaires après téléchargement réussi, optimiser la génération de requirements.txt, et corriger les incohérences de versions Python dans les scripts"
@@ -94,7 +103,7 @@ tasks:
     title: "Tester le package SLURM_RAY sur CPU et GPU"
     description: "Créer et exécuter des tests fonctionnels pour vérifier que le package fonctionne correctement avec des fonctions simples sur CPU et/ou GPU via Ray sur un cluster SLURM"
     state: "todo"
-    dependencies: ["task-0b", "task-0c"]
+    dependencies: ["task-9", "task-0b", "task-0c"]
     dependencies-results: ["rapport-installer-et-verifier-projet.md"]
     task_file: "tester-package-cpu-gpu.md"
     output_file: "rapport-tester-package-cpu-gpu.md"
