@@ -7,6 +7,7 @@ import signal
 
 from slurmray.backend.slurm import SlurmBackend
 from slurmray.backend.local import LocalBackend
+from slurmray.backend.desi import DesiBackend
 
 dill.settings["recurse"] = True
 
@@ -31,6 +32,7 @@ class RayLauncher:
         server_username: str = "hjamet",
         server_password: str = None,
         log_file: str = "logs/RayLauncher.log",
+        cluster: str = "slurm", # 'slurm' (curnagl) or 'desi'
     ):
         """Initialize the launcher
 
@@ -50,6 +52,7 @@ class RayLauncher:
             server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect.
             server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. CAUTION: never write your password in the code. Defaults to None.
             log_file (str, optional): Path to the log file. Defaults to "logs/RayLauncher.log".
+            cluster (str, optional): Type of cluster/backend to use: 'slurm' (default, e.g. Curnagl) or 'desi' (ISIPOL09).
         """
         # Save the parameters
         self.project_name = project_name
@@ -66,6 +69,7 @@ class RayLauncher:
         self.server_username = server_username
         self.server_password = server_password
         self.log_file = log_file
+        self.cluster_type = cluster.lower() # 'slurm' or 'desi'
         
         self.__setup_logger()
 
@@ -75,7 +79,7 @@ class RayLauncher:
         if self.use_gpu is True and "cuda" not in self.modules:
             self.modules += ["cuda", "cudnn"]
 
-        # Check if this code is running on a cluster
+        # Check if this code is running on a cluster (only relevant for Slurm, usually)
         self.cluster = os.path.exists("/usr/bin/sbatch")
 
         # Create the project directory if not exists
@@ -86,10 +90,17 @@ class RayLauncher:
             os.makedirs(self.project_path)
             
         # Initialize Backend
-        if self.cluster or self.server_run:
-            self.backend = SlurmBackend(self)
+        if self.server_run:
+            if self.cluster_type == "desi":
+                self.backend = DesiBackend(self)
+            elif self.cluster_type == "slurm":
+                self.backend = SlurmBackend(self)
+            else:
+                raise ValueError(f"Unknown cluster type: {self.cluster_type}. Use 'slurm' or 'desi'.")
+        elif self.cluster: # Running ON a cluster (Slurm)
+             self.backend = SlurmBackend(self)
         else:
-            self.backend = LocalBackend(self)
+             self.backend = LocalBackend(self)
 
     def __setup_logger(self):
         """Setup the logger"""
@@ -127,10 +138,6 @@ class RayLauncher:
         print(f"\nInterruption received ({sig_name}). Canceling job and cleaning up...")
         
         if hasattr(self, 'backend'):
-            # Since we don't know the job_id easily here without asking the backend,
-            # we should let the backend handle cancellation if it stored the job_id.
-            # But SlurmBackend needs the job_id. 
-            # Wait, SlurmBackend stores self.job_id!
             if hasattr(self.backend, 'job_id') and self.backend.job_id:
                 self.backend.cancel(self.backend.job_id)
             elif hasattr(self, 'job_id') and self.job_id: # Fallback if we stored it on launcher

@@ -1,0 +1,214 @@
+import os
+import sys
+import time
+import re
+import paramiko
+import subprocess
+import dill
+from typing import Any
+
+from slurmray.backend.remote import RemoteMixin
+from slurmray.utils import SSHTunnel
+
+class DesiBackend(RemoteMixin):
+    """Backend for Desi server (ISIPOL09) execution"""
+    
+    # Constants for Desi environment
+    SERVER_BASE_DIR = "/home/users/{username}/slurmray-server" # Need to check where to write on Desi. assuming home.
+    PYTHON_CMD = "/usr/bin/python3" # To be verified
+
+    def run(self, cancel_old_jobs: bool = True) -> Any:
+        """Run the job on Desi"""
+        self._connect()
+        sftp = self.ssh_client.open_sftp()
+        
+        # Base directory on server
+        base_dir = f"/home/{self.launcher.server_username}/slurmray-server"
+        
+        # Clean up old files
+        self.ssh_client.exec_command(f"mkdir -p {base_dir} && rm -rf {base_dir}/*")
+        
+        # Generate Python script (spython.py) that will run on Desi
+        # This script uses RayLauncher in LOCAL mode (but on the remote machine)
+        # We need to adapt spython.py generation to NOT look for sbatch/slurm
+        self._write_python_script()
+        
+        # Generate requirements
+        self._generate_requirements()
+        
+        # Push files
+        self.logger.info("Pushing files to Desi...")
+        for file in os.listdir(self.launcher.project_path):
+            if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".txt"):
+                sftp.put(os.path.join(self.launcher.project_path, file), f"{base_dir}/{file}")
+        
+        for file in self.launcher.files:
+             self._push_file(file, sftp, base_dir)
+             
+        # Create runner script (shell script to setup env and run python)
+        runner_script = "run_desi.sh"
+        self._write_runner_script(runner_script, base_dir)
+        sftp.put(os.path.join(self.launcher.project_path, runner_script), f"{base_dir}/{runner_script}")
+        self.ssh_client.exec_command(f"chmod +x {base_dir}/{runner_script}")
+        
+        # Run the script
+        self.logger.info("Running job on Desi...")
+        
+        # Smart Lock Logic is implemented inside the runner script or wrapper python?
+        # The user asked for "Smart Lock" to be implemented:
+        # "Implémenter un système de Scheduling Maison... Le runner doit vérifier un fichier de lock..."
+        # It's better to implement this in Python inside the runner script or a wrapper.
+        # Let's create a 'desi_wrapper.py' that does the locking then runs 'spython.py'.
+        
+        desi_wrapper_script = "desi_wrapper.py"
+        self._write_desi_wrapper(desi_wrapper_script)
+        sftp.put(os.path.join(self.launcher.project_path, desi_wrapper_script), f"{base_dir}/{desi_wrapper_script}")
+        
+        # Execute
+        cmd = f"cd {base_dir} && ./run_desi.sh"
+        stdin, stdout, stderr = self.ssh_client.exec_command(cmd, get_pty=True) # get_pty to allow killing?
+        
+        # Stream output
+        job_started = False
+        
+        # Read output
+        while True:
+            line = stdout.readline()
+            if not line:
+                break
+            print(line, end="")
+            self.logger.info(line.strip())
+            
+            if "Job started" in line:
+                job_started = True
+            
+            # Extract PID if possible for cancellation?
+            
+        stdout.channel.recv_exit_status()
+        
+        # Download result
+        self.logger.info("Downloading result...")
+        try:
+            sftp.get(f"{base_dir}/result.pkl", os.path.join(self.launcher.project_path, "result.pkl"))
+            self.logger.info("Result downloaded!")
+        except FileNotFoundError:
+             self.logger.error("Result file not found.")
+             
+        # Load result
+        with open(os.path.join(self.launcher.project_path, "result.pkl"), "rb") as f:
+            result = dill.load(f)
+            
+        return result
+
+    def cancel(self, job_id: str):
+        """Cancel job on Desi"""
+        # Need to know PID or have a kill file
+        pass
+
+    def _write_python_script(self):
+        """Write the python script (spython.py) that will be executed by the job"""
+        self.logger.info("Writing python script...")
+
+        # Remove the old python script
+        for file in os.listdir(self.launcher.project_path):
+            if file.endswith(".py") and "spython" in file:
+                os.remove(os.path.join(self.launcher.project_path, file))
+
+        # Write the python script
+        with open(
+            os.path.join(self.launcher.module_path, "assets", "spython_template.py"),
+            "r",
+        ) as f:
+            text = f.read()
+
+        text = text.replace("{{PROJECT_PATH}}", ".") # On remote, we are in current dir
+        
+        # Desi is a single machine (or we treat it as such for now). 
+        # Ray should run in local mode or with address='auto' but without Slurm specifics.
+        # It's basically local execution on a remote machine.
+        local_mode = f"\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\nruntime_env = {self.launcher.runtime_env},\n"
+        
+        text = text.replace(
+            "{{LOCAL_MODE}}",
+            local_mode,
+        )
+        with open(os.path.join(self.launcher.project_path, "spython.py"), "w") as f:
+            f.write(text)
+
+    def _write_runner_script(self, filename, base_dir):
+        """Write bash script to set up env and run wrapper"""
+        content = f"""#!/bin/bash
+# Desi Runner Script
+
+# Setup Environment (if needed, e.g. load modules or activate conda)
+# Assuming python is available or venv creation
+
+# Create/Activate venv
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+fi
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run Wrapper (Smart Lock + Script)
+python3 desi_wrapper.py
+"""
+        with open(os.path.join(self.launcher.project_path, filename), "w") as f:
+            f.write(content)
+
+    def _write_desi_wrapper(self, filename):
+        """Write python wrapper for Smart Lock"""
+        content = f"""
+import os
+import sys
+import time
+import fcntl
+import subprocess
+
+LOCK_FILE = "/tmp/slurmray_desi.lock"
+MAX_RETRIES = 1000
+RETRY_DELAY = 30 # seconds
+
+def acquire_lock():
+    print("Acquiring lock...")
+    lock_fd = open(LOCK_FILE, 'w')
+    try:
+        # Try to acquire non-blocking exclusive lock
+        fcntl.lockf(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        print("Lock acquired!")
+        return lock_fd
+    except IOError:
+        return None
+
+def main():
+    print("Starting Smart Lock Scheduler...")
+    
+    lock_fd = None
+    retries = 0
+    
+    while lock_fd is None:
+        lock_fd = acquire_lock()
+        if lock_fd is None:
+            print(f"Resources busy. Waiting... (Attempt {{retries + 1}})")
+            time.sleep(RETRY_DELAY)
+            retries += 1
+            
+    # Lock acquired, run payload
+    try:
+        print("Starting Payload (spython.py)...")
+        subprocess.check_call([sys.executable, "spython.py"])
+    finally:
+        # Release lock
+        print("Releasing lock...")
+        fcntl.lockf(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
+        print("Lock released.")
+
+if __name__ == "__main__":
+    main()
+"""
+        with open(os.path.join(self.launcher.project_path, filename), "w") as f:
+            f.write(content)
+
