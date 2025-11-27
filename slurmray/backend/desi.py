@@ -126,7 +126,7 @@ class DesiBackend(RemoteMixin):
         # Desi is a single machine (or we treat it as such for now). 
         # Ray should run in local mode or with address='auto' but without Slurm specifics.
         # It's basically local execution on a remote machine.
-        local_mode = f"\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\nruntime_env = {self.launcher.runtime_env},\n"
+        local_mode = f"\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8265,\nruntime_env = {self.launcher.runtime_env},\n"
         
         text = text.replace(
             "{{LOCAL_MODE}}",

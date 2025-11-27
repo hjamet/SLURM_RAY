@@ -130,7 +130,7 @@ class SlurmBackend(ClusterBackend):
         text = text.replace("{{PROJECT_PATH}}", f'"{self.launcher.project_path}"')
         local_mode = ""
         if self.launcher.cluster or self.launcher.server_run:
-            local_mode = f"\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8888,\nruntime_env = {self.launcher.runtime_env},\n"
+            local_mode = f"\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8265,\nruntime_env = {self.launcher.runtime_env},\n"
         text = text.replace(
             "{{LOCAL_MODE}}",
             local_mode,
@@ -569,7 +569,7 @@ class SlurmBackend(ClusterBackend):
                             ssh_password=self.launcher.server_password,
                             remote_host=head_node,
                             local_port=8888,
-                            remote_port=8888,
+                            remote_port=8265,
                             logger=self.logger
                         )
                         tunnel.__enter__()

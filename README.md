@@ -64,6 +64,9 @@ launcher = RayLauncher(
     cluster="slurm",  # Use Slurm backend (default)
 )
 
+# Note: When running with server_run=True, SlurmRay automatically sets up an SSH tunnel 
+# to the Ray Dashboard, accessible at http://localhost:8888 during job execution.
+
 result = launcher()
 print(result)
 ```
@@ -252,7 +255,6 @@ The Launcher documentation is available [here](https://htmlpreview.github.io/?ht
 
 | Tâche | Objectif | État | Dépendances |
 |-------|----------|------|-------------|
-| **Corriger et rediriger automatiquement le dashboard Ray vers local** | Corriger le bug de configuration du dashboard dans RayLauncher.py (ligne 199) qui empêche le lancement correct du dashboard Ray. Une fois le bug corrigé, implémenter une redirection automatique du dashboard Ray vers la machine locale via port forwarding SSH. Le système doit établir un tunnel SSH automatiquement lorsque le job démarre, permettant l'accès au dashboard sur `http://localhost:8888` pendant l'exécution du job. Cette fonctionnalité améliore significativement l'expérience utilisateur en permettant un monitoring en temps réel des ressources et de l'état des tâches Ray sans nécessiter de configuration manuelle de tunnels SSH. | 🏗️ En cours | - |
 | **Simplifier Affichage Queue SLURM** | Remplacer l'affichage verbeux et polluant de la file d'attente actuel par un message de statut synthétique et apaisé : 'Waiting for job... (Position in queue : x/X)'. Ce message ne doit être rafraîchi que toutes les 30 secondes pour éviter de spammer la console et les logs, améliorant ainsi l'expérience utilisateur (UX) durant les phases d'attente. | 🏗️ En cours | - |
 | **Optimiser la gestion du stockage et le nettoyage des fichiers** | Optimiser la gestion du stockage et du nettoyage pour améliorer les performances globales du système. Implémenter un cache intelligent pour réutiliser le virtualenv entre exécutions si les dépendances n'ont pas changé, évitant ainsi de recréer l'environnement à chaque fois. Nettoyer systématiquement les fichiers temporaires après téléchargement réussi des résultats pour éviter l'accumulation de données inutiles. Optimiser la génération de `requirements.txt` pour qu'elle soit plus rapide et plus précise. Corriger les incohérences potentielles de versions Python entre l'environnement local et distant pour garantir la compatibilité. | 📅 À faire | - |
 | **Tester le package SLURM_RAY sur CPU et GPU** | Créer et exécuter des tests fonctionnels complets pour vérifier que le package fonctionne correctement avec des fonctions simples sur CPU et/ou GPU via Ray sur un cluster SLURM. Ces tests doivent être des "smoke tests" qui valident la chaîne complète : soumission du job, exécution sur le cluster, récupération des résultats. Les tests doivent être rapides à exécuter et permettre de valider rapidement que le système fonctionne correctement après chaque modification majeure. Ils serviront de garde-fou pour éviter les régressions lors des évolutions futures du code. | 📅 À faire | Optimiser la gestion du stockage et le nettoyage des fichiers |
