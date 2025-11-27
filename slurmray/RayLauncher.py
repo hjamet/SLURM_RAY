@@ -208,14 +208,38 @@ class RayLauncher:
 
     def __serialize_func_and_args(self, func: Callable = None, args: list = None):
         """Serialize the function and the arguments
-
+        
         Args:
             func (Callable, optional): Function to serialize. Defaults to None.
             args (list, optional): Arguments of the function. Defaults to None.
         """
         self.logger.info("Serializing function and arguments...")
 
-        # Pickle the function
+        # Try to get source code for the function (more robust across versions)
+        try:
+            import inspect
+            source = inspect.getsource(func)
+            # We need to handle indentation if the function is defined inside another
+            # Deduplicate indentation
+            lines = source.split('\n')
+            if lines:
+                first_line = lines[0]
+                indent = len(first_line) - len(first_line.lstrip())
+                source = '\n'.join([line[indent:] for line in lines])
+            
+            with open(os.path.join(self.project_path, "func_source.py"), "w") as f:
+                # We need to wrap it to ensure it can be imported
+                # But if we just write the function def, we can import the module and get the func by name
+                f.write(source)
+                
+            # Save function name for loading
+            with open(os.path.join(self.project_path, "func_name.txt"), "w") as f:
+                f.write(func.__name__)
+                
+        except Exception as e:
+            self.logger.warning(f"Could not save function source: {e}")
+
+        # Pickle the function (legacy/default method)
         with open(os.path.join(self.project_path, "func.pkl"), "wb") as f:
             dill.dump(func, f)
 

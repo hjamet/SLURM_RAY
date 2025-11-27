@@ -42,6 +42,9 @@ class DesiBackend(RemoteMixin):
             if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".txt"):
                 sftp.put(os.path.join(self.launcher.project_path, file), f"{base_dir}/{file}")
         
+        # Copy source code of slurmray to server (since it's not on PyPI)
+        self._push_source_code(sftp, base_dir)
+        
         for file in self.launcher.files:
              self._push_file(file, sftp, base_dir)
              
@@ -70,6 +73,7 @@ class DesiBackend(RemoteMixin):
         
         # Stream output
         job_started = False
+        tunnel = None
         
         # Read output
         while True:
@@ -79,12 +83,33 @@ class DesiBackend(RemoteMixin):
             print(line, end="")
             self.logger.info(line.strip())
             
-            if "Job started" in line:
+            if "Started a local Ray instance" in line or "View the dashboard at" in line:
                 job_started = True
-            
-            # Extract PID if possible for cancellation?
+                # Start SSH Tunnel
+                if not tunnel:
+                    self.logger.info("Ray started. Setting up SSH tunnel for dashboard...")
+                    try:
+                        # Connect to localhost on the remote server (Desi)
+                        tunnel = SSHTunnel(
+                            ssh_host=self.launcher.server_ssh,
+                            ssh_username=self.launcher.server_username,
+                            ssh_password=self.launcher.server_password,
+                            remote_host="127.0.0.1", 
+                            local_port=8888,
+                            remote_port=8265,
+                            logger=self.logger
+                        )
+                        tunnel.__enter__()
+                        self.logger.info("Dashboard accessible at http://localhost:8888")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to create SSH tunnel: {e}")
+                        tunnel = None
             
         stdout.channel.recv_exit_status()
+        
+        # Close tunnel
+        if tunnel:
+            tunnel.__exit__(None, None, None)
         
         # Download result
         self.logger.info("Downloading result...")
@@ -99,6 +124,35 @@ class DesiBackend(RemoteMixin):
             result = dill.load(f)
             
         return result
+
+    def _push_source_code(self, sftp, base_dir):
+        """Push local slurmray source code to remote server"""
+        self.logger.info("Pushing slurmray source code...")
+        source_path = os.path.dirname(self.launcher.module_path) # Parent of slurmray package
+        
+        # Walk through the slurmray directory
+        for root, dirs, files in os.walk(os.path.join(source_path, "slurmray")):
+            # Skip __pycache__
+            if "__pycache__" in root:
+                continue
+                
+            rel_path = os.path.relpath(root, source_path)
+            remote_dir = os.path.join(base_dir, rel_path)
+            
+            # Create remote directory
+            try:
+                stdin, stdout, stderr = self.ssh_client.exec_command(f"mkdir -p {remote_dir}")
+                stdout.channel.recv_exit_status() # Wait for directory to be created
+            except Exception:
+                pass
+                
+            for file in files:
+                if file.endswith(".pyc") or file.endswith(".pyo"):
+                    continue
+                    
+                local_file = os.path.join(root, file)
+                remote_file = os.path.join(remote_dir, file)
+                sftp.put(local_file, remote_file)
 
     def cancel(self, job_id: str):
         """Cancel job on Desi"""
@@ -126,7 +180,7 @@ class DesiBackend(RemoteMixin):
         # Desi is a single machine (or we treat it as such for now). 
         # Ray should run in local mode or with address='auto' but without Slurm specifics.
         # It's basically local execution on a remote machine.
-        local_mode = f"\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8265,\nruntime_env = {self.launcher.runtime_env},\n"
+        local_mode = f"\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8265,\nruntime_env = {self.launcher.runtime_env},\n"
         
         text = text.replace(
             "{{LOCAL_MODE}}",
@@ -151,6 +205,9 @@ source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Add current directory to PYTHONPATH to make 'slurmray' importable
+export PYTHONPATH=$PYTHONPATH:.
 
 # Run Wrapper (Smart Lock + Script)
 python3 desi_wrapper.py
@@ -211,4 +268,3 @@ if __name__ == "__main__":
 """
         with open(os.path.join(self.launcher.project_path, filename), "w") as f:
             f.write(content)
-

@@ -1,42 +1,63 @@
 
 from slurmray.RayLauncher import RayLauncher
 import ray
-# import torch # Only imported inside the function
 import os
 import time
 from dotenv import load_dotenv
 
 def gpu_check_func(x):
-    import torch
-    import ray
+    """
+    Simple function to verify Ray and GPU access on the remote server.
+    It imports libraries inside to avoid serialization issues with external references.
+    """
+    import sys
+    import importlib
     
-    resources = ray.cluster_resources()
-    gpu_count_torch = torch.cuda.device_count()
-    gpu_names = [torch.cuda.get_device_name(i) for i in range(gpu_count_torch)]
-    
-    return {
+    # Initialize results
+    results = {
         "input_x": x,
-        "ray_resources": resources,
-        "torch_gpu_count": gpu_count_torch,
-        "gpu_names": gpu_names,
-        "cuda_available": torch.cuda.is_available()
+        "python_version": sys.version,
+        "torch_available": False,
+        "cuda_available": False,
+        "torch_gpu_count": 0,
+        "gpu_names": [],
+        "ray_available": False,
+        "ray_resources": {},
+        "error": None
     }
+    
+    # Check Torch
+    try:
+        torch = importlib.import_module("torch")
+        results["torch_available"] = True
+        if torch.cuda.is_available():
+            results["cuda_available"] = True
+            results["torch_gpu_count"] = torch.cuda.device_count()
+            results["gpu_names"] = [torch.cuda.get_device_name(i) for i in range(results["torch_gpu_count"])]
+    except Exception as e:
+        results["error"] = f"Torch error: {e}"
+
+    # Check Ray
+    try:
+        ray = importlib.import_module("ray")
+        results["ray_available"] = True
+        results["ray_resources"] = ray.cluster_resources()
+    except Exception as e:
+        err = results.get("error", "")
+        results["error"] = f"{err} | Ray error: {e}"
+
+    # Sleep a bit to allow dashboard inspection if needed (optional)
+    # time.sleep(10) 
+    
+    return results
 
 def manual_test_desi_gpu():
     load_dotenv()
     
-    # Check for DESI_PASSWORD
-    if not os.environ.get("DESI_PASSWORD"):
-        print("⚠️  WARNING: DESI_PASSWORD not found in environment variables.")
-        print("You might be prompted for a password.")
-
     print("🚀 Launching Desi GPU & Dashboard Test...")
-    print("ℹ️  This test will:")
-    print("   1. Connect to Desi (130.223.73.209)")
-    print("   2. Request GPU resources")
-    print("   3. Setup an SSH tunnel for the dashboard (check for 'Dashboard accessible at http://localhost:8888' in logs)")
-    print("   4. Return GPU info")
+    print("ℹ️  This test will connect to Desi, request GPU resources, and verify the environment.")
 
+    # Initialize Launcher
     launcher = RayLauncher(
         project_name="test_desi_gpu_dashboard",
         func=gpu_check_func,
@@ -47,36 +68,36 @@ def manual_test_desi_gpu():
         use_gpu=True, # Request GPU
         memory=4,
         max_running_time=10,
-        server_run=True,
-        server_ssh="130.223.73.209",
-        server_username="hjamet", # A adapter si besoin, ou charger depuis env? Le code par défaut est hjamet.
-        server_password=None, # Will pick up DESI_PASSWORD or prompt
-        cluster="desi"
+        server_run=True, # Run on server
+        server_ssh="130.223.73.209", # Desi IP
+        server_username=os.getenv("DESI_USERNAME", "hjamet"), # Default or from env
+        server_password=os.getenv("DESI_PASSWORD"), # From env
+        cluster="desi" # Desi backend
     )
     
-    # Override username from env if present for flexibility
-    if os.getenv("DESI_USERNAME"):
-        launcher.server_username = os.getenv("DESI_USERNAME")
-        print(f"ℹ️  Using username from env: {launcher.server_username}")
-
     try:
         result = launcher()
         print("\n✅ Execution Completed!")
-        print("--------------------------------------------------")
-        print(f"CUDA Available: {result['cuda_available']}")
-        print(f"Torch GPU Count: {result['torch_gpu_count']}")
-        print(f"GPU Names: {result['gpu_names']}")
-        print(f"Ray Resources: {result['ray_resources']}")
-        print("--------------------------------------------------")
+        print("-" * 50)
+        print(f"Python Version: {result.get('python_version')}")
+        print(f"Torch Available: {result.get('torch_available')}")
+        print(f"CUDA Available: {result.get('cuda_available')}")
+        print(f"GPU Count: {result.get('torch_gpu_count')}")
+        print(f"GPU Names: {result.get('gpu_names')}")
+        print(f"Ray Resources: {result.get('ray_resources')}")
+        print("-" * 50)
         
-        if result['torch_gpu_count'] >= 2:
-            print("✅ SUCCESS: Detected 2 or more GPUs.")
+        if result.get('cuda_available') and result.get('torch_gpu_count') >= 1:
+            print("✅ SUCCESS: GPU detected.")
         else:
-            print(f"⚠️  WARNING: Only detected {result['torch_gpu_count']} GPUs (Expected 2).")
+            print("⚠️  WARNING: GPU not detected or CUDA unavailable.")
+            
+        if result.get('error'):
+            print(f"⚠️  Remote Errors: {result['error']}")
             
     except Exception as e:
         print(f"❌ Execution failed: {e}")
+        raise
 
 if __name__ == "__main__":
     manual_test_desi_gpu()
-

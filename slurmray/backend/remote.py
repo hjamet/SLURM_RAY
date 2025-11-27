@@ -93,8 +93,24 @@ class RemoteMixin(ClusterBackend):
             [f"pip-chill --no-version > {self.launcher.project_path}/requirements.txt"],
             shell=True,
         )
+        
+        import dill
+        dill_version = dill.__version__
+        
         with open(f"{self.launcher.project_path}/requirements.txt", "r") as file:
             lines = file.readlines()
-            lines.append("slurmray\n")
+            # Filter out slurmray, ray and dill
+            lines = [line for line in lines if "slurmray" not in line and "ray" not in line and "dill" not in line]
+            
+            # Add pinned dill version to ensure serialization compatibility
+            lines.append(f"dill=={dill_version}\n")
+            
+            # Add ray[default] without pinning version (to allow best compatible on remote)
+            lines.append("ray[default]\n")
+            
+            # Ensure torch is present (common dependency)
+            if not any("torch" in line for line in lines):
+                lines.append("torch\n")
+                
         with open(f"{self.launcher.project_path}/requirements.txt", "w") as file:
             file.writelines(lines)
