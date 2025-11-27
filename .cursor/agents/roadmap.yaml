@@ -27,21 +27,12 @@ tasks:
     task_file: "corriger-et-rediriger-dashboard-ray.md"
     output_file: "rapport-corriger-et-rediriger-dashboard-ray.md"
     deadline: null
-  - id: "task-7"
-    title: "Implémenter le point d'entrée python -m slurmray"
-    description: "Implémenter le point d'entrée python -m slurmray en créant un fichier __main__.py dans le package slurmray qui lancera l'interface interactive de gestion des jobs SLURM"
-    state: "in-progress"
-    dependencies: []
-    dependencies-results: ["rapport-creer-interface-interactive-gestion-jobs-slurm.md"]
-    task_file: "implementer-point-entree-python-m-slurmray.md"
-    output_file: "rapport-implementer-point-entree-python-m-slurmray.md"
-    deadline: null
   - id: "task-8"
     title: "Intégrer l'ouverture automatique du dashboard Ray"
     description: "Intégrer l'ouverture automatique du dashboard Ray dans l'interface interactive de gestion des jobs SLURM, permettant d'ouvrir le dashboard en local (http://localhost:8888) avec gestion automatique du port forwarding SSH si nécessaire"
     state: "todo"
-    dependencies: ["task-7"]
-    dependencies-results: []
+    dependencies: []
+    dependencies-results: ["rapport-creer-interface-interactive-gestion-jobs-slurm.md", "rapport-implementer-point-entree-python-m-slurmray.md"]
     task_file: "integrer-ouverture-automatique-dashboard-ray.md"
     output_file: "rapport-integrer-ouverture-automatique-dashboard-ray.md"
     deadline: null
