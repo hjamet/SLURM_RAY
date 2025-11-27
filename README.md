@@ -4,7 +4,7 @@
 
 ## Description
 
-**SlurmRay** is a module for effortlessly distributing tasks on a [Slurm](https://slurm.schedmd.com/) cluster using the [Ray](https://ray.io/) library. **SlurmRay** was initially designed to work with the [Curnagl](https://wiki.unil.ch/ci/books/high-performance-computing-hpc/page/curnagl) cluster at the *University of Lausanne*. However, it should be able to run on any [Slurm](https://slurm.schedmd.com/) cluster with a minimum of configuration.
+**SlurmRay** is a module for effortlessly distributing tasks on a [Slurm](https://slurm.schedmd.com/) cluster (like Curnagl) or a standalone server (like ISIPOL09/Desi) using the [Ray](https://ray.io/) library. **SlurmRay** was initially designed to work with the [Curnagl](https://wiki.unil.ch/ci/books/high-performance-computing-hpc/page/curnagl) cluster at the *University of Lausanne*. However, it should be able to run on any [Slurm](https://slurm.schedmd.com/) cluster with a minimum of configuration.
 
 ## Installation
 
@@ -49,6 +49,7 @@ launcher = RayLauncher(
     server_ssh="curnagl.dcsr.unil.ch", # Address of the SLURM server
     server_username="hjamet", # Username to connect to the server
     server_password=None, # Will be asked in the terminal
+    cluster="slurm", # 'slurm' (default) or 'desi'
 )
 
 result = launcher()
@@ -179,7 +180,6 @@ The Launcher documentation is available [here](https://htmlpreview.github.io/?ht
 
 | Tâche | Objectif | État | Dépendances |
 |-------|----------|------|-------------|
-| **Unification et Arguments** | Mettre à jour la classe principale `RayLauncher` (le Context du pattern Strategy) pour instancier dynamiquement le bon backend selon l'argument `cluster='curnagl'` ou `cluster='desi'`. Implémenter une validation des arguments conditionnelle : avertir si des arguments spécifiques à Slurm (partitions, time_limit) sont passés en mode Desi, et adapter la gestion de la demande de GPU (`use_gpu`) pour qu'elle fonctionne correctement avec le backend Desi. | 🏗️ En cours | - |
 | **Rebranding et Documentation** | Mettre à jour l'identité du projet pour refléter son nouveau statut d'outil officiel du département DESI @ HEC UNIL. Actualiser le README, les docstrings et les métadonnées PyPI pour documenter clairement les deux modes d'exécution (Curnagl/Slurm et Desi/SSH), les pré-requis respectifs, et fournir des exemples d'utilisation adaptés aux nouveaux utilisateurs du département. | 📅 À faire | Unification et Arguments |
 | **Corriger et rediriger automatiquement le dashboard Ray vers local** | Corriger le bug de configuration du dashboard dans RayLauncher.py (ligne 199) qui empêche le lancement correct du dashboard Ray. Une fois le bug corrigé, implémenter une redirection automatique du dashboard Ray vers la machine locale via port forwarding SSH. Le système doit établir un tunnel SSH automatiquement lorsque le job démarre, permettant l'accès au dashboard sur `http://localhost:8888` pendant l'exécution du job. Cette fonctionnalité améliore significativement l'expérience utilisateur en permettant un monitoring en temps réel des ressources et de l'état des tâches Ray sans nécessiter de configuration manuelle de tunnels SSH. | 🏗️ En cours | - |
 | **Simplifier Affichage Queue SLURM** | Remplacer l'affichage verbeux et polluant de la file d'attente actuel par un message de statut synthétique et apaisé : 'Waiting for job... (Position in queue : x/X)'. Ce message ne doit être rafraîchi que toutes les 30 secondes pour éviter de spammer la console et les logs, améliorant ainsi l'expérience utilisateur (UX) durant les phases d'attente. | 🏗️ En cours | - |

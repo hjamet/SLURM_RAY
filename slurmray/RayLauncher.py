@@ -72,6 +72,9 @@ class RayLauncher:
         self.cluster_type = cluster.lower() # 'slurm' or 'desi'
         
         self.__setup_logger()
+        
+        # --- Validation des Arguments ---
+        self._validate_arguments()
 
         self.modules = ["gcc", "python/3.12.1"] + [
             mod for mod in modules if mod not in ["gcc", "python/3.12.1"]
@@ -130,6 +133,23 @@ class RayLauncher:
         console_formatter = logging.Formatter('%(levelname)s: %(message)s')
         console_handler.setFormatter(console_formatter)
         self.logger.addHandler(console_handler)
+
+    def _validate_arguments(self):
+        """Validate arguments and warn about inconsistencies"""
+        if self.cluster_type == "desi":
+            # Update default server_ssh if not provided or if it's the default Curnagl one
+            if self.server_ssh == "curnagl.dcsr.unil.ch":
+                self.logger.info("Switching default server_ssh to Desi IP (130.223.73.209)")
+                self.server_ssh = "130.223.73.209"
+            
+            if self.node_nbr > 1:
+                self.logger.warning(f"Warning: Desi cluster only supports single node execution. node_nbr={self.node_nbr} will be ignored (effectively 1).")
+            
+            if self.modules:
+                self.logger.warning("Warning: Modules loading is not supported on Desi (no module system). Modules list will be ignored.")
+                
+            if self.memory != 64: # Assuming 64 is default
+                 self.logger.warning("Warning: Memory allocation is not enforced on Desi (shared resource).")
 
     def _handle_signal(self, signum, frame):
         """Handle interruption signals (SIGINT, SIGTERM) to cleanup resources"""
