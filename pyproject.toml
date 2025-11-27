@@ -1,12 +1,13 @@
 [tool.poetry]
 name = "slurmray"
 version = "3.6.4"
-description = "SlurmRay is a module for effortlessly distributing tasks on a Slurm cluster using the Ray library. "
+description = "SlurmRay is an official tool from DESI @ HEC UNIL for effortlessly distributing tasks on Slurm clusters (e.g., Curnagl) or standalone servers (e.g., ISIPOL09/Desi) using the Ray library."
 authors = ["Henri Jamet <henri.jamet@unil.ch>"]
 license = "Apache License"
 homepage = "https://henri-jamet.vercel.app/"
 documentation = "https://henri-jamet.vercel.app/cards/documentation/slurm-ray/slurm-ray/"
 readme = "README.md"
+keywords = ["ray", "slurm", "distributed-computing", "hpc", "desi", "hec-unil"]
 
 [tool.poetry.dependencies]
 python = ">=3.12.0"

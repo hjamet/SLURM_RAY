@@ -1,10 +1,12 @@
 # SLURM_RAY
 
+**Official tool from DESI @ HEC UNIL**
+
 👉[Full documentation](https://www.henri-jamet.com/docs/slurmray/slurm-ray/)
 
 ## Description
 
-**SlurmRay** is a module for effortlessly distributing tasks on a [Slurm](https://slurm.schedmd.com/) cluster (like Curnagl) or a standalone server (like ISIPOL09/Desi) using the [Ray](https://ray.io/) library. **SlurmRay** was initially designed to work with the [Curnagl](https://wiki.unil.ch/ci/books/high-performance-computing-hpc/page/curnagl) cluster at the *University of Lausanne*. However, it should be able to run on any [Slurm](https://slurm.schedmd.com/) cluster with a minimum of configuration.
+**SlurmRay** is a module for effortlessly distributing tasks on a [Slurm](https://slurm.schedmd.com/) cluster (like Curnagl) or a standalone server (like ISIPOL09/Desi) using the [Ray](https://ray.io/) library. **SlurmRay** was initially designed to work with the [Curnagl](https://wiki.unil.ch/ci/books/high-performance-computing-hpc/page/curnagl) cluster at the *University of Lausanne*. It is now an official tool of the **DESI department @ HEC UNIL** and supports both Slurm-based clusters and direct SSH execution on dedicated servers.
 
 ## Installation
 
@@ -14,47 +16,117 @@
 pip install slurmray
 ```
 
+## Prerequisites
+
+### For Slurm clusters (e.g., Curnagl)
+- Access to a Slurm cluster with SSH access
+- Valid credentials (username/password)
+- Python 3.12+ on both local and cluster machines
+
+### For Desi server (ISIPOL09)
+- VPN access to the DESI network (if required)
+- SSH access to `130.223.73.209`
+- Valid credentials (username/password)
+- Python 3.12+ on both local and remote machines
+
 ## Usage
+
+### Mode 1: Slurm Cluster (Curnagl)
 
 ```python
 from slurmray.RayLauncher import RayLauncher
 import ray
 import torch
 
-def function_inside_function():
-    with open("slurmray/RayLauncher.py", "r") as f:
-        return f.read()[0:10]
-
 def example_func(x):
     result = (
         ray.cluster_resources(),
         f"GPU is available : {torch.cuda.is_available()}",
         x + 1,
-        function_inside_function(),
     )
     return result
 
 launcher = RayLauncher(
-    project_name="example", # Name of the project (will create a directory with this name in the current directory)
-    func=example_func, # Function to execute
-    args={"x": 1}, # Arguments of the function
-    files=["slurmray/RayLauncher.py"], # List of files to push to the cluster (file path will be recreated on the cluster)
-    modules=[], # List of modules to load on the curnagl Cluster (CUDA & CUDNN are automatically added if use_gpu=True)
-    node_nbr=1, # Number of nodes to use
-    use_gpu=True, # If you need A100 GPU, you can set it to True
-    memory=8, # In MegaBytes
-    max_running_time=5, # In minutes
-    runtime_env={"env_vars": {"NCCL_SOCKET_IFNAME": "eno1"}}, # Example of environment variable
-    server_run=True, # To run the code on the cluster and not locally
-    server_ssh="curnagl.dcsr.unil.ch", # Address of the SLURM server
-    server_username="hjamet", # Username to connect to the server
-    server_password=None, # Will be asked in the terminal
-    cluster="slurm", # 'slurm' (default) or 'desi'
+    project_name="example_slurm",
+    func=example_func,
+    args={"x": 1},
+    files=[],  # List of files to push to the cluster
+    modules=[],  # List of modules to load (CUDA & CUDNN auto-added if use_gpu=True)
+    node_nbr=1,  # Number of nodes to use
+    use_gpu=True,  # Request GPU resources
+    memory=8,  # RAM per node in GB
+    max_running_time=5,  # Maximum runtime in minutes
+    runtime_env={"env_vars": {"NCCL_SOCKET_IFNAME": "eno1"}},
+    server_run=True,  # Run on cluster, not locally
+    server_ssh="curnagl.dcsr.unil.ch",  # Slurm cluster address
+    server_username="your_username",
+    server_password=None,  # Will be prompted or loaded from .env
+    cluster="slurm",  # Use Slurm backend (default)
 )
 
 result = launcher()
 print(result)
 ```
+
+### Mode 2: Desi Server (ISIPOL09)
+
+```python
+from slurmray.RayLauncher import RayLauncher
+import ray
+
+def example_func(x):
+    result = (
+        ray.cluster_resources(),
+        x * 2,
+    )
+    return result
+
+launcher = RayLauncher(
+    project_name="example_desi",
+    func=example_func,
+    args={"x": 21},
+    files=[],  # List of files to push to the server
+    node_nbr=1,  # Always 1 for Desi (single server)
+    use_gpu=False,  # GPU available via Smart Lock
+    memory=8,  # Not enforced, shared resource
+    max_running_time=30,  # Not enforced by scheduler
+    server_run=True,  # Run on remote server
+    server_ssh="130.223.73.209",  # Desi server IP (or use default)
+    server_username="your_username",
+    server_password=None,  # Will be prompted or loaded from DESI_PASSWORD env var
+    cluster="desi",  # Use Desi backend (Smart Lock scheduling)
+)
+
+result = launcher()
+print(result)
+```
+
+### Environment Variables
+
+You can store credentials in a `.env` file to avoid entering them each time:
+
+```bash
+# For Curnagl
+CURNAGL_USERNAME=your_username
+CURNAGL_PASSWORD=your_password
+
+# For Desi
+DESI_PASSWORD=your_password
+```
+
+**Note:** The `.env` file should be in your `.gitignore` to avoid committing credentials.
+
+## Key Differences Between Modes
+
+| Feature | Slurm Mode | Desi Mode |
+|---------|-----------|-----------|
+| **Scheduler** | Slurm (sbatch/squeue) | Smart Lock (file-based) |
+| **Multi-node** | Supported (`node_nbr > 1`) | Single node only |
+| **Modules** | Supported (`module load`) | Not supported |
+| **Memory allocation** | Enforced by Slurm | Shared resource |
+| **Time limit** | Enforced by Slurm | Not enforced |
+| **Queue management** | Slurm queue | Smart Lock queue |
+| **Default server** | `curnagl.dcsr.unil.ch` | `130.223.73.209` |
 
 ## Tests
 
@@ -180,7 +252,6 @@ The Launcher documentation is available [here](https://htmlpreview.github.io/?ht
 
 | Tâche | Objectif | État | Dépendances |
 |-------|----------|------|-------------|
-| **Rebranding et Documentation** | Mettre à jour l'identité du projet pour refléter son nouveau statut d'outil officiel du département DESI @ HEC UNIL. Actualiser le README, les docstrings et les métadonnées PyPI pour documenter clairement les deux modes d'exécution (Curnagl/Slurm et Desi/SSH), les pré-requis respectifs, et fournir des exemples d'utilisation adaptés aux nouveaux utilisateurs du département. | 📅 À faire | Unification et Arguments |
 | **Corriger et rediriger automatiquement le dashboard Ray vers local** | Corriger le bug de configuration du dashboard dans RayLauncher.py (ligne 199) qui empêche le lancement correct du dashboard Ray. Une fois le bug corrigé, implémenter une redirection automatique du dashboard Ray vers la machine locale via port forwarding SSH. Le système doit établir un tunnel SSH automatiquement lorsque le job démarre, permettant l'accès au dashboard sur `http://localhost:8888` pendant l'exécution du job. Cette fonctionnalité améliore significativement l'expérience utilisateur en permettant un monitoring en temps réel des ressources et de l'état des tâches Ray sans nécessiter de configuration manuelle de tunnels SSH. | 🏗️ En cours | - |
 | **Simplifier Affichage Queue SLURM** | Remplacer l'affichage verbeux et polluant de la file d'attente actuel par un message de statut synthétique et apaisé : 'Waiting for job... (Position in queue : x/X)'. Ce message ne doit être rafraîchi que toutes les 30 secondes pour éviter de spammer la console et les logs, améliorant ainsi l'expérience utilisateur (UX) durant les phases d'attente. | 🏗️ En cours | - |
 | **Optimiser la gestion du stockage et le nettoyage des fichiers** | Optimiser la gestion du stockage et du nettoyage pour améliorer les performances globales du système. Implémenter un cache intelligent pour réutiliser le virtualenv entre exécutions si les dépendances n'ont pas changé, évitant ainsi de recréer l'environnement à chaque fois. Nettoyer systématiquement les fichiers temporaires après téléchargement réussi des résultats pour éviter l'accumulation de données inutiles. Optimiser la génération de `requirements.txt` pour qu'elle soit plus rapide et plus précise. Corriger les incohérences potentielles de versions Python entre l'environnement local et distant pour garantir la compatibilité. | 📅 À faire | - |
@@ -189,4 +260,4 @@ The Launcher documentation is available [here](https://htmlpreview.github.io/?ht
 | **Intégration Point d'Entrée** | Finaliser l'implémentation du fichier `__main__.py` dans le package pour exposer proprement l'interface interactive créée précédemment. S'assurer que la commande `python -m slurmray` est intuitive et gère correctement les exceptions (ex: absence de credentials). | 📅 À faire | Interface Interactive Jobs SLURM |
 | **Intégrer l'ouverture automatique du dashboard Ray** | Intégrer l'ouverture automatique du dashboard Ray dans l'interface interactive de gestion des jobs SLURM créée précédemment. Cette fonctionnalité doit permettre d'ouvrir le dashboard en local (http://localhost:8888) avec gestion automatique du port forwarding SSH si nécessaire. L'utilisateur doit pouvoir sélectionner un job en cours d'exécution depuis l'interface CLI et avoir le dashboard qui s'ouvre automatiquement dans son navigateur, avec le tunnel SSH établi en arrière-plan. Cela simplifie grandement l'accès aux métriques de performance pour l'utilisateur final. | 📅 À faire | Interface Interactive Jobs SLURM |
 | **Améliorer la gestion des credentials (username/password) via .env** | Modifier RayLauncher pour charger automatiquement `server_username` et `server_password` depuis un fichier `.env` local, tout en gardant la rétrocompatibilité avec les paramètres explicites passés au constructeur. Le système doit d'abord vérifier les variables d'environnement (via `python-dotenv`), puis les paramètres explicites, et enfin demander interactivement si aucun n'est trouvé. Cette amélioration améliore la sécurité (évite de hardcoder les mots de passe) et l'ergonomie pour les utilisateurs fréquents qui peuvent stocker leurs credentials de manière sécurisée dans un fichier `.env` ignoré par Git. | 📅 À faire | - |
-| **Mettre à jour la documentation pour tout avoir dans le repo** | Remplacer les liens externes dans README.md par du contenu local, intégrer la documentation de RayLauncher directement dans le repository pour éviter les dépendances vers des sites externes. Migrer toute la documentation externe (liens actuels vers sites tiers ou HTML prévisualisés) directement dans le dépôt (dossier `docs/` ou Markdown). L'objectif est que le repository soit auto-suffisant et que la documentation versionnée suive l'évolution du code. Cela garantit que la documentation est toujours à jour et accessible même si les sites externes changent ou disparaissent. | 📅 À faire | Rebranding et Documentation |
+| **Mettre à jour la documentation pour tout avoir dans le repo** | Remplacer les liens externes dans README.md par du contenu local, intégrer la documentation de RayLauncher directement dans le repository pour éviter les dépendances vers des sites externes. Migrer toute la documentation externe (liens actuels vers sites tiers ou HTML prévisualisés) directement dans le dépôt (dossier `docs/` ou Markdown). L'objectif est que le repository soit auto-suffisant et que la documentation versionnée suive l'évolution du code. Cela garantit que la documentation est toujours à jour et accessible même si les sites externes changent ou disparaissent. | 📅 À faire | - |

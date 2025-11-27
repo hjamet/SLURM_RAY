@@ -13,7 +13,16 @@ dill.settings["recurse"] = True
 
 
 class RayLauncher:
-    """A class that automatically connects RAY workers and executes the function requested by the user"""
+    """A class that automatically connects RAY workers and executes the function requested by the user.
+    
+    Official tool from DESI @ HEC UNIL.
+    
+    Supports two execution modes:
+    - **Slurm mode** (`cluster='slurm'`): For Slurm-based clusters like Curnagl. Uses sbatch/squeue for job management.
+    - **Desi mode** (`cluster='desi'`): For standalone servers like ISIPOL09. Uses Smart Lock scheduling for resource management.
+    
+    The launcher automatically selects the appropriate backend based on the `cluster` parameter and environment detection.
+    """
 
     def __init__(
         self,
@@ -40,19 +49,19 @@ class RayLauncher:
             project_name (str, optional): Name of the project. Defaults to None.
             func (Callable, optional): Function to execute. This function should not be remote but can use ray ressources. Defaults to None.
             args (dict, optional): Arguments of the function. Defaults to None.
-            files (List[str], optional): List of files to push to the cluster. This path must be **relative** to the project directory. Defaults to [].
-            modules (List[str], optional): List of modules to load on the curnagl Cluster. Use `module spider` to see available modules. Defaults to None.
-            node_nbr (int, optional): Number of nodes to use. Defaults to 1.
+            files (List[str], optional): List of files to push to the cluster/server. This path must be **relative** to the project directory. Defaults to [].
+            modules (List[str], optional): List of modules to load (Slurm mode only). Use `module spider` to see available modules. Ignored in Desi mode. Defaults to None.
+            node_nbr (int, optional): Number of nodes to use. For Desi mode, this is always 1 (single server). Defaults to 1.
             use_gpu (bool, optional): Use GPU or not. Defaults to False.
-            memory (int, optional): Amount of RAM to use per node in GigaBytes. Defaults to 64.
-            max_running_time (int, optional): Maximum running time of the job in minutes. Defaults to 60.
+            memory (int, optional): Amount of RAM to use per node in GigaBytes. For Desi mode, this is not enforced (shared resource). Defaults to 64.
+            max_running_time (int, optional): Maximum running time of the job in minutes. For Desi mode, this is not enforced by a scheduler. Defaults to 60.
             runtime_env (dict, optional): Environment variables to share between all the workers. Can be useful for issues like https://github.com/ray-project/ray/issues/418. Default to empty.
-            server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster ressources. Defaults to True.
-            server_ssh (str, optional): If `server_run` is set to true, the addess of the **SLURM** server to use.
-            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect.
-            server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. CAUTION: never write your password in the code. Defaults to None.
+            server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster/server ressources. Defaults to True.
+            server_ssh (str, optional): If `server_run` is set to true, the address of the server to use. Defaults to "curnagl.dcsr.unil.ch" for Slurm mode, or "130.223.73.209" for Desi mode (auto-detected if cluster='desi').
+            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect. Defaults to "hjamet".
+            server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. Can also be provided via environment variables (CURNAGL_PASSWORD for Slurm, DESI_PASSWORD for Desi). CAUTION: never write your password in the code. Defaults to None.
             log_file (str, optional): Path to the log file. Defaults to "logs/RayLauncher.log".
-            cluster (str, optional): Type of cluster/backend to use: 'slurm' (default, e.g. Curnagl) or 'desi' (ISIPOL09).
+            cluster (str, optional): Type of cluster/backend to use: 'slurm' (default, e.g. Curnagl) or 'desi' (ISIPOL09/Desi server). Defaults to "slurm".
         """
         # Save the parameters
         self.project_name = project_name
