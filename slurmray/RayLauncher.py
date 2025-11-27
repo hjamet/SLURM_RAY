@@ -9,6 +9,8 @@ from getpass import getpass
 import re
 import threading
 import socket
+import logging
+
 
 dill.settings["recurse"] = True
 
@@ -166,6 +168,7 @@ class RayLauncher:
         server_ssh: str = "curnagl.dcsr.unil.ch",
         server_username: str = "hjamet",
         server_password: str = None,
+        log_file: str = "logs/RayLauncher.log",
     ):
         """Initialize the launcher
 
@@ -184,6 +187,7 @@ class RayLauncher:
             server_ssh (str, optional): If `server_run` is set to true, the addess of the **SLURM** server to use.
             server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect.
             server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. CAUTION: never write your password in the code. Defaults to None.
+            log_file (str, optional): Path to the log file. Defaults to "logs/RayLauncher.log".
         """
         # Save the parameters
         self.project_name = project_name
@@ -199,6 +203,9 @@ class RayLauncher:
         self.server_ssh = server_ssh
         self.server_username = server_username
         self.server_password = server_password
+        self.log_file = log_file
+
+        self.__setup_logger()
 
         self.modules = ["gcc", "python/3.12.1"] + [
             mod for mod in modules if mod not in ["gcc", "python/3.12.1"]
@@ -220,6 +227,35 @@ class RayLauncher:
             self.__write_python_script()
             self.script_file, self.job_name = self.__write_slurm_script()
 
+    def __setup_logger(self):
+        """Setup the logger"""
+        # Create the log directory if not exists
+        log_dir = os.path.dirname(self.log_file)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+
+        # Configure the logger
+        self.logger = logging.getLogger(f"RayLauncher-{self.project_name}")
+        self.logger.setLevel(logging.INFO)
+        
+        # Remove existing handlers to avoid duplication if instantiated multiple times
+        if self.logger.hasHandlers():
+            self.logger.handlers.clear()
+
+        # File handler (constantly rewritten)
+        file_handler = logging.FileHandler(self.log_file, mode='w')
+        file_handler.setLevel(logging.INFO)
+        file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(file_formatter)
+        self.logger.addHandler(file_handler)
+
+        # Console handler (only warnings and errors)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.WARNING)
+        console_formatter = logging.Formatter('%(levelname)s: %(message)s')
+        console_handler.setFormatter(console_formatter)
+        self.logger.addHandler(console_handler)
+
     def __call__(self, cancel_old_jobs: bool = True, serialize: bool = True) -> Any:
         """Launch the job and return the result
 
@@ -235,10 +271,10 @@ class RayLauncher:
             self.__serialize_func_and_args(self.func, self.args)
 
         if self.cluster:
-            print("Cluster detected, running on cluster...")
+            self.logger.info("Cluster detected, running on cluster...")
             # Cancel the old jobs
             if cancel_old_jobs:
-                print("Canceling old jobs...")
+                self.logger.info("Canceling old jobs...")
                 subprocess.Popen(
                     ["scancel", "-u", os.environ["USER"]],
                     stdout=subprocess.PIPE,
@@ -249,7 +285,7 @@ class RayLauncher:
         elif self.server_run:
             self.__launch_server(cancel_old_jobs)
         else:
-            print("No cluster detected, running locally...")
+            self.logger.info("No cluster detected, running locally...")
             subprocess.Popen(
                 [sys.executable, os.path.join(self.project_path, "spython.py")]
             )
@@ -270,7 +306,7 @@ class RayLauncher:
         Args:
             file_path (str): Path to the file to push. This path must be **relative** to the project directory.
         """
-        print(f"Pushing file {os.path.basename(file_path)} to the cluster...")
+        self.logger.info(f"Pushing file {os.path.basename(file_path)} to the cluster...")
 
         # Determine the path to the file
         local_path = file_path
@@ -288,7 +324,8 @@ class RayLauncher:
             line = stdout.readline()
             if not line:
                 break
-            print(line, end="")
+            # Keep print for real-time feedback on directory creation (optional, could be logger.debug)
+            self.logger.debug(line.strip())
         time.sleep(1)  # Wait for the directory to be created
 
         # Copy the file to the server
@@ -301,7 +338,7 @@ class RayLauncher:
             func (Callable, optional): Function to serialize. Defaults to None.
             args (list, optional): Arguments of the function. Defaults to None.
         """
-        print("Serializing function and arguments...")
+        self.logger.info("Serializing function and arguments...")
 
         # Pickle the function
         with open(os.path.join(self.project_path, "func.pkl"), "wb") as f:
@@ -315,7 +352,7 @@ class RayLauncher:
 
     def __write_python_script(self):
         """Write the python script that will be executed by the job"""
-        print("Writing python script...")
+        self.logger.info("Writing python script...")
 
         # Remove the old python script
         for file in os.listdir(self.project_path):
@@ -349,7 +386,7 @@ class RayLauncher:
             str: Name of the script file
             str: Name of the job
         """
-        print("Writing slurm script...")
+        self.logger.info("Writing slurm script...")
         template_file = os.path.join(self.module_path, "assets", "sbatch_template.sh")
 
         JOB_NAME = "{{JOB_NAME}}"
@@ -467,7 +504,7 @@ class RayLauncher:
             
             return None
         except Exception as e:
-            print(f"Warning: Failed to get head node from job ID {job_id}: {e}")
+            self.logger.warning(f"Failed to get head node from job ID {job_id}: {e}")
             return None
 
     def __launch_job(self, script_file: str = None, job_name: str = None):
@@ -478,14 +515,14 @@ class RayLauncher:
             job_name (str, optional): Name of the job. Defaults to None.
         """
         # ===== Submit the job =====
-        print("Start to submit job!")
+        self.logger.info("Start to submit job!")
         result = subprocess.run(
             ["sbatch", os.path.join(self.project_path, script_file)],
             capture_output=True,
             text=True,
         )
         if result.returncode != 0:
-            print(f"Error submitting job: {result.stderr}")
+            self.logger.error(f"Error submitting job: {result.stderr}")
             return
         
         # Extract job ID from output (format: "Submitted batch job 12345")
@@ -496,11 +533,11 @@ class RayLauncher:
                 job_id = match.group(1)
         
         if job_id:
-            print(f"Job submitted with ID: {job_id}")
+            self.logger.info(f"Job submitted with ID: {job_id}")
         else:
-            print("Warning: Could not extract job ID from sbatch output")
+            self.logger.warning("Could not extract job ID from sbatch output")
         
-        print(
+        self.logger.info(
             "Job submitted! Script file is at: <{}>. Log file is at: <{}>".format(
                 os.path.join(self.project_path, script_file),
                 os.path.join(self.project_path, "{}.log".format(job_name)),
@@ -512,7 +549,7 @@ class RayLauncher:
         queue_log_file = os.path.join(self.project_path, "queue.log")
         with open(queue_log_file, "w") as f:
             f.write("")
-        print(
+        self.logger.info(
             "Start to monitor the queue... You can check the queue at: <{}>".format(
                 queue_log_file
             )
@@ -585,14 +622,14 @@ class RayLauncher:
                                 # Get head node
                                 head_node = self.__get_head_node_from_job_id(job_id)
                                 if head_node:
-                                    print(f"Job is running on node {head_node}.")
-                                    print(f"Dashboard should be accessible at http://{head_node}:8888 (if running on cluster)")
+                                    self.logger.info(f"Job is running on node {head_node}.")
+                                    self.logger.info(f"Dashboard should be accessible at http://{head_node}:8888 (if running on cluster)")
                                 break
 
                 # Update the queue log
                 if time.time() - start_time > 60:
                     start_time = time.time()
-                    print("Update time: {}".format(time.strftime("%H:%M:%S")))
+                    self.logger.info("Update time: {}".format(time.strftime("%H:%M:%S")))
 
                 if current_queue is None or current_queue != to_queue:
                     current_queue = to_queue
@@ -606,11 +643,11 @@ class RayLauncher:
                         text += "\n"
                         f.write(text)
 
-                        # Print the queue
-                        print(text)
+                        # Print the queue to logger instead of print
+                        self.logger.info(text)
 
         # Wait for the job to finish while printing the log
-        print("Job started! Waiting for the job to finish...")
+        self.logger.info("Job started! Waiting for the job to finish...")
         log_cursor_position = 0
         job_finished = False
         while not job_finished:
@@ -625,9 +662,10 @@ class RayLauncher:
                     text = f.read()
                     if text != "":
                         print(text, end="")
+                        self.logger.info(text.strip())
                     log_cursor_position = f.tell()
 
-        print("Job finished!")
+        self.logger.info("Job finished!")
 
     def __launch_server(self, cancel_old_jobs: bool = True):
         """Launch the server on the cluster and run the function using the ressources.
@@ -636,7 +674,7 @@ class RayLauncher:
             cancel_old_jobs (bool, optional): Whether or not to interrupt all the user's jobs on the cluster.
         """
         connected = False
-        print("Connecting to the cluster...")
+        self.logger.info("Connecting to the cluster...")
         ssh_client = paramiko.SSHClient()
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         while not connected:
@@ -654,12 +692,12 @@ class RayLauncher:
                 connected = True
             except paramiko.ssh_exception.AuthenticationException:
                 self.server_password = None
-                print("Wrong password, please try again.")
+                self.logger.warning("Wrong password, please try again.")
 
         # Write server script
         self.__write_server_script()
 
-        print("Downloading server...")
+        self.logger.info("Downloading server...")
         # Generate requirements.txt
         subprocess.run(
             [f"pip-chill --no-version > {self.project_path}/requirements.txt"],
@@ -710,7 +748,7 @@ class RayLauncher:
         sftp.chmod("slurmray_server.sh", 0o755)
 
         # Run the server
-        print("Running server...")
+        self.logger.info("Running server...")
         stdin, stdout, stderr = ssh_client.exec_command("./slurmray_server.sh")
 
         # Read the output in real time and capture job ID
@@ -724,20 +762,23 @@ class RayLauncher:
             if not line:
                 break
             output_lines.append(line)
+            
+            # Double output: console + log file
             print(line, end="")
+            self.logger.info(line.strip())
             
             # Try to extract job ID from output (format: "Submitted batch job 12345")
             if not job_id:
                 match = re.search(r"Submitted batch job (\d+)", line)
                 if match:
                     job_id = match.group(1)
-                    print(f"\nJob ID detected: {job_id}")
+                    self.logger.info(f"Job ID detected: {job_id}")
 
         stdout.channel.recv_exit_status()
         
         # If job ID not found in output, try to find it via squeue
         if not job_id:
-            print("Job ID not found in output, trying to find via squeue...")
+            self.logger.info("Job ID not found in output, trying to find via squeue...")
             stdin, stdout, stderr = ssh_client.exec_command(f"squeue -u {self.server_username} -o '%i %j' --noheader")
             squeue_output = stdout.read().decode("utf-8")
             # Try to find job matching project name pattern
@@ -746,12 +787,12 @@ class RayLauncher:
                     parts = line.strip().split()
                     if len(parts) >= 2 and self.project_name in parts[1]:
                         job_id = parts[0]
-                        print(f"Found job ID via squeue: {job_id}")
+                        self.logger.info(f"Found job ID via squeue: {job_id}")
                         break
         
         # If job ID found, wait for job to be running and set up tunnel
         if job_id:
-            print(f"Waiting for job {job_id} to start running...")
+            self.logger.info(f"Waiting for job {job_id} to start running...")
             max_wait_time = 300  # Wait up to 5 minutes
             wait_start = time.time()
             job_running = False
@@ -768,7 +809,7 @@ class RayLauncher:
                 # Get head node
                 head_node = self.__get_head_node_from_job_id(job_id, ssh_client)
                 if head_node:
-                    print(f"Job is running on node {head_node}. Setting up SSH tunnel for dashboard...")
+                    self.logger.info(f"Job is running on node {head_node}. Setting up SSH tunnel for dashboard...")
                     try:
                         tunnel = SSHTunnel(
                             ssh_host=self.server_ssh,
@@ -779,7 +820,7 @@ class RayLauncher:
                             remote_port=8888,
                         )
                         tunnel.__enter__()
-                        print("Dashboard accessible at http://localhost:8888")
+                        self.logger.info("Dashboard accessible at http://localhost:8888")
                         
                         # Wait for job to complete while maintaining tunnel
                         # Check periodically if job is still running
@@ -791,36 +832,37 @@ class RayLauncher:
                                 # Job finished or no longer running
                                 break
                     except Exception as e:
-                        print(f"Warning: Could not create SSH tunnel: {e}")
-                        print("Dashboard will not be accessible via port forwarding")
+                        self.logger.warning(f"Failed to create SSH tunnel: {e}")
+                        self.logger.info("Dashboard will not be accessible via port forwarding")
                         tunnel = None
             else:
-                print("Warning: Job did not start running within timeout, skipping tunnel setup")
+                self.logger.warning("Job did not start running within timeout, skipping tunnel setup")
         
         # Close tunnel if it was created
         if tunnel:
             tunnel.__exit__(None, None, None)
 
         # Downloading result
-        print("Downloading result...")
+        self.logger.info("Downloading result...")
         try:
             sftp.get(
                 "slurmray-server/.slogs/server/result.pkl",
                 os.path.join(self.project_path, "result.pkl"),
             )
-            print("Result downloaded!")
+            self.logger.info("Result downloaded!")
         except FileNotFoundError:
             # Check for errors
             stderr_lines = stderr.readlines()
             if stderr_lines:
-                print("\nErrors:\n")
+                self.logger.error("Errors:")
                 for line in stderr_lines:
                     print(line, end="")
-                print("An error occured, please check the logs.")
+                    self.logger.error(line.strip())
+                self.logger.error("An error occured, please check the logs.")
 
     def __write_server_script(self):
         """This funtion will write a script with the given specifications to run slurmray on the cluster"""
-        print("Writing slurmray server script...")
+        self.logger.info("Writing slurmray server script...")
         template_file = os.path.join(
             self.module_path, "assets", "slurmray_server_template.py"
         )

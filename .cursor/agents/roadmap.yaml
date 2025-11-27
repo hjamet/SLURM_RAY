@@ -39,7 +39,7 @@ tasks:
   - id: "task-0e"
     title: "Implémenter un système de logging dans un fichier"
     description: "Implémenter un système de logging centralisé dans un fichier constamment réécrit pour suivre toutes les étapes (installation serveur, connexion SSH, upload fichiers, attente nœuds, etc.) sans saturer la console. Ajouter un paramètre log_file au constructeur RayLauncher avec default logs/RayLauncher.log"
-    state: "todo"
+    state: "in-progress"
     dependencies: []
     dependencies-results: ["rapport-installer-et-verifier-projet.md"]
     task_file: "implementer-systeme-logging-fichier.md"
