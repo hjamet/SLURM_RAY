@@ -72,6 +72,42 @@ tasks:
     task_file: "tester-package-cpu-gpu.md"
     output_file: "rapport-tester-package-cpu-gpu.md"
     deadline: null
+  - id: "task-10"
+    title: "Refactoring Architecture Strategy"
+    description: "Refactoriser l'architecture pour introduire le Pattern Strategy (ClusterBackend, SlurmBackend) et préparer le support multi-backend"
+    state: "todo"
+    dependencies: ["task-0b"]
+    dependencies-results: []
+    task_file: "refactoring-architecture-strategy.md"
+    output_file: "rapport-refactoring-architecture-strategy.md"
+    deadline: null
+  - id: "task-11"
+    title: "Implémentation Backend Desi"
+    description: "Implémenter le backend Desi (SSH/SFTP) avec exécution Ray isolée et gestion des ports dynamiques pour le support multi-utilisateurs"
+    state: "todo"
+    dependencies: ["task-10"]
+    dependencies-results: []
+    task_file: "implementation-backend-desi.md"
+    output_file: "rapport-implementation-backend-desi.md"
+    deadline: null
+  - id: "task-12"
+    title: "Unification et Arguments"
+    description: "Unifier l'interface RayLauncher pour gérer proprement les deux backends et adapter la validation des arguments"
+    state: "todo"
+    dependencies: ["task-11"]
+    dependencies-results: []
+    task_file: "unification-et-arguments.md"
+    output_file: "rapport-unification-et-arguments.md"
+    deadline: null
+  - id: "task-13"
+    title: "Rebranding et Documentation"
+    description: "Mettre à jour la documentation et les métadonnées pour officialiser le support DESI @ HEC UNIL"
+    state: "todo"
+    dependencies: ["task-12"]
+    dependencies-results: []
+    task_file: "rebranding-et-documentation.md"
+    output_file: "rapport-rebranding-et-documentation.md"
+    deadline: null
   - id: "task-2"
     title: "Améliorer la gestion des credentials (username/password) via .env"
     description: "Modifier RayLauncher pour charger automatiquement server_username et server_password depuis un fichier .env, tout en gardant la rétrocompatibilité avec les paramètres explicites"
@@ -85,7 +121,7 @@ tasks:
     title: "Mettre à jour la documentation pour tout avoir dans le repo"
     description: "Remplacer les liens externes dans README.md par du contenu local, intégrer la documentation de RayLauncher directement dans le repository pour éviter les dépendances vers des sites externes"
     state: "todo"
-    dependencies: ["task-1", "task-2", "task-0b"]
+    dependencies: ["task-1", "task-2", "task-0b", "task-13"]
     dependencies-results: []
     task_file: "mettre-a-jour-documentation-repo.md"
     output_file: "rapport-mettre-a-jour-documentation-repo.md"

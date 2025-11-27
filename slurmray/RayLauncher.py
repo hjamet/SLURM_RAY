@@ -611,6 +611,7 @@ class RayLauncher:
             ["tail", "-f", os.path.join(self.project_path, "{}.log".format(job_name))]
         )
         start_time = time.time()
+        last_print_time = 0
         job_running = False
         tunnel = None
         
@@ -666,23 +667,40 @@ class RayLauncher:
                 
                 # Check if our job is running (status "R")
                 if job_id and not job_running:
+                    job_position = None
+                    total_jobs = len(to_queue)
+                    
                     for i, (user, stat, node_count, node_lst) in enumerate(to_queue):
                         # Find our job by checking job IDs in squeue output
                         if i < len(df) - 1:
                             job_line = df[i + 1]
-                            if job_id in job_line and stat == "R":
-                                job_running = True
-                                # Get head node
-                                head_node = self.__get_head_node_from_job_id(job_id)
-                                if head_node:
-                                    self.logger.info(f"Job is running on node {head_node}.")
-                                    self.logger.info(f"Dashboard should be accessible at http://{head_node}:8888 (if running on cluster)")
+                            if job_id in job_line:
+                                if stat == "R":
+                                    job_running = True
+                                    # Get head node
+                                    head_node = self.__get_head_node_from_job_id(job_id)
+                                    if head_node:
+                                        self.logger.info(f"Job is running on node {head_node}.")
+                                        self.logger.info(f"Dashboard should be accessible at http://{head_node}:8888 (if running on cluster)")
+                                else:
+                                    job_position = i + 1
                                 break
+                    
+                    if job_running:
+                        break
+                        
+                    # Print queue status periodically
+                    if time.time() - last_print_time > 30:
+                        position_str = f"{job_position}/{total_jobs}" if job_position else "unknown"
+                        print(f"Waiting for job... (Position in queue : {position_str})")
+                        last_print_time = time.time()
 
                 # Update the queue log
                 if time.time() - start_time > 60:
                     start_time = time.time()
-                    self.logger.info("Update time: {}".format(time.strftime("%H:%M:%S")))
+                    # Log to file only, no print
+                    with open(queue_log_file, "a") as f:
+                        f.write(f"Update time: {time.strftime('%H:%M:%S')}\n")
 
                 if current_queue is None or current_queue != to_queue:
                     current_queue = to_queue
@@ -695,9 +713,6 @@ class RayLauncher:
                             )
                         text += "\n"
                         f.write(text)
-
-                        # Print the queue to logger instead of print
-                        self.logger.info(text)
 
         # Wait for the job to finish while printing the log
         self.logger.info("Job started! Waiting for the job to finish...")
