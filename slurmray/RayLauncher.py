@@ -58,7 +58,7 @@ class RayLauncher:
             runtime_env (dict, optional): Environment variables to share between all the workers. Can be useful for issues like https://github.com/ray-project/ray/issues/418. Default to empty.
             server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster/server ressources. Defaults to True.
             server_ssh (str, optional): If `server_run` is set to true, the address of the server to use. Defaults to "curnagl.dcsr.unil.ch" for Slurm mode, or "130.223.73.209" for Desi mode (auto-detected if cluster='desi').
-            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect. Defaults to "hjamet".
+            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect. Defaults to "hjamet" (Slurm) or "henri" (Desi).
             server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. Can also be provided via environment variables (CURNAGL_PASSWORD for Slurm, DESI_PASSWORD for Desi). CAUTION: never write your password in the code. Defaults to None.
             log_file (str, optional): Path to the log file. Defaults to "logs/RayLauncher.log".
             cluster (str, optional): Type of cluster/backend to use: 'slurm' (default, e.g. Curnagl) or 'desi' (ISIPOL09/Desi server). Defaults to "slurm".
@@ -79,17 +79,22 @@ class RayLauncher:
         self.server_password = server_password
         self.log_file = log_file
         self.cluster_type = cluster.lower() # 'slurm' or 'desi'
+
+        # Set default username if not provided based on cluster type
+        if self.server_username == "hjamet" and self.cluster_type == "desi":
+            # Try to load from env or use default 'henri' for Desi
+            self.server_username = os.getenv("DESI_USERNAME", "henri")
         
         self.__setup_logger()
         
-        # --- Validation des Arguments ---
-        self._validate_arguments()
-
         self.modules = ["gcc", "python/3.12.1"] + [
             mod for mod in modules if mod not in ["gcc", "python/3.12.1"]
         ]
         if self.use_gpu is True and "cuda" not in self.modules:
             self.modules += ["cuda", "cudnn"]
+            
+        # --- Validation des Arguments ---
+        self._validate_arguments()
 
         # Check if this code is running on a cluster (only relevant for Slurm, usually)
         self.cluster = os.path.exists("/usr/bin/sbatch")

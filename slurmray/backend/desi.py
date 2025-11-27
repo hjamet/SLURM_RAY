@@ -31,7 +31,7 @@ class DesiBackend(RemoteMixin):
         # Generate Python script (spython.py) that will run on Desi
         # This script uses RayLauncher in LOCAL mode (but on the remote machine)
         # We need to adapt spython.py generation to NOT look for sbatch/slurm
-        self._write_python_script()
+        self._write_python_script(base_dir)
         
         # Generate requirements
         self._generate_requirements()
@@ -105,7 +105,7 @@ class DesiBackend(RemoteMixin):
         # Need to know PID or have a kill file
         pass
 
-    def _write_python_script(self):
+    def _write_python_script(self, base_dir):
         """Write the python script (spython.py) that will be executed by the job"""
         self.logger.info("Writing python script...")
 
@@ -121,7 +121,7 @@ class DesiBackend(RemoteMixin):
         ) as f:
             text = f.read()
 
-        text = text.replace("{{PROJECT_PATH}}", ".") # On remote, we are in current dir
+        text = text.replace("{{PROJECT_PATH}}", f'"{base_dir}"') # On remote, we use absolute path
         
         # Desi is a single machine (or we treat it as such for now). 
         # Ray should run in local mode or with address='auto' but without Slurm specifics.

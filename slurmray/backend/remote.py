@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import paramiko
 import subprocess
@@ -41,7 +42,14 @@ class RemoteMixin(ClusterBackend):
 
                     if self.launcher.server_password is None:
                         # Add ssh key support? Assuming password for now as per original code
-                        self.launcher.server_password = getpass("Enter your cluster password: ")
+                        try:
+                            self.launcher.server_password = getpass("Enter your cluster password: ")
+                        except Exception:
+                            # Handle case where getpass fails (e.g. non-interactive terminal)
+                            pass
+
+                if self.launcher.server_password is None:
+                     raise ValueError("No password provided and cannot prompt (non-interactive)")
 
                 self.ssh_client.connect(
                     hostname=self.launcher.server_ssh,
