@@ -10,6 +10,7 @@ import re
 import threading
 import socket
 import logging
+import signal
 
 
 dill.settings["recurse"] = True
@@ -204,6 +205,8 @@ class RayLauncher:
         self.server_username = server_username
         self.server_password = server_password
         self.log_file = log_file
+        self.job_id = None
+        self.ssh_client = None
 
         self.__setup_logger()
 
@@ -256,6 +259,44 @@ class RayLauncher:
         console_handler.setFormatter(console_formatter)
         self.logger.addHandler(console_handler)
 
+    def _handle_signal(self, signum, frame):
+        """Handle interruption signals (SIGINT, SIGTERM) to cleanup resources"""
+        sig_name = signal.Signals(signum).name
+        self.logger.warning(f"Signal {sig_name} received. Cleaning up resources...")
+        print(f"\nInterruption received ({sig_name}). Canceling job and cleaning up...")
+        
+        if self.job_id:
+            if self.cluster:
+                self.logger.info(f"Canceling local job {self.job_id}...")
+                try:
+                    subprocess.run(
+                        ["scancel", self.job_id],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        check=False
+                    )
+                    self.logger.info(f"Job {self.job_id} canceled.")
+                except Exception as e:
+                    self.logger.error(f"Failed to cancel job {self.job_id}: {e}")
+            elif self.server_run and self.ssh_client:
+                self.logger.info(f"Canceling remote job {self.job_id} via SSH...")
+                try:
+                    # Check if connection is still active
+                    if self.ssh_client.get_transport() and self.ssh_client.get_transport().is_active():
+                        self.ssh_client.exec_command(f"scancel {self.job_id}")
+                        self.logger.info(f"Remote job {self.job_id} canceled.")
+                    else:
+                        self.logger.warning("SSH connection lost, cannot cancel remote job.")
+                except Exception as e:
+                    self.logger.error(f"Failed to cancel remote job {self.job_id}: {e}")
+                finally:
+                    try:
+                        self.ssh_client.close()
+                    except Exception:
+                        pass
+        
+        sys.exit(1)
+
     def __call__(self, cancel_old_jobs: bool = True, serialize: bool = True) -> Any:
         """Launch the job and return the result
 
@@ -266,37 +307,48 @@ class RayLauncher:
         Returns:
             Any: Result of the function
         """
-        # Sereialize function and arguments
-        if serialize:
-            self.__serialize_func_and_args(self.func, self.args)
+        # Register signal handlers
+        original_sigint = signal.getsignal(signal.SIGINT)
+        original_sigterm = signal.getsignal(signal.SIGTERM)
+        signal.signal(signal.SIGINT, self._handle_signal)
+        signal.signal(signal.SIGTERM, self._handle_signal)
 
-        if self.cluster:
-            self.logger.info("Cluster detected, running on cluster...")
-            # Cancel the old jobs
-            if cancel_old_jobs:
-                self.logger.info("Canceling old jobs...")
+        try:
+            # Sereialize function and arguments
+            if serialize:
+                self.__serialize_func_and_args(self.func, self.args)
+
+            if self.cluster:
+                self.logger.info("Cluster detected, running on cluster...")
+                # Cancel the old jobs
+                if cancel_old_jobs:
+                    self.logger.info("Canceling old jobs...")
+                    subprocess.Popen(
+                        ["scancel", "-u", os.environ["USER"]],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    )
+                # Launch the job
+                self.__launch_job(self.script_file, self.job_name)
+            elif self.server_run:
+                self.__launch_server(cancel_old_jobs)
+            else:
+                self.logger.info("No cluster detected, running locally...")
                 subprocess.Popen(
-                    ["scancel", "-u", os.environ["USER"]],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    [sys.executable, os.path.join(self.project_path, "spython.py")]
                 )
-            # Launch the job
-            self.__launch_job(self.script_file, self.job_name)
-        elif self.server_run:
-            self.__launch_server(cancel_old_jobs)
-        else:
-            self.logger.info("No cluster detected, running locally...")
-            subprocess.Popen(
-                [sys.executable, os.path.join(self.project_path, "spython.py")]
-            )
 
-        # Load the result
-        while not os.path.exists(os.path.join(self.project_path, "result.pkl")):
-            time.sleep(0.25)
-        with open(os.path.join(self.project_path, "result.pkl"), "rb") as f:
-            result = dill.load(f)
+            # Load the result
+            while not os.path.exists(os.path.join(self.project_path, "result.pkl")):
+                time.sleep(0.25)
+            with open(os.path.join(self.project_path, "result.pkl"), "rb") as f:
+                result = dill.load(f)
 
-        return result
+            return result
+        finally:
+            # Restore original signal handlers
+            signal.signal(signal.SIGINT, original_sigint)
+            signal.signal(signal.SIGTERM, original_sigterm)
 
     def __push_file(
         self, file_path: str, sftp: paramiko.SFTPClient, ssh_client: paramiko.SSHClient
@@ -533,6 +585,7 @@ class RayLauncher:
                 job_id = match.group(1)
         
         if job_id:
+            self.job_id = job_id
             self.logger.info(f"Job submitted with ID: {job_id}")
         else:
             self.logger.warning("Could not extract job ID from sbatch output")
@@ -676,6 +729,7 @@ class RayLauncher:
         connected = False
         self.logger.info("Connecting to the cluster...")
         ssh_client = paramiko.SSHClient()
+        self.ssh_client = ssh_client
         ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         while not connected:
             try:
@@ -772,6 +826,7 @@ class RayLauncher:
                 match = re.search(r"Submitted batch job (\d+)", line)
                 if match:
                     job_id = match.group(1)
+                    self.job_id = job_id
                     self.logger.info(f"Job ID detected: {job_id}")
 
         stdout.channel.recv_exit_status()
@@ -787,6 +842,7 @@ class RayLauncher:
                     parts = line.strip().split()
                     if len(parts) >= 2 and self.project_name in parts[1]:
                         job_id = parts[0]
+                        self.job_id = job_id
                         self.logger.info(f"Found job ID via squeue: {job_id}")
                         break
         

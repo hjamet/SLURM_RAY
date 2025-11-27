@@ -9,15 +9,6 @@ tasks:
     task_file: "corriger-incompatibilites-curnagl.md"
     output_file: "rapport-corriger-incompatibilites-curnagl.md"
     deadline: null
-  - id: "task-9"
-    title: "Créer des tests hello world CPU et GPU"
-    description: "Créer deux tests fonctionnels simples 'hello world' : un pour CPU et un pour GPU, qui exécutent des fonctions minimales via Ray sur un cluster SLURM. Ces tests doivent être rapides à exécuter et permettre de valider rapidement que le système fonctionne correctement après chaque modification majeure"
-    state: "in-progress"
-    dependencies: []
-    dependencies-results: []
-    task_file: "creer-tests-hello-world-cpu-gpu.md"
-    output_file: "rapport-creer-tests-hello-world-cpu-gpu.md"
-    deadline: null
   - id: "task-0c"
     title: "Optimiser la gestion du stockage et le nettoyage des fichiers"
     description: "Optimiser la gestion du stockage et du nettoyage pour améliorer les performances : implémenter un cache intelligent pour réutiliser le venv entre exécutions, nettoyer les fichiers temporaires après téléchargement réussi, optimiser la génération de requirements.txt, et corriger les incohérences de versions Python dans les scripts"
@@ -36,37 +27,10 @@ tasks:
     task_file: "corriger-et-rediriger-dashboard-ray.md"
     output_file: "rapport-corriger-et-rediriger-dashboard-ray.md"
     deadline: null
-  - id: "task-0e"
-    title: "Implémenter un système de logging dans un fichier"
-    description: "Implémenter un système de logging centralisé dans un fichier constamment réécrit pour suivre toutes les étapes (installation serveur, connexion SSH, upload fichiers, attente nœuds, etc.) sans saturer la console. Ajouter un paramètre log_file au constructeur RayLauncher avec default logs/RayLauncher.log"
-    state: "in-progress"
-    dependencies: []
-    dependencies-results: ["rapport-installer-et-verifier-projet.md"]
-    task_file: "implementer-systeme-logging-fichier.md"
-    output_file: "rapport-implementer-systeme-logging-fichier.md"
-    deadline: null
-  - id: "task-0f"
-    title: "Réorganiser les tests dans un dossier tests/ exécutable via pytest"
-    description: "Déplacer test_cpu.py et test_gpu.py dans un dossier tests/ structuré et les adapter pour qu'ils soient exécutables via pytest, avec configuration appropriée dans pyproject.toml"
-    state: "todo"
-    dependencies: []
-    dependencies-results: ["rapport-installer-et-verifier-projet.md"]
-    task_file: "reorganiser-tests-pytest.md"
-    output_file: "rapport-reorganiser-tests-pytest.md"
-    deadline: null
-  - id: "task-4"
-    title: "Gérer l'annulation des jobs SLURM lors d'interruption locale"
-    description: "Implémenter une gestion robuste des interruptions locales (Ctrl+C) qui annule automatiquement les jobs SLURM en cours sur le cluster lorsque le processus local est interrompu, avec capture des signaux, identification des jobs actifs et nettoyage des ressources"
-    state: "todo"
-    dependencies: []
-    dependencies-results: []
-    task_file: "gerer-annulation-jobs-interruption-locale.md"
-    output_file: "rapport-gerer-annulation-jobs-interruption-locale.md"
-    deadline: null
   - id: "task-5"
     title: "Simplifier l'affichage de la queue d'attente SLURM"
     description: "Simplifier l'affichage de la queue d'attente SLURM pour ne montrer qu'un message concis 'Waiting for job... (Position in queue : x/X)' actualisé uniquement toutes les 30 secondes, remplaçant l'affichage verbeux actuel"
-    state: "todo"
+    state: "in-progress"
     dependencies: []
     dependencies-results: []
     task_file: "simplifier-affichage-queue-attente-slurm.md"
@@ -103,8 +67,8 @@ tasks:
     title: "Tester le package SLURM_RAY sur CPU et GPU"
     description: "Créer et exécuter des tests fonctionnels pour vérifier que le package fonctionne correctement avec des fonctions simples sur CPU et/ou GPU via Ray sur un cluster SLURM"
     state: "todo"
-    dependencies: ["task-9", "task-0b", "task-0c"]
-    dependencies-results: ["rapport-installer-et-verifier-projet.md"]
+    dependencies: ["task-0b", "task-0c"]
+    dependencies-results: ["rapport-installer-et-verifier-projet.md", "rapport-creer-tests-hello-world-cpu-gpu.md", "rapport-reorganiser-tests-pytest.md"]
     task_file: "tester-package-cpu-gpu.md"
     output_file: "rapport-tester-package-cpu-gpu.md"
     deadline: null
@@ -126,4 +90,3 @@ tasks:
     task_file: "mettre-a-jour-documentation-repo.md"
     output_file: "rapport-mettre-a-jour-documentation-repo.md"
     deadline: null
-

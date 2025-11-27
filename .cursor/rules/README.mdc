@@ -4,149 +4,50 @@ alwaysApply: true
 
 # README upkeep rule
 
-Tu dois maintenir le fichier [README.md](mdc:README.md) **constamment à jour** : à chaque modification du code (nouveau fichier, suppression, changement de logique, ajout/suppression de dépendances, services, bases de données, ou modification des scripts d'installation / variables d'environnement), tu mets à jour le `README.md`.
+Le fichier [README.md](mdc:README.md) doit rester parfaitement synchronisé avec l'état actuel du dépôt. **Chaque conversation doit se conclure par une mise à jour explicite du README**, même si les changements sont purement documentaires. L'agent corrige immédiatement toute information obsolète ou erronée dès qu'elle est détectée.
 
-Directives générales :
-- **Sois clair et concis** : garde le README lisible et proportionné ; fournis l'information essentielle sans digresser.
-- **Fais en sorte qu'il reflète l'état du dépôt** : le README doit être la source unique de vérité pour la vue d'ensemble du projet.
-- **Sois proportionnel** : inclus les informations essentielles et pousse les détails longs dans `documentation/` en créant des liens.
+## Principes directeurs
+- **Actualisation continue** : à chaque ajout, suppression ou modification (code, dépendance, script, service, variable d'environnement), mettre le README à jour.
+- **Structure immuable** : la hiérarchie de sections ci-dessous est obligatoire et ne doit pas être renommée ni réordonnée.
+- **Précision factuelle** : une information inexacte doit être rectifiée avant la fin de la session.
+- **Aucune hésitation** : si quelque chose semble dépassé, le corriger sur-le-champ dans le README.
+- **Atomicité** : le README ne doit jamais faire référence à ses versions antérieures ni dépendre d'un historique ou de notes externes ; sa lecture actuelle doit suffire à tout comprendre.
 
-Sections minimales obligatoires (et ce que tu dois y mettre) :
+## Structure imposée du README
+1. **Paragraphe de présentation du repo**  
+   - Introduction de 4–5 phrases maximum décrivant l'objectif du projet, son état courant et les grandes fonctionnalités disponibles.
+2. **# Installation**  
+   - Pré-requis (langages, Docker, services).  
+   - Étapes d'installation sous forme de commandes dans des blocs de code, chacune suivie d'une explication *en italique*.  
+   - Mentionner `install.sh` ou tout équivalent et les variables nécessaires.
+3. **# Principaux résultats**  
+   - Tableaux ou graphes synthétiques listant les performances, benchmarks ou métriques clés.  
+   - Pas de texte narratif : uniquement les données et une légende brève.  
+   - Mettre à jour dès qu'un nouveau résultat est produit ou lorsqu'un ancien devient obsolète.
+4. **# Plan du repo**  
+   - Diagramme d'arborescence type `root/` présentant les dossiers principaux.  
+   - Pour chaque dossier (`src/`, `tests/`, `scripts/`, `documentation/`, `.cursor/rules/`, etc.), préciser son rôle, sa structure interne et un exemple d'utilisation.
+5. **# Scripts d'entrée principaux (scripts/)**  
+   - Tableau listant chaque point d'entrée primaire : chemin, description, exemple de commande (bloc de code) + explication *en italique*.  
+   - Indiquer les variables d'environnement requises et les cas d'usage typiques.
+6. **# Scripts exécutables secondaires (scripts/utils/)**  
+   - Tableau équivalent pour les utilitaires autonomes ou appelés par les scripts principaux.  
+   - Préciser s'ils peuvent être lancés directement et dans quelles situations.
+7. **# Roadmap**  
+   - **Format obligatoire** : Tableau trié par ordre de priorité calculé sur les dépendances.
+   - **Contenu** : UNIQUEMENT les actions futures. Les actions terminées sont supprimées du tableau.
+   - **Colonnes** :
+     | Tâche | Objectif | État | Dépendances |
+     |-------|----------|------|-------------|
+     | **Titre** | Description très détaillée (~200 mots) expliquant le contexte, le but et les critères de succès. Doit être auto-suffisant pour l'agent. | 🏗️ En cours / 📅 À faire | Liste des tâches bloquantes (ou "-") |
 
-- **Titre et description courte** : une ligne de titre + 4–5 phrases expliquant l'objectif du projet.
+## Bonnes pratiques forcées
+- **Toujours finir par le README** : avant de conclure, rouvrir le README, vérifier chaque section et consigner les mises à jour effectuées (ou confirmer explicitement qu'il reflète déjà l'état réel).  
+- **Documentation proportionnée** : déplacer les détails verbeux vers `documentation/` et lier depuis la section concernée.  
+- **Fail-fast documentaire** : si une donnée manque pour documenter correctement, s'arrêter et la récupérer avant de poursuivre l'implémentation.  
+- **Exemples systématiques** : toute commande présentée dans Installation ou Scripts doit inclure un exemple reproductible avec explication *en italique*.  
+- **Synchronisation Roadmap** : dès qu'une tâche passe de « à faire » à « fait », retirer l'entrée de la roadmap et intégrer les résultats au corps du README (sections Présentation, Résultats, Scripts, etc.).  
+- **Tableaux privilégiés** : utiliser des tableaux homogènes pour les sections Résultats, Scripts et Roadmap afin de maximiser la lisibilité.
 
-- **Architecture du dépôt & emplacement des fichiers** : décris d'abord l'architecture générale et l'utilité de chaque dossier. Pour chaque dossier, indique ce qu'il contient, comment il est structuré et des exemples d'usage.
-  - `src/` : code applicatif (services, routes, modèles). *Contient le coeur de l'application — organise en sous-dossiers par domaine (ex. `src/services/`, `src/controllers/`, `src/models/`).*
-  - `tests/` : tests unitaires et d'intégration. *Placez les tests miroir du code (ex. `tests/unit/`, `tests/integration/`).*
-  - `scripts/` : utilitaires (migrations, maintenance). *Exécute des tâches récurrentes: `scripts/migrate.sh`, `scripts/seed.sh`.*
-  - `documentation/` : guides et docs longues (architecture détaillée, procédures). *Ne répète pas le README — référence les guides approfondis ici.*
-  - `.cursor/rules/` : règles utilisées par l'agent (comme celle-ci). *Règles et conventions pour l'agent.*
-
-  Exemple d'architecture courte à inclure dans le README :
-
-```
-root/
-├─ src/               # application code (services, controllers, models)
-├─ tests/             # unit & integration tests
-├─ scripts/           # maintenance scripts (migrations, seeds)
-├─ documentation/     # docs longues et guides
-├─ install.sh         # installation helper
-└─ package.json       # project metadata and scripts
-```
-
-*Le diagramme ci‑dessus donne une vue rapide de la structure et facilite la navigation pour un nouveau contributeur.*
-
-- **Fichiers importants et points centraux** : liste les fichiers/répertoires critiques et détaille leur rôle, les fonctions/classes exportées clés et exemples d'utilisation. Indique aussi les « noeuds » centraux qui sont souvent modifiés ou importés.
-  - `[package.json](mdc:package.json)` : métadonnées du projet et scripts.
-    - *Rôle* : point d'entrée des scripts (build/test/start/lint).
-    - *Points d'attention* : mises à jour des dépendances, scripts CI.
-    - *Exemple* : `npm run lint` — *exécute le linter configuré.*
-  - `[install.sh](mdc:install.sh)` : script d'installation automatisé.
-    - *Rôle* : installe dépendances et effectue les préparations initiales.
-    - *Exemple* : `./install.sh` — *installe et prépare l'environnement local.*
-  - `src/` : code source principal.
-    - *Noeuds centraux* : `src/server.js` (ou `src/index.js`) qui initialise l'application, `src/config/` pour la configuration partagée, `src/db/` pour l'accès aux données.
-    - *Exemple* : `createServer(config)` exporté par `src/server.js` — *sert à démarrer le serveur avec la configuration fournie.*
-  - `documentation/` : guides détaillés (migrations, architecture, API).
-    - *Rôle* : héberge les procédures longues et exemples d'usage avancés.
-
-  Pour chaque fichier critique, ajoute une petite note sur les cas où le modifier (ex. : changer `src/config` quand tu ajoutes une variable d'environnement) et un exemple de commande liée.
-
-- **Commandes principales** : détaille les commandes usuelles pour utiliser le projet, avec des exemples dans des blocs de code et une courte explication en italique sous chaque bloc.
-
-  - Installer les dépendances :
-
-```
-npm install
-```
-
-  *Installe les dépendances listées dans `package.json`.*
-
-  - Construire le projet :
-
-```
-npm run build
-```
-
-  *Produit l'artifact de production (ex. transpile dans `dist/`) prêt à être déployé.*
-
-  - Lancer les tests :
-
-```
-npm run test
-```
-
-  *Exécute les tests unitaires et d'intégration définis dans `tests/`.*
-
-  - Démarrer en mode développement :
-
-```
-npm start
-```
-
-  *Démarre le serveur localement ; vérifie les variables d'environnement nécessaires comme `PORT` ou `DB_URL`.*
-
-  - Exemples de scripts utilitaires (migrations, seeds) :
-
-```
-./scripts/migrate.sh
-./scripts/seed.sh
-```
-
-  *Effectue les migrations de base de données et peuple les jeux de données de test.*
-
-- **Services & bases de données** : liste les services externes, hôtes/ports par défaut, et comment les lancer en local (ex. via `docker-compose`). Fournis des commandes d'exemple et les variables d'environnement requises.
-
-- **Variables d'environnement** : énumère les variables essentielles et leur rôle. Exemple :
-
-```
-PORT=3000        # port d'écoute du serveur
-DB_URL=postgres://user:pass@localhost:5432/dbname
-```
-
-- **Guide de déploiement / exécution** : étapes succinctes pour déployer ou lancer l'application localement ou en production (build → test → release). Ajoute des exemples de commandes et liens vers `documentation/` si nécessaire.
-
-- **Changelog sommaire** : mentionne les changements majeurs ou renvoie vers `CHANGELOG.md` si présent.
-
-Bonnes pratiques obligatoires :
-- Quand tu ajoutes une nouvelle commande, dépendance ou service, ajoute un exemple d'utilisation dans `Commandes principales` et mets à jour `Prérequis & installation`.
-- Si tu changes les étapes d'installation ou de build, mets à jour immédiatement la section correspondante.
-- Fournis des exemples d'utilisation courts, testables et reproductibles.
-
-Exemple de template minimal à appliquer :
-
-```
-# Project Title — one line summary
-
-Short description (1-2 lines).
-
-## Prerequisites & Installation
-
-Commands to install dependencies and any environment setup.
-
-## Architecture
-
-Short overview of folder structure and where to place new code.
-
-## Important files
-
-List key files, roles and example usages.
-
-## Main commands
-
-List main scripts with examples and short italic explanations.
-
-## Services & Databases
-
-List services/databases used and their default names/ports and how to run them locally.
-
-## Environment variables
-
-List and describe important vars with example values.
-
-```
-
-Si le README devient trop long, déplace la documentation détaillée dans `documentation/` et crée des liens depuis le README.
-
-Respecte cette règle de manière systématique : **toute modification de code significative doit entraîner une mise à jour correspondante du `README.md`**.
-
+## Rappel critique
+Respecter cette règle n'est pas optionnel. Un README obsolète bloque la validation de toute contribution. La session se termine uniquement lorsque le README reflète exactement l'état du dépôt, structure comprise.
