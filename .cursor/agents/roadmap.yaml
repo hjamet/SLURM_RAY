@@ -27,30 +27,12 @@ tasks:
     task_file: "corriger-et-rediriger-dashboard-ray.md"
     output_file: "rapport-corriger-et-rediriger-dashboard-ray.md"
     deadline: null
-  - id: "task-5"
-    title: "Simplifier l'affichage de la queue d'attente SLURM"
-    description: "Simplifier l'affichage de la queue d'attente SLURM pour ne montrer qu'un message concis 'Waiting for job... (Position in queue : x/X)' actualisé uniquement toutes les 30 secondes, remplaçant l'affichage verbeux actuel"
-    state: "in-progress"
-    dependencies: []
-    dependencies-results: []
-    task_file: "simplifier-affichage-queue-attente-slurm.md"
-    output_file: "rapport-simplifier-affichage-queue-attente-slurm.md"
-    deadline: null
-  - id: "task-6"
-    title: "Créer une interface interactive pour gérer les jobs SLURM"
-    description: "Créer une interface interactive en console permettant d'afficher les jobs SLURM en cours et leur position dans la file d'attente (si en attente), et de les arrêter au besoin, accessible via python -m slurmray"
-    state: "todo"
-    dependencies: ["task-5"]
-    dependencies-results: []
-    task_file: "creer-interface-interactive-gestion-jobs-slurm.md"
-    output_file: "rapport-creer-interface-interactive-gestion-jobs-slurm.md"
-    deadline: null
   - id: "task-7"
     title: "Implémenter le point d'entrée python -m slurmray"
     description: "Implémenter le point d'entrée python -m slurmray en créant un fichier __main__.py dans le package slurmray qui lancera l'interface interactive de gestion des jobs SLURM"
-    state: "todo"
-    dependencies: ["task-6"]
-    dependencies-results: []
+    state: "in-progress"
+    dependencies: []
+    dependencies-results: ["rapport-creer-interface-interactive-gestion-jobs-slurm.md"]
     task_file: "implementer-point-entree-python-m-slurmray.md"
     output_file: "rapport-implementer-point-entree-python-m-slurmray.md"
     deadline: null
@@ -58,7 +40,7 @@ tasks:
     title: "Intégrer l'ouverture automatique du dashboard Ray"
     description: "Intégrer l'ouverture automatique du dashboard Ray dans l'interface interactive de gestion des jobs SLURM, permettant d'ouvrir le dashboard en local (http://localhost:8888) avec gestion automatique du port forwarding SSH si nécessaire"
     state: "todo"
-    dependencies: ["task-6"]
+    dependencies: ["task-7"]
     dependencies-results: []
     task_file: "integrer-ouverture-automatique-dashboard-ray.md"
     output_file: "rapport-integrer-ouverture-automatique-dashboard-ray.md"
