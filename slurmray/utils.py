@@ -55,6 +55,8 @@ class SSHTunnel:
             local_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             local_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             local_socket.bind(("127.0.0.1", self.local_port))
+            if self.local_port == 0:
+                self.local_port = local_socket.getsockname()[1]
             local_socket.listen(5)
             self.forward_server = local_socket
             

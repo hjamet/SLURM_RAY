@@ -35,7 +35,7 @@ pip install slurmray
 |---|---|---|
 | Support Backend | Slurm, Desi (SSH) | Curnagl & ISIPOL09 supportés |
 | Gestion de tâches | Ray | Distribution automatique |
-| Dashboard | Intégré | Tunnel SSH automatique vers port 8888 |
+| Dashboard | Intégré | Ouverture automatique dans le navigateur (via tunnel SSH) |
 | Compatibilité | Python 3.8 - 3.12 | Gestion automatique de la sérialisation inter-versions |
 
 ## Plan du repo
@@ -58,12 +58,13 @@ root/
 
 | Chemin | Description | Exemple | Explication |
 |---|---|---|---|
-| `slurmray/cli.py` | Interface CLI principale | `slurmray --help` | *Point d'entrée pour les commandes CLI futures* |
+| `slurmray/cli.py` | Interface CLI principale | `slurmray` | *Lance l'interface interactive pour gérer les jobs et accéder au dashboard* |
 
 ## Scripts exécutables secondaires (scripts/utils/)
 
 | Chemin | Description | Exemple | Explication |
 |---|---|---|---|
+| `tests/test_gpu_dashboard_long.py` | Test GPU et dashboard avec job long | `poetry run python tests/test_gpu_dashboard_long.py` | *Lance un job GPU de 5 minutes pour tester le dashboard via l'interface CLI* |
 | `tests/manual_test_desi_gpu_dashboard.py` | Test manuel complet pour Desi | `python tests/manual_test_desi_gpu_dashboard.py` | *Vérifie la connexion, le GPU, Ray et le Dashboard sur Desi* |
 
 ## Usage
@@ -292,12 +293,8 @@ The Launcher documentation is available [here](https://htmlpreview.github.io/?ht
 
 | Tâche | Objectif | État | Dépendances |
 |---|---|---|---|
-| **Simplifier Affichage Queue SLURM** | Remplacer l'affichage verbeux et polluant de la file d'attente actuel par un message de statut synthétique et apaisé : 'Waiting for job... (Position in queue : x/X)'. Ce message ne doit être rafraîchi que toutes les 30 secondes pour éviter de spammer la console et les logs, améliorant ainsi l'expérience utilisateur (UX) durant les phases d'attente. | 🏗️ En cours | - |
-| **Intégrer l'ouverture automatique du dashboard Ray** | Intégrer l'ouverture automatique du dashboard Ray dans l'interface interactive de gestion des jobs SLURM créée précédemment. Cette fonctionnalité doit permettre d'ouvrir le dashboard en local (http://localhost:8888) avec gestion automatique du port forwarding SSH si nécessaire. L'utilisateur doit pouvoir sélectionner un job en cours d'exécution depuis l'interface CLI et avoir le dashboard qui s'ouvre automatiquement dans son navigateur, avec le tunnel SSH établi en arrière-plan. Cela simplifie grandement l'accès aux métriques de performance pour l'utilisateur final. | 🏗️ En cours | Interface Interactive Jobs SLURM |
 | **Consolider le transfert de code source pour la compatibilité Python** | Généraliser et nettoyer le mécanisme de transfert de code source (actuellement implémenté via `inspect.getsource` pour Desi) au lieu du bytecode `dill` pour garantir la compatibilité entre des versions Python locales (ex: 3.12) et distantes (ex: 3.8) sur tous les backends. Cela implique de tester les limites de `inspect`, d'envisager des alternatives comme `dill.source`, et de rendre ce mécanisme robuste pour toutes les fonctions utilisateur. | 📅 À faire | - |
 | **Corriger les incompatibilités avec Curnagl** | Analyser et corriger les incompatibilités potentielles entre le code actuel (optimisé pour Desi/Local) et l'environnement Curnagl (versions Python, modules SLURM, partitions). Vérifier que les modifications récentes n'ont pas cassé le support Curnagl et adapter le `RayLauncher` si nécessaire pour assurer une compatibilité parfaite avec le cluster de l'UNIL. | 📅 À faire | - |
 | **Optimiser la gestion du stockage et le nettoyage des fichiers** | Optimiser la gestion du stockage et du nettoyage pour améliorer les performances globales du système. Implémenter un cache intelligent pour réutiliser le virtualenv entre exécutions si les dépendances n'ont pas changé, évitant ainsi de recréer l'environnement à chaque fois. Nettoyer systématiquement les fichiers temporaires après téléchargement réussi des résultats pour éviter l'accumulation de données inutiles. Optimiser la génération de `requirements.txt` pour qu'elle soit plus rapide et plus précise. Corriger les incohérences potentielles de versions Python entre l'environnement local et distant pour garantir la compatibilité. | 📅 À faire | - |
-| **Interface Interactive Jobs SLURM** | Développer une interface en ligne de commande (TUI simple ou menu interactif) accessible via `python -m slurmray`. Cette interface permettra aux utilisateurs de lister leurs jobs en cours, de voir leur position précise dans la file d'attente, et de les annuler facilement sans avoir à mémoriser les commandes `scancel` ou `squeue` complexes. | 📅 À faire | Simplifier Affichage Queue SLURM |
-| **Intégration Point d'Entrée** | Finaliser l'implémentation du fichier `__main__.py` dans le package pour exposer proprement l'interface interactive créée précédemment. S'assurer que la commande `python -m slurmray` est intuitive et gère correctement les exceptions (ex: absence de credentials). | 📅 À faire | Interface Interactive Jobs SLURM |
 | **Améliorer la gestion des credentials (username/password) via .env** | Modifier RayLauncher pour charger automatiquement `server_username` et `server_password` depuis un fichier `.env` local, tout en gardant la rétrocompatibilité avec les paramètres explicites passés au constructeur. Le système doit d'abord vérifier les variables d'environnement (via `python-dotenv`), puis les paramètres explicites, et enfin demander interactivement si aucun n'est trouvé. Cette amélioration améliore la sécurité (évite de hardcoder les mots de passe) et l'ergonomie pour les utilisateurs fréquents qui peuvent stocker leurs credentials de manière sécurisée dans un fichier `.env` ignoré par Git. | 📅 À faire | - |
 | **Mettre à jour la documentation pour tout avoir dans le repo** | Remplacer les liens externes dans README.md par du contenu local, intégrer la documentation de RayLauncher directement dans le repository pour éviter les dépendances vers des sites externes. Migrer toute la documentation externe (liens actuels vers sites tiers ou HTML prévisualisés) directement dans le dépôt (dossier `docs/` ou Markdown). L'objectif est que le repository soit auto-suffisant et que la documentation versionnée suive l'évolution du code. Cela garantit que la documentation est toujours à jour et accessible même si les sites externes changent ou disparaissent. | 📅 À faire | - |

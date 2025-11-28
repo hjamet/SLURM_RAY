@@ -3,6 +3,7 @@ import time
 import subprocess
 import signal
 import sys
+import webbrowser
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -14,11 +15,11 @@ from getpass import getpass
 
 # Try to import RayLauncher components
 try:
-    from slurmray.RayLauncher import SSHTunnel
+    from slurmray.utils import SSHTunnel
 except ImportError:
     # Fallback if running from root without package installed
     sys.path.append(os.getcwd())
-    from slurmray.RayLauncher import SSHTunnel
+    from slurmray.utils import SSHTunnel
 
 load_dotenv()
 
@@ -30,26 +31,46 @@ class SlurmManager:
         self.password = os.getenv("CURNAGL_PASSWORD")
         self.ssh_host = "curnagl.dcsr.unil.ch"
         self.active_tunnel = None
+        self.ssh_client = None
+    
+    def _connect(self):
+        """Connect to the cluster if not already connected"""
+        if self.ssh_client and self.ssh_client.get_transport() and self.ssh_client.get_transport().is_active():
+            return
+
+        if not self.password:
+            self.password = getpass("Enter cluster password: ")
+
+        try:
+            self.ssh_client = paramiko.SSHClient()
+            self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.ssh_client.connect(
+                hostname=self.ssh_host,
+                username=self.username,
+                password=self.password
+            )
+        except Exception as e:
+            console.print(f"[red]Failed to connect to cluster: {e}[/red]")
+            self.ssh_client = None
+            raise
+
+    def run_command(self, command):
+        """Run a command on the cluster via SSH"""
+        self._connect()
+        stdin, stdout, stderr = self.ssh_client.exec_command(command)
+        return stdout.read().decode("utf-8"), stderr.read().decode("utf-8")
 
     def get_jobs(self):
         """Retrieve jobs from squeue"""
         try:
-            # Run squeue command
-            result = subprocess.run(
-                ["squeue", "-u", self.username, "-o", "%.18i %.9P %.30j %.8u %.8T %.10M %.6D %R"],
-                capture_output=True,
-                text=True
-            )
+            # Run squeue command remotely
+            stdout, stderr = self.run_command(f"squeue -u {self.username} -o '%.18i %.9P %.30j %.8u %.8T %.10M %.6D %R' --noheader")
             
-            if result.returncode != 0:
-                return []
-
-            lines = result.stdout.strip().split("\n")
-            if len(lines) < 2:
-                return []
-
+            lines = stdout.strip().split("\n")
             jobs = []
-            for line in lines[1:]:
+            for line in lines:
+                if not line.strip():
+                    continue
                 parts = line.split()
                 if len(parts) >= 8:
                     jobs.append({
@@ -63,9 +84,6 @@ class SlurmManager:
                         "nodelist": parts[7]
                     })
             return jobs
-        except FileNotFoundError:
-            # Mock data for local testing if squeue not found
-            return []
         except Exception as e:
             console.print(f"[red]Error retrieving jobs: {e}[/red]")
             return []
@@ -73,37 +91,29 @@ class SlurmManager:
     def cancel_job(self, job_id):
         """Cancel a SLURM job"""
         try:
-            subprocess.run(["scancel", job_id], check=True)
-            console.print(f"[green]Job {job_id} cancelled successfully.[/green]")
-        except subprocess.CalledProcessError:
-            console.print(f"[red]Failed to cancel job {job_id}.[/red]")
-        except FileNotFoundError:
-            console.print("[red]scancel command not found.[/red]")
+            stdout, stderr = self.run_command(f"scancel {job_id}")
+            if stderr:
+                console.print(f"[red]Failed to cancel job {job_id}: {stderr}[/red]")
+            else:
+                console.print(f"[green]Job {job_id} cancelled successfully.[/green]")
+        except Exception as e:
+            console.print(f"[red]Error cancelling job: {e}[/red]")
 
     def get_head_node(self, job_id):
         """Get head node for a job"""
         try:
-            # Get job info
-            result = subprocess.run(
-                ["scontrol", "show", "job", job_id],
-                capture_output=True,
-                text=True
-            )
-            output = result.stdout
+            # Get job info remotely
+            stdout, stderr = self.run_command(f"scontrol show job {job_id}")
+            output = stdout
             
-            # Simple parsing for NodeList (simplified version of RayLauncher logic)
+            # Simple parsing for NodeList
             import re
             match = re.search(r"NodeList=([^\s]+)", output)
             if match:
                 nodelist = match.group(1)
-                # Convert nodelist to hostname (simplified, assuming first node is head)
-                # Need scontrol show hostnames for robust parsing
-                res_host = subprocess.run(
-                    ["scontrol", "show", "hostnames", nodelist],
-                    capture_output=True,
-                    text=True
-                )
-                hosts = res_host.stdout.strip().split("\n")
+                # Convert nodelist to hostname
+                stdout, stderr = self.run_command(f"scontrol show hostnames {nodelist}")
+                hosts = stdout.strip().split("\n")
                 if hosts:
                     return hosts[0]
             return None
@@ -127,17 +137,27 @@ class SlurmManager:
         # 3. Setup Tunnel
         try:
             console.print("[yellow]Setting up SSH tunnel... (Press Ctrl+C to stop)[/yellow]")
+            # Use local_port=0 to let OS pick a free port, remote_port=8265 for standard Ray Dashboard
             self.active_tunnel = SSHTunnel(
                 ssh_host=self.ssh_host,
                 ssh_username=self.username,
                 ssh_password=self.password,
                 remote_host=head_node,
-                local_port=8888,
-                remote_port=8888
+                local_port=0, 
+                remote_port=8265
             )
             
             with self.active_tunnel:
-                console.print("[green]Dashboard available at: http://localhost:8888[/green]")
+                url = f"http://localhost:{self.active_tunnel.local_port}"
+                console.print(f"[green]Dashboard available at: {url}[/green]")
+                
+                # Open browser
+                console.print("Opening browser...")
+                try:
+                    webbrowser.open(url)
+                except Exception as e:
+                    console.print(f"[yellow]Could not open browser automatically: {e}[/yellow]")
+                
                 console.print("Tunnel active. Keeping connection alive...")
                 try:
                     while True:
@@ -211,4 +231,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

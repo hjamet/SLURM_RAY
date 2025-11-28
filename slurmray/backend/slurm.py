@@ -247,9 +247,7 @@ class SlurmBackend(ClusterBackend):
                 queue_log_file
             )
         )
-        subprocess.Popen(
-            ["tail", "-f", os.path.join(self.launcher.project_path, "{}.log".format(job_name))]
-        )
+        
         start_time = time.time()
         last_print_time = 0
         job_running = False
