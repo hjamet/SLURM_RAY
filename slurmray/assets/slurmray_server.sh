@@ -17,6 +17,13 @@ module load gcc/13.2.0 rust python/3.12.1 cuda/12.6.2 cudnn/9.2.0.82-12
 
 # Create venv if it doesn't exist (hash check is done in Python before file upload)
 # If venv needs recreation, it has already been removed by Python
+# Check for force reinstall flag
+if [ -f ".force_reinstall" ]; then
+    echo "Force reinstall flag detected: removing existing virtualenv..."
+    rm -rf .venv
+    rm -f .force_reinstall
+fi
+
 if [ ! -d ".venv" ]; then
     echo "Creating virtualenv..."
     python3 -m venv .venv

@@ -37,7 +37,12 @@ class DesiBackend(RemoteMixin):
         req_file = os.path.join(self.launcher.project_path, "requirements.txt")
         
         should_recreate_venv = True
-        if os.path.exists(req_file):
+        if self.launcher.force_reinstall_venv:
+            # Force recreation: remove venv if it exists
+            self.logger.info("Force reinstall enabled: removing existing virtualenv...")
+            self.ssh_client.exec_command(f"rm -rf {base_dir}/venv")
+            should_recreate_venv = True
+        elif os.path.exists(req_file):
             with open(req_file, 'r') as f:
                 req_lines = f.readlines()
             # Check remote hash (if venv exists on remote)
@@ -58,10 +63,15 @@ class DesiBackend(RemoteMixin):
         if should_recreate_venv:
             # Clean up everything including venv
             self.ssh_client.exec_command(f"mkdir -p {base_dir} && rm -rf {base_dir}/*")
+            # Create flag file to force venv recreation in script
+            if self.launcher.force_reinstall_venv:
+                self.ssh_client.exec_command(f"touch {base_dir}/.force_reinstall")
             self.logger.info("Virtualenv will be recreated (requirements changed or missing)")
         else:
             # Clean up everything except venv and cache
             self.ssh_client.exec_command(f"mkdir -p {base_dir} && find {base_dir} -mindepth 1 ! -name 'venv' ! -path '{base_dir}/venv/*' ! -name '.slogs' ! -path '{base_dir}/.slogs/*' -delete")
+            # Remove flag file if it exists
+            self.ssh_client.exec_command(f"rm -f {base_dir}/.force_reinstall")
             self.logger.info("Preserving virtualenv (requirements unchanged)")
         
         # Generate Python script (spython.py) that will run on Desi
@@ -283,6 +293,13 @@ class DesiBackend(RemoteMixin):
 
 # Setup Environment (if needed, e.g. load modules or activate conda)
 # Assuming python is available or venv creation
+
+# Check for force reinstall flag
+if [ -f ".force_reinstall" ]; then
+    echo "Force reinstall flag detected: removing existing virtualenv..."
+    rm -rf venv
+    rm -f .force_reinstall
+fi
 
 # Create venv if it doesn't exist
 if [ ! -d "venv" ]; then

@@ -473,7 +473,12 @@ class SlurmBackend(ClusterBackend):
         req_file = os.path.join(self.launcher.project_path, "requirements.txt")
         
         should_recreate_venv = True
-        if os.path.exists(req_file):
+        if self.launcher.force_reinstall_venv:
+            # Force recreation: remove venv if it exists
+            self.logger.info("Force reinstall enabled: removing existing virtualenv...")
+            ssh_client.exec_command("rm -rf slurmray-server/.venv")
+            should_recreate_venv = True
+        elif os.path.exists(req_file):
             with open(req_file, 'r') as f:
                 req_lines = f.readlines()
             # Check remote hash (if venv exists on remote)
@@ -507,10 +512,15 @@ class SlurmBackend(ClusterBackend):
         if should_recreate_venv:
             # Clean server logs only (venv will be recreated by script if needed)
             ssh_client.exec_command("rm -rf slurmray-server/.slogs/server/*")
+            # Create flag file to force venv recreation in script
+            if self.launcher.force_reinstall_venv:
+                ssh_client.exec_command("touch slurmray-server/.force_reinstall")
             self.logger.info("Virtualenv will be recreated if needed (requirements changed or missing)")
         else:
             # Clean server logs only, preserve venv
             ssh_client.exec_command("rm -rf slurmray-server/.slogs/server/*")
+            # Remove flag file if it exists
+            ssh_client.exec_command("rm -f slurmray-server/.force_reinstall")
             self.logger.info("Preserving virtualenv (requirements unchanged)")
         # Copy user files to the server
         for file in self.launcher.files:

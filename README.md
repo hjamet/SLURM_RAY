@@ -60,6 +60,7 @@ root/
 | Chemin | Description | Exemple | Explication |
 |---|---|---|---|
 | `slurmray/cli.py` | Interface CLI principale | `slurmray curnagl` ou `slurmray desi` | *Lance l'interface interactive pour gérer les jobs et accéder au dashboard. Supporte Curnagl (Slurm) et Desi (ISIPOL09). Par défaut, affiche l'aide si aucun cluster n'est spécifié.* |
+| `install.sh` | Script d'installation local | `./install.sh` ou `./install.sh --force-reinstall` | *Installe les dépendances avec Poetry. Utiliser `--force-reinstall` pour supprimer et recréer l'environnement virtuel local avant installation.* |
 
 ## Scripts exécutables secondaires (scripts/utils/)
 
@@ -158,6 +159,30 @@ DESI_PASSWORD=your_password
 ```
 
 **Note:** The `.env` file should be in your `.gitignore` to avoid committing credentials.
+
+### Force Reinstall Virtual Environment
+
+If you need to force a complete reinstallation of the virtual environment (e.g., due to corruption, version conflicts, or for a clean installation), you can use the `force_reinstall_venv` parameter:
+
+```python
+launcher = RayLauncher(
+    project_name="example",
+    func=example_func,
+    args={"x": 1},
+    force_reinstall_venv=True,  # Force complete venv recreation
+    # ... other parameters
+)
+```
+
+This will:
+- **For remote execution (Slurm/Desi)**: Delete the existing virtual environment on the remote server/cluster and recreate it from scratch, reinstalling all packages from `requirements.txt`
+- **For local installation**: Use the `install.sh` script with the `--force-reinstall` flag:
+
+```bash
+./install.sh --force-reinstall
+```
+
+**Note:** The force reinstall mechanism is safe and will not affect running jobs. The venv is only removed before job execution starts.
 
 ## Key Differences Between Modes
 
@@ -322,7 +347,6 @@ The Launcher documentation is available [here](https://htmlpreview.github.io/?ht
 
 | Tâche | Objectif | État | Dépendances |
 |---|---|---|---|
-| **Ajouter la possibilité de forcer la réinstallation complète des requirements** | Actuellement, les environnements virtuels (`.venv` pour Slurm, `venv` pour Desi) sont créés automatiquement s'ils n'existent pas, mais il n'existe pas de mécanisme pour forcer une réinstallation complète en cas de corruption, d'incompatibilité de versions, ou de besoin de nettoyage. Cette tâche consiste à ajouter une option (flag ou paramètre) permettant de forcer la suppression complète de l'environnement virtuel existant et sa recréation depuis zéro, suivie d'une réinstallation complète de tous les packages depuis `requirements.txt`. L'implémentation doit couvrir à la fois l'environnement local (Poetry avec `.venv`) et les environnements distants (Slurm avec `.venv` dans `slurmray-server/`, Desi avec `venv` dans le répertoire de projet). Pour l'environnement local, cela pourrait être un script d'installation (`install.sh` ou commande Poetry) avec un flag `--force-reinstall` ou `--clean`. Pour les environnements distants, cela pourrait être un paramètre du `RayLauncher` (ex: `force_reinstall_venv=True`) qui modifie les scripts générés (`slurmray_server.sh` pour Slurm, `runner_script.sh` pour Desi) pour supprimer le venv existant avant création. La suppression doit être sécurisée (vérifier que le venv n'est pas utilisé par un job en cours) et la recréation doit suivre exactement le même processus que la création normale, garantissant la cohérence. | 📅 À faire | - |
 | **Améliorer la gestion des credentials (username/password) via .env** | Modifier RayLauncher pour charger automatiquement `server_username` et `server_password` depuis un fichier `.env` local, tout en gardant la rétrocompatibilité avec les paramètres explicites passés au constructeur. Le système doit d'abord vérifier les variables d'environnement (via `python-dotenv`), puis les paramètres explicites, et enfin demander interactivement si aucun n'est trouvé. Cette amélioration améliore la sécurité (évite de hardcoder les mots de passe) et l'ergonomie pour les utilisateurs fréquents qui peuvent stocker leurs credentials de manière sécurisée dans un fichier `.env` ignoré par Git. | 📅 À faire | - |
 | **Mettre à jour la documentation pour tout avoir dans le repo** | Remplacer les liens externes dans README.md par du contenu local, intégrer la documentation de RayLauncher directement dans le repository pour éviter les dépendances vers des sites externes. Migrer toute la documentation externe (liens actuels vers sites tiers ou HTML prévisualisés) directement dans le dépôt (dossier `docs/` ou Markdown). L'objectif est que le repository soit auto-suffisant et que la documentation versionnée suive l'évolution du code. Cela garantit que la documentation est toujours à jour et accessible même si les sites externes changent ou disparaissent. | 📅 À faire | - |
 | **Créer des scripts de test GPU et dashboard pour Curnagl et Desi** | Créer deux scripts de test automatisés et complets pour valider le bon fonctionnement des deux clusters. Le script pour Curnagl (`tests/test_curnagl_gpu_dashboard.py`) doit lancer un job Slurm avec GPU, vérifier l'accès au GPU via PyTorch (disponibilité CUDA, nombre de GPUs, noms des GPUs), valider les ressources Ray, et s'assurer que le dashboard Ray est accessible localement via le tunnel SSH automatique sur http://localhost:8888 pendant l'exécution du job. Le script pour Desi (`tests/test_desi_gpu_dashboard.py`) doit effectuer les mêmes vérifications mais adaptées au backend Desi (Smart Lock, pas de modules Slurm). Les deux scripts doivent inclure des vérifications explicites de l'accessibilité du dashboard local (test de connexion HTTP sur le port local, vérification que le tunnel SSH est actif, validation que le contenu du dashboard répond correctement). Après la création des scripts, exécuter le script Desi pour valider immédiatement l'accès au GPU et l'accessibilité locale du dashboard sur le serveur ISIPOL09. Ces scripts serviront de tests de validation rapide après toute modification importante du système de lancement ou des backends. | 📅 À faire | - |

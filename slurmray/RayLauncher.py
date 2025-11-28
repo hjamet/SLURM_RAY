@@ -42,6 +42,7 @@ class RayLauncher:
         server_password: str = None,
         log_file: str = "logs/RayLauncher.log",
         cluster: str = "slurm", # 'slurm' (curnagl) or 'desi'
+        force_reinstall_venv: bool = False,
     ):
         """Initialize the launcher
 
@@ -62,6 +63,7 @@ class RayLauncher:
             server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. Can also be provided via environment variables (CURNAGL_PASSWORD for Slurm, DESI_PASSWORD for Desi). CAUTION: never write your password in the code. Defaults to None.
             log_file (str, optional): Path to the log file. Defaults to "logs/RayLauncher.log".
             cluster (str, optional): Type of cluster/backend to use: 'slurm' (default, e.g. Curnagl) or 'desi' (ISIPOL09/Desi server). Defaults to "slurm".
+            force_reinstall_venv (bool, optional): Force complete removal and recreation of virtual environment on remote server/cluster. This will delete the existing venv and reinstall all packages from requirements.txt. Use this if the venv is corrupted or you need a clean installation. Defaults to False.
         """
         # Save the parameters
         self.project_name = project_name
@@ -79,6 +81,7 @@ class RayLauncher:
         self.server_password = server_password
         self.log_file = log_file
         self.cluster_type = cluster.lower() # 'slurm' or 'desi'
+        self.force_reinstall_venv = force_reinstall_venv
 
         # Set default username if not provided based on cluster type
         if self.server_username == "hjamet" and self.cluster_type == "desi":
