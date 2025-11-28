@@ -209,6 +209,22 @@ class RayLauncher:
     def __serialize_func_and_args(self, func: Callable = None, args: list = None):
         """Serialize the function and the arguments
         
+        This method attempts to serialize functions using source code extraction
+        (via inspect.getsource() or dill.source.getsource()) for better compatibility
+        across Python versions. If source extraction fails, it falls back to dill
+        bytecode serialization.
+        
+        **Limitations of source-based serialization:**
+        - Functions with closures: Only the function body is captured, not the captured
+          variables. The function may fail at runtime if it depends on closure variables.
+        - Functions defined in interactive shells or dynamically compiled code may not
+          have accessible source.
+        - Lambda functions defined inline may have limited source information.
+        
+        **Fallback behavior:**
+        - If source extraction fails, dill bytecode serialization is used as fallback.
+        - This ensures backward compatibility but may fail with Python version mismatches.
+        
         Args:
             func (Callable, optional): Function to serialize. Defaults to None.
             args (list, optional): Arguments of the function. Defaults to None.
@@ -216,30 +232,80 @@ class RayLauncher:
         self.logger.info("Serializing function and arguments...")
 
         # Try to get source code for the function (more robust across versions)
+        source_extracted = False
+        source_method = None
+        
+        # Method 1: Try inspect.getsource() (standard library, most common)
         try:
             import inspect
             source = inspect.getsource(func)
-            # We need to handle indentation if the function is defined inside another
-            # Deduplicate indentation
-            lines = source.split('\n')
-            if lines:
-                first_line = lines[0]
-                indent = len(first_line) - len(first_line.lstrip())
-                source = '\n'.join([line[indent:] for line in lines])
-            
-            with open(os.path.join(self.project_path, "func_source.py"), "w") as f:
-                # We need to wrap it to ensure it can be imported
-                # But if we just write the function def, we can import the module and get the func by name
-                f.write(source)
-                
-            # Save function name for loading
-            with open(os.path.join(self.project_path, "func_name.txt"), "w") as f:
-                f.write(func.__name__)
-                
+            source_method = "inspect.getsource"
+            source_extracted = True
+        except (OSError, TypeError) as e:
+            # OSError: source code not available (e.g., built-in, C extension)
+            # TypeError: not a function or method
+            self.logger.debug(f"inspect.getsource() failed: {e}")
         except Exception as e:
-            self.logger.warning(f"Could not save function source: {e}")
+            self.logger.debug(f"inspect.getsource() unexpected error: {e}")
+        
+        # Method 2: Try dill.source.getsource() as alternative
+        if not source_extracted:
+            try:
+                if hasattr(dill, 'source') and hasattr(dill.source, 'getsource'):
+                    source = dill.source.getsource(func)
+                    source_method = "dill.source.getsource"
+                    source_extracted = True
+                else:
+                    self.logger.debug("dill.source.getsource() not available")
+            except Exception as e:
+                self.logger.debug(f"dill.source.getsource() failed: {e}")
+        
+        # Process and save source if extracted
+        if source_extracted:
+            try:
+                # Handle indentation if the function is defined inside another
+                # Deduplicate indentation
+                lines = source.split('\n')
+                if lines:
+                    first_line = lines[0]
+                    # Skip empty lines at the start
+                    first_non_empty = next((i for i, line in enumerate(lines) if line.strip()), 0)
+                    if first_non_empty < len(lines):
+                        first_line = lines[first_non_empty]
+                        indent = len(first_line) - len(first_line.lstrip())
+                        # Deduplicate indentation, but preserve empty lines
+                        deduplicated_lines = []
+                        for line in lines:
+                            if line.strip():  # Non-empty line
+                                if len(line) >= indent:
+                                    deduplicated_lines.append(line[indent:])
+                                else:
+                                    deduplicated_lines.append(line)
+                            else:  # Empty line
+                                deduplicated_lines.append("")
+                        source = '\n'.join(deduplicated_lines)
+                
+                # Save source code
+                with open(os.path.join(self.project_path, "func_source.py"), "w") as f:
+                    f.write(source)
+                
+                # Save function name for loading
+                with open(os.path.join(self.project_path, "func_name.txt"), "w") as f:
+                    f.write(func.__name__)
+                
+                self.logger.info(f"Function source extracted successfully using {source_method}")
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to process/save function source: {e}")
+                source_extracted = False
+        else:
+            self.logger.warning(
+                "Could not extract function source code. "
+                "Falling back to dill bytecode serialization. "
+                "This may cause issues with Python version mismatches."
+            )
 
-        # Pickle the function (legacy/default method)
+        # Always pickle the function (legacy/default method and fallback)
         with open(os.path.join(self.project_path, "func.pkl"), "wb") as f:
             dill.dump(func, f)
 
