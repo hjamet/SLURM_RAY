@@ -417,7 +417,7 @@ class SlurmBackend(ClusterBackend):
                 )
                 if result.returncode != 0:
                     return None
-                hostnames_output = result.stdout
+                output = result.stdout
             
             # Get first hostname (head node)
             hostnames = hostnames_output.strip().split("\n")
@@ -457,23 +457,24 @@ class SlurmBackend(ClusterBackend):
         self._write_server_script()
 
         self.logger.info("Downloading server...")
-        # Generate requirements.txt
-        subprocess.run(
-            [f"pip-chill --no-version > {self.launcher.project_path}/requirements.txt"],
-            shell=True,
-        )
-
-        with open(f"{self.launcher.project_path}/requirements.txt", "r") as file:
-            lines = file.readlines()
-            # Adapt dependencies for the cluster
-            lines.append("slurmray\n")
-
-        with open(f"{self.launcher.project_path}/requirements.txt", "w") as file:
-            file.writelines(lines)
+        
+        # Generate requirements
+        self._generate_requirements()
+        
+        # Add slurmray (unpinned for now to match legacy behavior, but could be pinned)
+        with open(f"{self.launcher.project_path}/requirements.txt", "a") as f:
+            f.write("slurmray\n")
+            
+        # Optimize requirements
+        # Assuming standard path structure on Slurm cluster (Curnagl)
+        venv_cmd = "cd slurmray-server && source .venv/bin/activate &&"
+        req_file_to_push = self._optimize_requirements(self.ssh_client, venv_cmd)
 
         # Copy files from the project to the server
         for file in os.listdir(self.launcher.project_path):
             if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".sh"):
+                if file == "requirements.txt":
+                    continue
                 sftp.put(os.path.join(self.launcher.project_path, file), file)
 
         # Create the server directory and remove old files
@@ -483,10 +484,12 @@ class SlurmBackend(ClusterBackend):
         # Copy user files to the server
         for file in self.launcher.files:
             self._push_file(file, sftp, ssh_client)
-        # Copy the requirements.txt to the server
+            
+        # Copy the requirements.txt (optimized) to the server
         sftp.put(
-            os.path.join(self.launcher.project_path, "requirements.txt"), "requirements.txt"
+            req_file_to_push, "requirements.txt"
         )
+        
         # Copy the server script to the server
         sftp.put(
             os.path.join(self.launcher.module_path, "assets", "slurmray_server.sh"),
@@ -666,4 +669,3 @@ class SlurmBackend(ClusterBackend):
 
         # Copy the file to the server
         sftp.put(file_path, cluster_path)
-

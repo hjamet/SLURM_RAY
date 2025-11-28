@@ -36,11 +36,20 @@ class DesiBackend(RemoteMixin):
         # Generate requirements
         self._generate_requirements()
         
+        # Optimize requirements
+        venv_cmd = f"source {base_dir}/venv/bin/activate &&"
+        req_file_to_push = self._optimize_requirements(self.ssh_client, venv_cmd)
+        
         # Push files
         self.logger.info("Pushing files to Desi...")
         for file in os.listdir(self.launcher.project_path):
             if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".txt"):
+                if file == "requirements.txt":
+                    continue
                 sftp.put(os.path.join(self.launcher.project_path, file), f"{base_dir}/{file}")
+        
+        # Push optimized requirements as requirements.txt
+        sftp.put(req_file_to_push, f"{base_dir}/requirements.txt")
         
         # Copy source code of slurmray to server (since it's not on PyPI)
         self._push_source_code(sftp, base_dir)

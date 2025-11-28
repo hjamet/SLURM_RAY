@@ -2,6 +2,92 @@ import paramiko
 import socket
 import threading
 import logging
+import os
+import re
+
+class DependencyManager:
+    """Manage dependencies and cache for remote execution"""
+    
+    def __init__(self, project_path, logger=None):
+        self.project_path = project_path
+        self.logger = logger
+        self.cache_dir = os.path.join(project_path, ".slogs")
+        self.cache_file = os.path.join(self.cache_dir, "requirements_cache.txt")
+        
+        if not os.path.exists(self.cache_dir):
+            os.makedirs(self.cache_dir)
+
+    def parse_requirements(self, req_lines):
+        """Parse requirements into dict {package_lower: {original, version}}"""
+        reqs = {}
+        for line in req_lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # Handle 'package==version', 'package>=version', 'package'
+            # We split by logical operators to isolate package name
+            # For cache comparison, we primarily care about package name and '==' version
+            
+            # Simple split for '=='
+            if '==' in line:
+                parts = line.split('==')
+                name_part = parts[0]
+                version = parts[1].split(';')[0].strip() # Remove env markers
+            else:
+                # Split by other operators or spaces
+                # re.split returns the parts, we take the first one as name
+                name_part = re.split(r'[<>=;]', line)[0]
+                version = None
+                
+            name = name_part.strip().lower()
+            
+            # Clean name from extras e.g. ray[default] -> ray
+            if '[' in name:
+                name = name.split('[')[0]
+            
+            reqs[name] = {'original': line, 'version': version}
+        return reqs
+
+    def load_cache(self):
+        """Load cached requirements"""
+        if not os.path.exists(self.cache_file):
+            return []
+        with open(self.cache_file, 'r') as f:
+            return f.readlines()
+
+    def save_cache(self, remote_reqs_lines):
+        """Save remote requirements to cache"""
+        with open(self.cache_file, 'w') as f:
+            f.writelines(remote_reqs_lines)
+
+    def compare(self, local_reqs_lines, remote_reqs_lines):
+        """
+        Compare local requirements with remote/cache.
+        Returns a list of lines (requirements) that need to be installed.
+        """
+        local_reqs = self.parse_requirements(local_reqs_lines)
+        remote_reqs = self.parse_requirements(remote_reqs_lines)
+        
+        to_install = []
+        
+        for name, info in local_reqs.items():
+            local_ver = info['version']
+            original_line = info['original']
+            
+            if name not in remote_reqs:
+                # Missing on remote
+                to_install.append(original_line + "\n")
+            else:
+                remote_ver = remote_reqs[name]['version']
+                # If local has version, compare.
+                if local_ver and remote_ver:
+                    if local_ver != remote_ver:
+                        # Version mismatch
+                        to_install.append(original_line + "\n")
+                # If local has no version, strict existence is enough (already checked)
+        
+        return to_install
 
 class SSHTunnel:
     """Context manager for SSH port forwarding using Paramiko"""
@@ -147,4 +233,3 @@ class SSHTunnel:
         if self.ssh_client:
             self.ssh_client.close()
         return False
-

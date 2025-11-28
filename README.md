@@ -35,6 +35,7 @@ pip install slurmray
 |---|---|---|
 | Support Backend | Slurm, Desi (SSH) | Curnagl & ISIPOL09 supportés |
 | Gestion de tâches | Ray | Distribution automatique |
+| Installation | Optimisée | Installation incrémentale avec cache et détection de versions |
 | Dashboard | Intégré | Ouverture automatique dans le navigateur (via tunnel SSH) |
 | Compatibilité | Python 3.8 - 3.12 | Gestion automatique de la sérialisation inter-versions |
 
@@ -133,7 +134,7 @@ launcher = RayLauncher(
     max_running_time=30,  # Not enforced by scheduler
     server_run=True,  # Run on remote server
     server_ssh="130.223.73.209",  # Desi server IP (or use default)
-    server_username="your_username",
+    server_username="your_username",  # Will be loaded from DESI_USERNAME env var if not provided
     server_password=None,  # Will be prompted or loaded from DESI_PASSWORD env var
     cluster="desi",  # Use Desi backend (Smart Lock scheduling)
 )
@@ -152,6 +153,7 @@ CURNAGL_USERNAME=your_username
 CURNAGL_PASSWORD=your_password
 
 # For Desi
+DESI_USERNAME=your_username
 DESI_PASSWORD=your_password
 ```
 
@@ -293,9 +295,9 @@ The Launcher documentation is available [here](https://htmlpreview.github.io/?ht
 
 | Tâche | Objectif | État | Dépendances |
 |---|---|---|---|
-| **Optimiser l'installation des requirements sur le cluster** | Implémenter un système intelligent de comparaison et d'installation incrémentale des requirements pour accélérer significativement le démarrage des jobs sur le cluster. Le système doit comparer les requirements locaux (générés via `pip-chill`) avec ceux déjà installés sur le cluster (via `pip list --format=freeze` exécuté via SSH). Il ne doit réinstaller que les packages qui ont changé de version ou qui sont manquants. Pour chaque package différent, déterminer s'il s'agit d'une mise à jour mineure/majeure ou d'un ajout. Implémenter un cache des requirements installés sur le cluster (fichier texte stocké dans `.slogs/requirements_cache.txt`) pour éviter de re-scanner à chaque fois. Cette optimisation doit fonctionner pour les deux backends (Slurm et Desi) et être compatible avec le système de virtualenv existant. L'objectif est de réduire le temps d'installation de plusieurs minutes à quelques secondes lorsque les requirements n'ont pas changé. | 📅 À faire | - |
 | **Consolider le transfert de code source pour la compatibilité Python** | Généraliser et nettoyer le mécanisme de transfert de code source (actuellement implémenté via `inspect.getsource` pour Desi) au lieu du bytecode `dill` pour garantir la compatibilité entre des versions Python locales (ex: 3.12) et distantes (ex: 3.8) sur tous les backends. Cela implique de tester les limites de `inspect`, d'envisager des alternatives comme `dill.source`, et de rendre ce mécanisme robuste pour toutes les fonctions utilisateur. | 📅 À faire | - |
 | **Corriger les incompatibilités avec Curnagl** | Analyser et corriger les incompatibilités potentielles entre le code actuel (optimisé pour Desi/Local) et l'environnement Curnagl (versions Python, modules SLURM, partitions). Vérifier que les modifications récentes n'ont pas cassé le support Curnagl et adapter le `RayLauncher` si nécessaire pour assurer une compatibilité parfaite avec le cluster de l'UNIL. | 📅 À faire | - |
 | **Optimiser la gestion du stockage et le nettoyage des fichiers** | Optimiser la gestion du stockage et du nettoyage pour améliorer les performances globales du système. Implémenter un cache intelligent pour réutiliser le virtualenv entre exécutions si les dépendances n'ont pas changé, évitant ainsi de recréer l'environnement à chaque fois. Nettoyer systématiquement les fichiers temporaires après téléchargement réussi des résultats pour éviter l'accumulation de données inutiles. Optimiser la génération de `requirements.txt` pour qu'elle soit plus rapide et plus précise. Corriger les incohérences potentielles de versions Python entre l'environnement local et distant pour garantir la compatibilité. | 📅 À faire | - |
 | **Améliorer la gestion des credentials (username/password) via .env** | Modifier RayLauncher pour charger automatiquement `server_username` et `server_password` depuis un fichier `.env` local, tout en gardant la rétrocompatibilité avec les paramètres explicites passés au constructeur. Le système doit d'abord vérifier les variables d'environnement (via `python-dotenv`), puis les paramètres explicites, et enfin demander interactivement si aucun n'est trouvé. Cette amélioration améliore la sécurité (évite de hardcoder les mots de passe) et l'ergonomie pour les utilisateurs fréquents qui peuvent stocker leurs credentials de manière sécurisée dans un fichier `.env` ignoré par Git. | 📅 À faire | - |
 | **Mettre à jour la documentation pour tout avoir dans le repo** | Remplacer les liens externes dans README.md par du contenu local, intégrer la documentation de RayLauncher directement dans le repository pour éviter les dépendances vers des sites externes. Migrer toute la documentation externe (liens actuels vers sites tiers ou HTML prévisualisés) directement dans le dépôt (dossier `docs/` ou Markdown). L'objectif est que le repository soit auto-suffisant et que la documentation versionnée suive l'évolution du code. Cela garantit que la documentation est toujours à jour et accessible même si les sites externes changent ou disparaissent. | 📅 À faire | - |
+| **Créer des scripts de test GPU et dashboard pour Curnagl et Desi** | Créer deux scripts de test automatisés et complets pour valider le bon fonctionnement des deux clusters. Le script pour Curnagl (`tests/test_curnagl_gpu_dashboard.py`) doit lancer un job Slurm avec GPU, vérifier l'accès au GPU via PyTorch (disponibilité CUDA, nombre de GPUs, noms des GPUs), valider les ressources Ray, et s'assurer que le dashboard Ray est accessible localement via le tunnel SSH automatique sur http://localhost:8888 pendant l'exécution du job. Le script pour Desi (`tests/test_desi_gpu_dashboard.py`) doit effectuer les mêmes vérifications mais adaptées au backend Desi (Smart Lock, pas de modules Slurm). Les deux scripts doivent inclure des vérifications explicites de l'accessibilité du dashboard local (test de connexion HTTP sur le port local, vérification que le tunnel SSH est actif, validation que le contenu du dashboard répond correctement). Après la création des scripts, exécuter le script Desi pour valider immédiatement l'accès au GPU et l'accessibilité locale du dashboard sur le serveur ISIPOL09. Ces scripts serviront de tests de validation rapide après toute modification importante du système de lancement ou des backends. | 📅 À faire | - |
