@@ -2,7 +2,7 @@
 
 **Official tool from DESI @ HEC UNIL**
 
-👉[Full documentation](https://www.henri-jamet.com/docs/slurmray/slurm-ray/)
+👉[Full documentation](documentation/RayLauncher.md)
 
 ## Description
 
@@ -48,7 +48,7 @@ root/
 │   ├── assets/             # Templates de scripts (sbatch, spython)
 │   └── RayLauncher.py      # Classe principale
 ├── tests/                  # Tests unitaires et d'intégration
-├── documentation/          # Documentation générée
+├── documentation/          # Documentation du projet
 ├── logs/                   # Logs d'exécution
 ├── poetry.lock             # Dépendances lock
 ├── pyproject.toml          # Configuration Poetry
@@ -346,11 +346,10 @@ poetry publish --repository testpypi
 
 ## Launcher documentation
 
-The Launcher documentation is available [here](https://htmlpreview.github.io/?https://raw.githubusercontent.com/hjamet/SLURM_RAY/main/documentation/RayLauncher.html).
+The Launcher documentation is available [here](documentation/RayLauncher.md).
 
 # Roadmap
 
 | Tâche | Objectif | État | Dépendances |
 |---|---|---|---|
-| **Mettre à jour la documentation pour tout avoir dans le repo** | Remplacer les liens externes dans README.md par du contenu local, intégrer la documentation de RayLauncher directement dans le repository pour éviter les dépendances vers des sites externes. Migrer toute la documentation externe (liens actuels vers sites tiers ou HTML prévisualisés) directement dans le dépôt (dossier `docs/` ou Markdown). L'objectif est que le repository soit auto-suffisant et que la documentation versionnée suive l'évolution du code. Cela garantit que la documentation est toujours à jour et accessible même si les sites externes changent ou disparaissent. | 📅 À faire | - |
 | **Créer des scripts de test GPU et dashboard pour Curnagl et Desi** | Créer deux scripts de test automatisés et complets pour valider le bon fonctionnement des deux clusters. Le script pour Curnagl (`tests/test_curnagl_gpu_dashboard.py`) doit lancer un job Slurm avec GPU, vérifier l'accès au GPU via PyTorch (disponibilité CUDA, nombre de GPUs, noms des GPUs), valider les ressources Ray, et s'assurer que le dashboard Ray est accessible localement via le tunnel SSH automatique sur http://localhost:8888 pendant l'exécution du job. Le script pour Desi (`tests/test_desi_gpu_dashboard.py`) doit effectuer les mêmes vérifications mais adaptées au backend Desi (Smart Lock, pas de modules Slurm). Les deux scripts doivent inclure des vérifications explicites de l'accessibilité du dashboard local (test de connexion HTTP sur le port local, vérification que le tunnel SSH est actif, validation que le contenu du dashboard répond correctement). Après la création des scripts, exécuter le script Desi pour valider immédiatement l'accès au GPU et l'accessibilité locale du dashboard sur le serveur ISIPOL09. Ces scripts serviront de tests de validation rapide après toute modification importante du système de lancement ou des backends. | 📅 À faire | - |
