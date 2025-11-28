@@ -30,8 +30,6 @@ class RayLauncher:
     def __init__(
         self,
         project_name: str = None,
-        func: Callable = None,
-        args: dict = None,
         files: List[str] = [],
         modules: List[str] = [],
         node_nbr: int = 1,
@@ -51,8 +49,6 @@ class RayLauncher:
 
         Args:
             project_name (str, optional): Name of the project. Defaults to None.
-            func (Callable, optional): Function to execute. This function should not be remote but can use ray ressources. Defaults to None.
-            args (dict, optional): Arguments of the function. Defaults to None.
             files (List[str], optional): List of files to push to the cluster/server. This path must be **relative** to the project directory. Defaults to [].
             modules (List[str], optional): List of modules to load (Slurm mode only). Use `module spider` to see available modules. Ignored in Desi mode. Defaults to None.
             node_nbr (int, optional): Number of nodes to use. For Desi mode, this is always 1 (single server). Defaults to 1.
@@ -114,8 +110,6 @@ class RayLauncher:
 
         # Save the other parameters
         self.project_name = project_name
-        self.func = func
-        self.args = args
         self.files = files
         self.node_nbr = node_nbr
         self.use_gpu = use_gpu
@@ -255,16 +249,27 @@ class RayLauncher:
 
         sys.exit(1)
 
-    def __call__(self, cancel_old_jobs: bool = True, serialize: bool = True) -> Any:
+    def __call__(
+        self,
+        func: Callable,
+        args: dict = None,
+        cancel_old_jobs: bool = True,
+        serialize: bool = True,
+    ) -> Any:
         """Launch the job and return the result
 
         Args:
+            func (Callable): Function to execute. This function should not be remote but can use ray ressources.
+            args (dict, optional): Arguments of the function. Defaults to None (empty dict).
             cancel_old_jobs (bool, optional): Cancel the old jobs. Defaults to True.
             serialize (bool, optional): Serialize the function and the arguments. This should be set to False if the function is automatically called by the server. Defaults to True.
 
         Returns:
             Any: Result of the function
         """
+        if args is None:
+            args = {}
+
         # Register signal handlers
         original_sigint = signal.getsignal(signal.SIGINT)
         original_sigterm = signal.getsignal(signal.SIGTERM)
@@ -274,7 +279,7 @@ class RayLauncher:
         try:
             # Serialize function and arguments
             if serialize:
-                self.__serialize_func_and_args(self.func, self.args)
+                self.__serialize_func_and_args(func, args)
 
             return self.backend.run(cancel_old_jobs=cancel_old_jobs)
         finally:
@@ -422,8 +427,6 @@ if __name__ == "__main__":
 
     launcher = RayLauncher(
         project_name="example",  # Name of the project (will create a directory with this name in the current directory)
-        func=example_func,  # Function to execute
-        args={"x": 5},  # Arguments of the function
         files=(
             ["documentation/RayLauncher.html"]
             if os.path.exists("documentation/RayLauncher.html")
@@ -437,5 +440,5 @@ if __name__ == "__main__":
         cluster="desi",  # Use Desi backend (credentials loaded from .env: DESI_USERNAME and DESI_PASSWORD)
     )
 
-    result = launcher()
+    result = launcher(example_func, args={"x": 5})  # Execute function with arguments
     print(result)

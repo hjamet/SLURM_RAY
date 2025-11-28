@@ -30,8 +30,6 @@ def test_simple_function_source_transfer():
         # Create launcher instance (minimal config)
         launcher = RayLauncher(
             project_name="test_source",
-            func=simple_func,
-            args={"x": 5},
             server_run=False,  # Local mode
         )
         
@@ -78,8 +76,6 @@ def test_function_with_global_source_transfer():
         
         launcher = RayLauncher(
             project_name="test_global",
-            func=func_with_global,
-            args={"x": 10},
             server_run=False,
         )
         launcher.project_path = project_path
@@ -126,8 +122,6 @@ def test_class_method_source_transfer():
         
         launcher = RayLauncher(
             project_name="test_method",
-            func=obj.method,
-            args={"x": 5},
             server_run=False,
         )
         launcher.project_path = project_path
@@ -168,8 +162,6 @@ def test_lambda_source_transfer():
         
         launcher = RayLauncher(
             project_name="test_lambda",
-            func=lambda_func,
-            args={"x": 4},
             server_run=False,
         )
         launcher.project_path = project_path
@@ -202,8 +194,6 @@ def test_fallback_to_dill():
         
         launcher = RayLauncher(
             project_name="test_fallback",
-            func=builtin_func,
-            args={"x": [1, 2, 3]},
             server_run=False,
         )
         launcher.project_path = project_path

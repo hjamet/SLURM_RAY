@@ -18,8 +18,6 @@ def test_desi_execution():
 
     launcher = RayLauncher(
         project_name="test_desi_integration",
-        func=simple_func,
-        args={"x": 21},
         files=[],
         modules=[],
         node_nbr=1,
@@ -38,7 +36,7 @@ def test_desi_execution():
     
     # This might fail if cannot connect, but verifies instantiation
     try:
-        result = launcher()
+        result = launcher(simple_func, args={"x": 21})
         print(f"Result: {result}")
         assert result[0] == 42
         print("✅ Desi integration test passed!")

@@ -89,8 +89,6 @@ def example_func(x):
 
 launcher = RayLauncher(
     project_name="example_slurm",
-    func=example_func,
-    args={"x": 1},
     files=[],  # List of files to push to the cluster
     modules=[],  # List of modules to load (CUDA & CUDNN auto-added if use_gpu=True)
     node_nbr=1,  # Number of nodes to use
@@ -108,7 +106,7 @@ launcher = RayLauncher(
 # Note: When running with server_run=True, SlurmRay automatically sets up an SSH tunnel 
 # to the Ray Dashboard, accessible at http://localhost:8888 during job execution.
 
-result = launcher()
+result = launcher(example_func, args={"x": 1})
 print(result)
 ```
 
@@ -127,8 +125,6 @@ def example_func(x):
 
 launcher = RayLauncher(
     project_name="example_desi",
-    func=example_func,
-    args={"x": 21},
     files=[],  # List of files to push to the server
     node_nbr=1,  # Always 1 for Desi (single server)
     use_gpu=False,  # GPU available via Smart Lock
@@ -141,7 +137,7 @@ launcher = RayLauncher(
     cluster="desi",  # Use Desi backend (Smart Lock scheduling)
 )
 
-result = launcher()
+result = launcher(example_func, args={"x": 21})
 print(result)
 ```
 
@@ -353,6 +349,5 @@ The Launcher documentation is available [here](documentation/RayLauncher.md).
 
 | Tâche | Objectif | État | Dépendances |
 |---|---|---|---|
-| **Refactoriser l'API de RayLauncher pour séparer configuration et exécution** | Refactoriser la classe `RayLauncher` pour séparer la configuration du cluster de l'exécution de la fonction. Actuellement, le constructeur prend `func` et `args` en paramètres, puis on appelle `launcher()` pour exécuter. Le nouveau design doit permettre de créer le launcher avec uniquement les paramètres de configuration (project_name, files, use_gpu, node_nbr, memory, max_running_time, runtime_env, server_run, server_ssh, server_username, server_password, cluster, force_reinstall_venv, modules, log_file), puis d'appeler `launcher(function, *args, **kwargs)` pour exécuter une fonction spécifique. Cette séparation permet une meilleure réutilisabilité : un même launcher configuré peut exécuter plusieurs fonctions différentes sans recréer l'instance. Les modifications doivent toucher : (1) le constructeur `__init__` qui ne doit plus accepter `func` et `args`, (2) la méthode `__call__` qui doit accepter la fonction et ses arguments, (3) la méthode `__serialize_func_and_args` qui doit être appelée avec les nouveaux paramètres, (4) tous les tests existants (11 fichiers identifiés : test_desi_gpu_dashboard.py, test_curnagl_gpu_dashboard.py, test_source_transfer.py, test_gpu_dashboard_long.py, manual_test_desi_gpu_dashboard.py, test_desi_manual.py, test_local_refactor.py, manual_test_queue.py, manual_test_interruption.py, test_hello_world_cpu.py, test_hello_world_gpu.py), (5) la documentation dans `documentation/RayLauncher.md`, (6) les exemples dans le README.md (sections "Usage" avec les deux modes Slurm et Desi), (7) l'exemple dans `RayLauncher.py` lui-même (section `if __name__ == "__main__"`). Le refactoring doit maintenir la rétrocompatibilité si possible, ou documenter clairement le breaking change. Tous les tests doivent passer après le refactoring. | 📅 À faire | - |
 | **Intégrer Prometheus pour le monitoring des métriques Ray** | Intégrer Prometheus dans le module RayLauncher pour permettre le monitoring des métriques système et applicatives de Ray. Ray expose automatiquement des métriques Prometheus sur chaque nœud du cluster, mais il faut configurer Prometheus pour les scraper. L'implémentation doit : (1) Configurer Ray pour exposer les métriques Prometheus en activant l'export de métriques dans `ray start` (via `--metrics-export-port` dans `sbatch_template.sh` et configuration équivalente pour Desi), (2) Créer un mécanisme de découverte automatique des endpoints de métriques en utilisant soit le service discovery file-based (`/tmp/ray/prom_metrics_service_discovery.json`) soit l'HTTP service discovery via l'endpoint `/api/prometheus/sd` du dashboard Ray, (3) Configurer Prometheus pour scraper les métriques (optionnellement avec auto-discovery via file SD ou HTTP SD), (4) Intégrer cette configuration dans les backends Slurm et Desi, en gérant le port forwarding SSH pour permettre l'accès local à Prometheus si nécessaire, (5) Documenter l'utilisation et la configuration dans le README et la documentation, (6) Optionnellement intégrer Grafana avec les dashboards par défaut de Ray (disponibles dans `/tmp/ray/session_latest/metrics/grafana/dashboards`) pour la visualisation. Les métriques doivent être accessibles en local via tunnel SSH similaire au dashboard Ray. Cette fonctionnalité doit être optionnelle et activable via un paramètre du constructeur `RayLauncher` (ex: `enable_prometheus: bool = False`). | 📅 À faire | Refactoriser l'API de RayLauncher pour séparer configuration et exécution |
 

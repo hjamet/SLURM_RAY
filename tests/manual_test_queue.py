@@ -20,8 +20,6 @@ def main():
 
     launcher = RayLauncher(
         project_name="test_queue_display",
-        func=simple_func,
-        args={"x": 5},
         node_nbr=1,
         use_gpu=False,
         memory=2,
@@ -33,7 +31,7 @@ def main():
     )
 
     print("Lancement du job...")
-    result = launcher()
+    result = launcher(simple_func, args={"x": 5})
     print(f"Résultat : {result}")
 
 if __name__ == "__main__":

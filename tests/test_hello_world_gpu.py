@@ -57,8 +57,6 @@ def test_hello_world_gpu():
     
     launcher = RayLauncher(
         project_name="test_hello_world_gpu",
-        func=hello_world_gpu,
-        args={},
         files=[],
         modules=[],
         node_nbr=1,
@@ -72,7 +70,7 @@ def test_hello_world_gpu():
     )
     
     print("Launching GPU test job...")
-    result = launcher()
+    result = launcher(hello_world_gpu, args={})
     
     # Validations
     assert "message" in result, "Result should contain 'message' key"

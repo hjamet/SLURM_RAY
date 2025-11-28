@@ -26,8 +26,6 @@ def test_curnagl_gpu_dashboard():
     print("Initializing RayLauncher for Curnagl...")
     launcher = RayLauncher(
         project_name="test_curnagl_gpu",
-        func=job_func,
-        args={"x": 1},
         files=[],
         modules=[], 
         node_nbr=1,
@@ -75,7 +73,7 @@ def test_curnagl_gpu_dashboard():
     # Run launcher (BLOCKING) in main thread
     print("Starting launcher in main thread...")
     try:
-        result = launcher()
+        result = launcher(job_func, args={"x": 1})
         print("Job result:", result)
         
         # Verifications

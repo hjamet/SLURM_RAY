@@ -22,8 +22,6 @@ def main():
 
     launcher = RayLauncher(
         project_name="test_interruption",
-        func=long_running_function,
-        args={"x": 10},
         node_nbr=1,
         use_gpu=False,
         memory=2,
@@ -36,7 +34,7 @@ def main():
 
     print("Lancement du job... Préparez-vous à faire Ctrl+C une fois le Job ID affiché !")
     try:
-        result = launcher()
+        result = launcher(long_running_function, args={"x": 10})
         print(f"Résultat (inattendu si interrompu): {result}")
     except KeyboardInterrupt:
         print("\nInterruption capturée dans le main (normalement géré par RayLauncher avant)")

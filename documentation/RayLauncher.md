@@ -19,8 +19,6 @@ The launcher automatically selects the appropriate backend based on the `cluster
 ```python
 class RayLauncher(
     project_name: str = None,
-    func: Callable = None,
-    args: dict = None,
     files: List[str] = [],
     modules: List[str] = [],
     node_nbr: int = 1,
@@ -41,8 +39,6 @@ class RayLauncher(
 #### Arguments
 
 - **project_name** (`str`, optional): Name of the project. Defaults to None.
-- **func** (`Callable`, optional): Function to execute. This function should not be remote but can use ray ressources. Defaults to None.
-- **args** (`dict`, optional): Arguments of the function. Defaults to None.
 - **files** (`List[str]`, optional): List of files to push to the cluster/server. This path must be **relative** to the project directory. Defaults to [].
 - **modules** (`List[str]`, optional): List of modules to load (Slurm mode only). Use `module spider` to see available modules. Ignored in Desi mode. Defaults to None.
 - **node_nbr** (`int`, optional): Number of nodes to use. For Desi mode, this is always 1 (single server). Defaults to 1.
@@ -60,12 +56,14 @@ class RayLauncher(
 
 ### Execution
 
-To launch the job, simply call the instance:
+To launch the job, call the instance with the function and its arguments:
 
 ```python
-result = launcher(cancel_old_jobs=True, serialize=True)
+result = launcher(func, args={}, cancel_old_jobs=True, serialize=True)
 ```
 
+- **func** (`Callable`): Function to execute. This function should not be remote but can use ray ressources.
+- **args** (`dict`, optional): Arguments of the function. Defaults to {}.
 - **cancel_old_jobs** (`bool`, optional): Cancel the old jobs. Defaults to True.
 - **serialize** (`bool`, optional): Serialize the function and the arguments. This should be set to False if the function is automatically called by the server. Defaults to True.
 
@@ -86,8 +84,6 @@ def example_func(x):
 
 launcher = RayLauncher(
     project_name="example",
-    func=example_func,
-    args={"x": 5},
     files=[],
     node_nbr=1,
     use_gpu=True,
@@ -97,7 +93,7 @@ launcher = RayLauncher(
     cluster="slurm",
 )
 
-result = launcher()
+result = launcher(example_func, args={"x": 5})
 print(result)
 ```
 

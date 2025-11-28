@@ -60,8 +60,6 @@ def manual_test_desi_gpu():
     # Initialize Launcher
     launcher = RayLauncher(
         project_name="test_desi_gpu_dashboard",
-        func=gpu_check_func,
-        args={"x": "test_dashboard"},
         files=[],
         modules=[], # Desi doesn't use modules
         node_nbr=1,
@@ -76,7 +74,7 @@ def manual_test_desi_gpu():
     )
     
     try:
-        result = launcher()
+        result = launcher(gpu_check_func, args={"x": "test_dashboard"})
         print("\n✅ Execution Completed!")
         print("-" * 50)
         print(f"Python Version: {result.get('python_version')}")

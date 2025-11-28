@@ -29,8 +29,6 @@ def test_desi_gpu_dashboard():
     print("Initializing RayLauncher for Desi...")
     launcher = RayLauncher(
         project_name="test_desi_gpu",
-        func=job_func,
-        args={"x": 1},
         files=[],
         modules=[],  # Ignored on Desi
         node_nbr=1,  # Always 1
@@ -80,7 +78,7 @@ def test_desi_gpu_dashboard():
     # Run launcher (BLOCKING) in main thread
     print("Starting launcher in main thread...")
     try:
-        result = launcher()
+        result = launcher(job_func, args={"x": 1})
         print("Job result:", result)
 
         # Verifications

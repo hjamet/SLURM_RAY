@@ -39,8 +39,6 @@ def test_hello_world_cpu():
     
     launcher = RayLauncher(
         project_name="test_hello_world_cpu",
-        func=hello_world_cpu,
-        args={},
         files=[],
         modules=[],
         node_nbr=1,
@@ -54,7 +52,7 @@ def test_hello_world_cpu():
     )
     
     print("Launching CPU test job...")
-    result = launcher()
+    result = launcher(hello_world_cpu, args={})
     
     # Validations
     assert "message" in result, "Result should contain 'message' key"

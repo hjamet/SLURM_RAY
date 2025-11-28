@@ -123,8 +123,6 @@ def test_gpu_dashboard_long():
     
     launcher = RayLauncher(
         project_name="test_gpu_dashboard_long",
-        func=gpu_long_task,
-        args={"duration_minutes": 5},  # 5 minutes pour explorer le dashboard
         files=[],
         modules=[],  # Modules CUDA/CUDNN seront ajoutés automatiquement avec use_gpu=True
         node_nbr=1,
@@ -145,7 +143,7 @@ def test_gpu_dashboard_long():
     print()
     
     try:
-        result = launcher()
+        result = launcher(gpu_long_task, args={"duration_minutes": 5})  # 5 minutes pour explorer le dashboard
         
         print()
         print("=" * 60)

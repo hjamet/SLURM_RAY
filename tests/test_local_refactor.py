@@ -15,8 +15,6 @@ def test_local_execution():
 
     launcher = RayLauncher(
         project_name=project_name,
-        func=simple_func,
-        args={"x": 10},
         files=[],
         modules=[],
         node_nbr=1,
@@ -32,7 +30,7 @@ def test_local_execution():
     print(f"Launcher backend type: {type(launcher.backend)}")
     assert "LocalBackend" in str(type(launcher.backend))
     
-    result = launcher()
+    result = launcher(simple_func, args={"x": 10})
     print(f"Result: {result}")
     
     assert result == 20
