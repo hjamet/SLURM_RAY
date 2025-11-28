@@ -290,6 +290,7 @@ class DesiBackend(RemoteMixin):
         """Write bash script to set up env and run wrapper"""
         content = f"""#!/bin/bash
 # Desi Runner Script
+set -e  # Exit immediately if a command exits with a non-zero status
 
 # Setup Environment (if needed, e.g. load modules or activate conda)
 # Assuming python is available or venv creation
@@ -316,6 +317,7 @@ pip install -r requirements.txt
 export PYTHONPATH=$PYTHONPATH:.
 
 # Run Wrapper (Smart Lock + Script)
+# If wrapper fails, bash script fails (due to set -e), so ssh exec_command fails
 python3 desi_wrapper.py
 """
         with open(os.path.join(self.launcher.project_path, filename), "w") as f:

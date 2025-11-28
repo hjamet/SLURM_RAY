@@ -91,6 +91,22 @@ class ClusterBackend(ABC):
             # Filter out slurmray, ray and dill
             lines = [line for line in lines if "slurmray" not in line and "ray" not in line and "dill" not in line]
             
+            # Filter out ray dependencies that pip-chill picks up but should be managed by ray installation
+            # This prevents version conflicts when moving between Python versions (e.g. 3.12 local -> 3.8 remote)
+            ray_deps = ["aiohttp", "colorful", "opencensus", "opentelemetry", "py-spy", "uvicorn", "uvloop", "watchfiles", "grpcio", "tensorboardX", "gpustat", "prometheus-client", "smart-open"]
+            
+            # Also filter out nvidia-* packages which are heavy and usually managed by torch or pre-installed drivers
+            # This avoids OOM kills during pip install on limited resources servers
+            lines = [
+                line for line in lines 
+                if not any(dep in line.split("==")[0] for dep in ray_deps) 
+                and not line.startswith("nvidia-")
+            ]
+            
+            # Remove versions constraints to allow remote pip to resolve compatible versions for its Python version
+            # This is critical when local is Python 3.12+ and remote is older (e.g. 3.8)
+            lines = [line.split("==")[0].split(" @ ")[0].strip() + "\n" for line in lines]
+            
             # Add pinned dill version to ensure serialization compatibility
             lines.append(f"dill=={dill_version}\n")
             
@@ -131,16 +147,31 @@ class ClusterBackend(ABC):
             
         with open(req_file, 'r') as f:
             local_reqs_lines = f.readlines()
+
+        # If venv_command_prefix is empty, it means we are recreating/creating the venv
+        # In this case, we should treat it as an empty environment and install everything
+        # (ignoring system packages unless --system-site-packages is used, which is not the default)
+        if not venv_command_prefix:
+            self.logger.info("New virtualenv detected (or force reinstall): installing all requirements.")
+            to_install = local_reqs_lines
+            # Write full list
+            delta_file = os.path.join(self.launcher.project_path, "requirements_to_install.txt")
+            with open(delta_file, 'w') as f:
+                f.writelines(to_install)
+            return delta_file
             
         cache_lines = dep_manager.load_cache()
         remote_lines = []
         
-        # Only skip remote check if cache is non-empty
-        if cache_lines:
+        # Only skip remote check if cache is non-empty AND not force reinstall
+        if cache_lines and not self.launcher.force_reinstall_venv:
             self.logger.info("Using cached requirements list.")
             remote_lines = cache_lines
         else:
-            self.logger.info("Scanning remote packages (no cache found)...")
+            if self.launcher.force_reinstall_venv:
+                 self.logger.info("Force reinstall enabled: ignoring requirements cache.")
+            else:
+                 self.logger.info("Scanning remote packages (no cache found)...")
             cmd = f"{venv_command_prefix} pip list --format=freeze"
             try:
                 stdin, stdout, stderr = ssh_client.exec_command(cmd)

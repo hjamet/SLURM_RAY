@@ -41,7 +41,7 @@ class RayLauncher:
         runtime_env: dict = {"env_vars": {}},
         server_run: bool = True,
         server_ssh: str = "curnagl.dcsr.unil.ch",
-        server_username: str = "hjamet",
+        server_username: str = None,
         server_password: str = None,
         log_file: str = "logs/RayLauncher.log",
         cluster: str = "slurm", # 'slurm' (curnagl) or 'desi'
@@ -89,14 +89,12 @@ class RayLauncher:
         env_username = os.getenv(env_username_key)
         env_password = os.getenv(env_password_key)
         
-        # For username: env → explicit parameter → default
-        # If username is the default value, prefer env if available (user likely wants .env)
-        # If username is different from default, it's likely an explicit parameter, so use it
-        if server_username != default_username:
-            # Explicit parameter provided (different from default)
+        # For username: explicit parameter → env → default
+        if server_username is not None:
+            # Explicit parameter provided
             self.server_username = server_username
         elif env_username:
-            # Username is default value, prefer env if available
+            # Load from environment
             self.server_username = env_username
         else:
             # Use default

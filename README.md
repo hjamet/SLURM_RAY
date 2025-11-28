@@ -67,7 +67,8 @@ root/
 | Chemin | Description | Exemple | Explication |
 |---|---|---|---|
 | `tests/test_gpu_dashboard_long.py` | Test GPU et dashboard avec job long | `poetry run python tests/test_gpu_dashboard_long.py` | *Lance un job GPU de 5 minutes pour tester le dashboard via l'interface CLI* |
-| `tests/manual_test_desi_gpu_dashboard.py` | Test manuel complet pour Desi | `python tests/manual_test_desi_gpu_dashboard.py` | *Vérifie la connexion, le GPU, Ray et le Dashboard sur Desi* |
+| `tests/test_curnagl_gpu_dashboard.py` | Test automatisé Curnagl (GPU + Dashboard) | `poetry run python tests/test_curnagl_gpu_dashboard.py` | *Lance un job Slurm avec GPU, vérifie PyTorch/Ray et l'accès local au dashboard via tunnel SSH* |
+| `tests/test_desi_gpu_dashboard.py` | Test automatisé Desi (GPU + Dashboard) | `poetry run python tests/test_desi_gpu_dashboard.py` | *Lance un job sur Desi (Smart Lock), vérifie PyTorch/Ray et l'accès local au dashboard via tunnel SSH* |
 
 ## Usage
 
@@ -352,4 +353,4 @@ The Launcher documentation is available [here](documentation/RayLauncher.md).
 
 | Tâche | Objectif | État | Dépendances |
 |---|---|---|---|
-| **Créer des scripts de test GPU et dashboard pour Curnagl et Desi** | Créer deux scripts de test automatisés et complets pour valider le bon fonctionnement des deux clusters. Le script pour Curnagl (`tests/test_curnagl_gpu_dashboard.py`) doit lancer un job Slurm avec GPU, vérifier l'accès au GPU via PyTorch (disponibilité CUDA, nombre de GPUs, noms des GPUs), valider les ressources Ray, et s'assurer que le dashboard Ray est accessible localement via le tunnel SSH automatique sur http://localhost:8888 pendant l'exécution du job. Le script pour Desi (`tests/test_desi_gpu_dashboard.py`) doit effectuer les mêmes vérifications mais adaptées au backend Desi (Smart Lock, pas de modules Slurm). Les deux scripts doivent inclure des vérifications explicites de l'accessibilité du dashboard local (test de connexion HTTP sur le port local, vérification que le tunnel SSH est actif, validation que le contenu du dashboard répond correctement). Après la création des scripts, exécuter le script Desi pour valider immédiatement l'accès au GPU et l'accessibilité locale du dashboard sur le serveur ISIPOL09. Ces scripts serviront de tests de validation rapide après toute modification importante du système de lancement ou des backends. | 📅 À faire | - |
+
