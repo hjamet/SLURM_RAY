@@ -8,7 +8,7 @@ import dill
 from typing import Any
 
 from slurmray.backend.remote import RemoteMixin
-from slurmray.utils import SSHTunnel
+from slurmray.utils import SSHTunnel, DependencyManager
 
 class DesiBackend(RemoteMixin):
     """Backend for Desi server (ISIPOL09) execution"""
@@ -20,24 +20,57 @@ class DesiBackend(RemoteMixin):
     def run(self, cancel_old_jobs: bool = True) -> Any:
         """Run the job on Desi"""
         self._connect()
+        
+        # Check Python version compatibility
+        self._check_python_version_compatibility(self.ssh_client)
+        
         sftp = self.ssh_client.open_sftp()
         
         # Base directory on server
         base_dir = f"/home/{self.launcher.server_username}/slurmray-server"
         
-        # Clean up old files
-        self.ssh_client.exec_command(f"mkdir -p {base_dir} && rm -rf {base_dir}/*")
+        # Generate requirements first to check venv hash
+        self._generate_requirements()
+        
+        # Check if venv can be reused based on requirements hash
+        dep_manager = DependencyManager(self.launcher.project_path, self.logger)
+        req_file = os.path.join(self.launcher.project_path, "requirements.txt")
+        
+        should_recreate_venv = True
+        if os.path.exists(req_file):
+            with open(req_file, 'r') as f:
+                req_lines = f.readlines()
+            # Check remote hash (if venv exists on remote)
+            remote_hash_file = f"{base_dir}/.slogs/venv_hash.txt"
+            stdin, stdout, stderr = self.ssh_client.exec_command(f"test -f {remote_hash_file} && cat {remote_hash_file} || echo ''")
+            remote_hash = stdout.read().decode('utf-8').strip()
+            current_hash = dep_manager.compute_requirements_hash(req_lines)
+            
+            if remote_hash and remote_hash == current_hash:
+                # Hash matches, check if venv exists
+                stdin, stdout, stderr = self.ssh_client.exec_command(f"test -d {base_dir}/venv && echo exists || echo missing")
+                venv_exists = stdout.read().decode('utf-8').strip() == "exists"
+                if venv_exists:
+                    should_recreate_venv = False
+                    self.logger.info("Virtualenv can be reused (requirements hash matches)")
+        
+        # Smart cleanup: preserve venv if hash matches
+        if should_recreate_venv:
+            # Clean up everything including venv
+            self.ssh_client.exec_command(f"mkdir -p {base_dir} && rm -rf {base_dir}/*")
+            self.logger.info("Virtualenv will be recreated (requirements changed or missing)")
+        else:
+            # Clean up everything except venv and cache
+            self.ssh_client.exec_command(f"mkdir -p {base_dir} && find {base_dir} -mindepth 1 ! -name 'venv' ! -path '{base_dir}/venv/*' ! -name '.slogs' ! -path '{base_dir}/.slogs/*' -delete")
+            self.logger.info("Preserving virtualenv (requirements unchanged)")
         
         # Generate Python script (spython.py) that will run on Desi
         # This script uses RayLauncher in LOCAL mode (but on the remote machine)
         # We need to adapt spython.py generation to NOT look for sbatch/slurm
         self._write_python_script(base_dir)
         
-        # Generate requirements
-        self._generate_requirements()
-        
         # Optimize requirements
-        venv_cmd = f"source {base_dir}/venv/bin/activate &&"
+        venv_cmd = f"source {base_dir}/venv/bin/activate &&" if not should_recreate_venv else ""
         req_file_to_push = self._optimize_requirements(self.ssh_client, venv_cmd)
         
         # Push files
@@ -50,6 +83,18 @@ class DesiBackend(RemoteMixin):
         
         # Push optimized requirements as requirements.txt
         sftp.put(req_file_to_push, f"{base_dir}/requirements.txt")
+        
+        # Store venv hash on remote for future checks
+        if os.path.exists(req_file):
+            with open(req_file, 'r') as f:
+                req_lines = f.readlines()
+            current_hash = dep_manager.compute_requirements_hash(req_lines)
+            # Ensure .slogs directory exists on remote
+            self.ssh_client.exec_command(f"mkdir -p {base_dir}/.slogs")
+            stdin, stdout, stderr = self.ssh_client.exec_command(f"echo '{current_hash}' > {base_dir}/.slogs/venv_hash.txt")
+            stdout.channel.recv_exit_status()
+            # Also store locally
+            dep_manager.store_venv_hash(current_hash)
         
         # Copy source code of slurmray to server (since it's not on PyPI)
         self._push_source_code(sftp, base_dir)
@@ -125,6 +170,19 @@ class DesiBackend(RemoteMixin):
         try:
             sftp.get(f"{base_dir}/result.pkl", os.path.join(self.launcher.project_path, "result.pkl"))
             self.logger.info("Result downloaded!")
+            
+            # Clean up remote temporary files (preserve venv and cache)
+            self.logger.info("Cleaning up remote temporary files...")
+            self.ssh_client.exec_command(
+                f"cd {base_dir} && "
+                f"find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.pkl' -o -name '*.sh' -o -name '*.txt' \\) "
+                f"! -name 'requirements.txt' -delete && "
+                f"rm -rf .slogs/server 2>/dev/null || true"
+            )
+            
+            # Clean up local temporary files after successful download
+            self._cleanup_local_temp_files()
+            
         except FileNotFoundError:
              self.logger.error("Result file not found.")
              
@@ -133,6 +191,26 @@ class DesiBackend(RemoteMixin):
             result = dill.load(f)
             
         return result
+    
+    def _cleanup_local_temp_files(self):
+        """Clean up local temporary files after successful execution"""
+        temp_files = [
+            "func_source.py",
+            "func_name.txt",
+            "func.pkl",
+            "args.pkl",
+            "result.pkl",
+            "spython.py",
+            "run_desi.sh",
+            "desi_wrapper.py",
+            "requirements_to_install.txt",
+        ]
+        
+        for temp_file in temp_files:
+            file_path = os.path.join(self.launcher.project_path, temp_file)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                self.logger.debug(f"Removed temporary file: {temp_file}")
 
     def _push_source_code(self, sftp, base_dir):
         """Push local slurmray source code to remote server"""
@@ -206,13 +284,15 @@ class DesiBackend(RemoteMixin):
 # Setup Environment (if needed, e.g. load modules or activate conda)
 # Assuming python is available or venv creation
 
-# Create/Activate venv
+# Create venv if it doesn't exist
 if [ ! -d "venv" ]; then
     python3 -m venv venv
 fi
+
+# Activate venv
 source venv/bin/activate
 
-# Install dependencies
+# Install dependencies (only missing ones if venv was preserved)
 pip install -r requirements.txt
 
 # Add current directory to PYTHONPATH to make 'slurmray' importable

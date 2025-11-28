@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict
 import os
 import subprocess
+import sys
 
 class ClusterBackend(ABC):
     """Abstract base class for cluster backends"""
@@ -39,8 +40,43 @@ class ClusterBackend(ABC):
         """
         pass
 
-    def _generate_requirements(self):
-        """Generate requirements.txt"""
+    def _generate_requirements(self, force_regenerate=False):
+        """
+        Generate requirements.txt.
+        
+        Args:
+            force_regenerate: If True, always regenerate. If False, check if dependencies changed.
+        """
+        from slurmray.utils import DependencyManager
+        
+        req_file = os.path.join(self.launcher.project_path, "requirements.txt")
+        dep_manager = DependencyManager(self.launcher.project_path, self.logger)
+        
+        # Check if we should skip regeneration
+        if not force_regenerate and os.path.exists(req_file):
+            # Get current environment packages hash
+            result = subprocess.run(
+                ["pip-chill"],
+                capture_output=True,
+                text=True,
+                shell=True
+            )
+            if result.returncode == 0:
+                current_env_lines = result.stdout.strip().split('\n')
+                current_env_hash = dep_manager.compute_requirements_hash(current_env_lines)
+                
+                # Check stored environment hash
+                stored_env_hash = dep_manager.get_stored_env_hash()
+                if stored_env_hash == current_env_hash:
+                    # Environment hasn't changed, requirements.txt should be up to date
+                    if self.logger:
+                        self.logger.info("Environment unchanged, requirements.txt is up to date, skipping regeneration.")
+                    return
+        
+        # Generate requirements.txt
+        if self.logger:
+            self.logger.info("Generating requirements.txt...")
+        
         # Use pip-chill with versions to allow smart comparison
         subprocess.run(
             [f"pip-chill > {self.launcher.project_path}/requirements.txt"],
@@ -67,6 +103,18 @@ class ClusterBackend(ABC):
                 
         with open(f"{self.launcher.project_path}/requirements.txt", "w") as file:
             file.writelines(lines)
+        
+        # Store hash of environment for future checks
+        result = subprocess.run(
+            ["pip-chill"],
+            capture_output=True,
+            text=True,
+            shell=True
+        )
+        if result.returncode == 0:
+            env_lines = result.stdout.strip().split('\n')
+            env_hash = dep_manager.compute_requirements_hash(env_lines)
+            dep_manager.store_env_hash(env_hash)
 
     def _optimize_requirements(self, ssh_client, venv_command_prefix=""):
         """
@@ -116,3 +164,56 @@ class ClusterBackend(ABC):
             
         self.logger.info(f"Optimization: {len(to_install)} packages to install.")
         return delta_file
+
+    def _check_python_version_compatibility(self, ssh_client=None):
+        """
+        Check Python version compatibility between local and remote environments.
+        Warns if there are significant version differences.
+        
+        Args:
+            ssh_client: Optional SSH client for remote version check. If None, only logs local version.
+        """
+        local_version = sys.version_info
+        local_version_str = f"{local_version.major}.{local_version.minor}.{local_version.micro}"
+        
+        if self.logger:
+            self.logger.info(f"Local Python version: {local_version_str}")
+        
+        if ssh_client:
+            # Check remote Python version
+            try:
+                stdin, stdout, stderr = ssh_client.exec_command("python3 --version")
+                remote_version_output = stdout.read().decode('utf-8').strip()
+                if remote_version_output:
+                    # Extract version from "Python X.Y.Z"
+                    import re
+                    match = re.search(r'(\d+)\.(\d+)\.(\d+)', remote_version_output)
+                    if match:
+                        remote_major = int(match.group(1))
+                        remote_minor = int(match.group(2))
+                        remote_micro = int(match.group(3))
+                        
+                        if self.logger:
+                            self.logger.info(f"Remote Python version: {remote_version_output}")
+                        
+                        # Check for significant version differences
+                        if local_version.major != remote_major:
+                            if self.logger:
+                                self.logger.warning(
+                                    f"Python major version mismatch: local={local_version.major}, remote={remote_major}. "
+                                    f"This may cause compatibility issues. SlurmRay uses source-based serialization "
+                                    f"to mitigate this, but some issues may still occur."
+                                )
+                        elif local_version.minor != remote_minor:
+                            if self.logger:
+                                self.logger.info(
+                                    f"Python minor version difference: local={local_version.major}.{local_version.minor}, "
+                                    f"remote={remote_major}.{remote_minor}. This should generally be fine with "
+                                    f"source-based serialization."
+                                )
+                        else:
+                            if self.logger:
+                                self.logger.info("Python versions are compatible.")
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"Could not check remote Python version: {e}")

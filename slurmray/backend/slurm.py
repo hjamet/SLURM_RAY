@@ -9,7 +9,7 @@ from getpass import getpass
 from typing import Any
 
 from slurmray.backend.base import ClusterBackend
-from slurmray.utils import SSHTunnel
+from slurmray.utils import SSHTunnel, DependencyManager
 
 class SlurmBackend(ClusterBackend):
     """Backend for Slurm cluster execution (local or remote via SSH)"""
@@ -453,21 +453,46 @@ class SlurmBackend(ClusterBackend):
                 self.launcher.server_password = None
                 self.logger.warning("Wrong password, please try again.")
 
+        # Check Python version compatibility
+        self._check_python_version_compatibility(ssh_client)
+
         # Write server script
         self._write_server_script()
 
         self.logger.info("Downloading server...")
         
-        # Generate requirements
+        # Generate requirements first to check venv hash
         self._generate_requirements()
         
         # Add slurmray (unpinned for now to match legacy behavior, but could be pinned)
         with open(f"{self.launcher.project_path}/requirements.txt", "a") as f:
             f.write("slurmray\n")
+        
+        # Check if venv can be reused based on requirements hash
+        dep_manager = DependencyManager(self.launcher.project_path, self.logger)
+        req_file = os.path.join(self.launcher.project_path, "requirements.txt")
+        
+        should_recreate_venv = True
+        if os.path.exists(req_file):
+            with open(req_file, 'r') as f:
+                req_lines = f.readlines()
+            # Check remote hash (if venv exists on remote)
+            remote_hash_file = "slurmray-server/.slogs/venv_hash.txt"
+            stdin, stdout, stderr = ssh_client.exec_command(f"test -f {remote_hash_file} && cat {remote_hash_file} || echo ''")
+            remote_hash = stdout.read().decode('utf-8').strip()
+            current_hash = dep_manager.compute_requirements_hash(req_lines)
+            
+            if remote_hash and remote_hash == current_hash:
+                # Hash matches, check if venv exists
+                stdin, stdout, stderr = ssh_client.exec_command("test -d slurmray-server/.venv && echo exists || echo missing")
+                venv_exists = stdout.read().decode('utf-8').strip() == "exists"
+                if venv_exists:
+                    should_recreate_venv = False
+                    self.logger.info("Virtualenv can be reused (requirements hash matches)")
             
         # Optimize requirements
         # Assuming standard path structure on Slurm cluster (Curnagl)
-        venv_cmd = "cd slurmray-server && source .venv/bin/activate &&"
+        venv_cmd = "cd slurmray-server && source .venv/bin/activate &&" if not should_recreate_venv else ""
         req_file_to_push = self._optimize_requirements(self.ssh_client, venv_cmd)
 
         # Copy files from the project to the server
@@ -477,10 +502,16 @@ class SlurmBackend(ClusterBackend):
                     continue
                 sftp.put(os.path.join(self.launcher.project_path, file), file)
 
-        # Create the server directory and remove old files
-        ssh_client.exec_command(
-            "mkdir -p slurmray-server/.slogs/server && rm -rf slurmray-server/.slogs/server/*"
-        )
+        # Smart cleanup: preserve venv if hash matches, only clean server logs
+        ssh_client.exec_command("mkdir -p slurmray-server/.slogs/server")
+        if should_recreate_venv:
+            # Clean server logs only (venv will be recreated by script if needed)
+            ssh_client.exec_command("rm -rf slurmray-server/.slogs/server/*")
+            self.logger.info("Virtualenv will be recreated if needed (requirements changed or missing)")
+        else:
+            # Clean server logs only, preserve venv
+            ssh_client.exec_command("rm -rf slurmray-server/.slogs/server/*")
+            self.logger.info("Preserving virtualenv (requirements unchanged)")
         # Copy user files to the server
         for file in self.launcher.files:
             self._push_file(file, sftp, ssh_client)
@@ -489,6 +520,18 @@ class SlurmBackend(ClusterBackend):
         sftp.put(
             req_file_to_push, "requirements.txt"
         )
+        
+        # Store venv hash on remote for future checks
+        if os.path.exists(req_file):
+            with open(req_file, 'r') as f:
+                req_lines = f.readlines()
+            current_hash = dep_manager.compute_requirements_hash(req_lines)
+            # Ensure .slogs directory exists on remote
+            ssh_client.exec_command("mkdir -p slurmray-server/.slogs")
+            stdin, stdout, stderr = ssh_client.exec_command(f"echo '{current_hash}' > slurmray-server/.slogs/venv_hash.txt")
+            stdout.channel.recv_exit_status()
+            # Also store locally
+            dep_manager.store_venv_hash(current_hash)
         
         # Copy the server script to the server
         sftp.put(
@@ -604,6 +647,19 @@ class SlurmBackend(ClusterBackend):
                 os.path.join(self.launcher.project_path, "result.pkl"),
             )
             self.logger.info("Result downloaded!")
+            
+            # Clean up remote temporary files (preserve venv and cache)
+            self.logger.info("Cleaning up remote temporary files...")
+            ssh_client.exec_command(
+                "cd slurmray-server && "
+                "find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.pkl' -o -name '*.sh' \\) "
+                "! -name 'requirements.txt' -delete 2>/dev/null || true && "
+                "rm -rf .slogs/server 2>/dev/null || true"
+            )
+            
+            # Clean up local temporary files after successful download
+            self._cleanup_local_temp_files()
+            
         except FileNotFoundError:
             # Check for errors
             stderr_lines = stderr.readlines()
@@ -613,6 +669,26 @@ class SlurmBackend(ClusterBackend):
                     print(line, end="")
                     self.logger.error(line.strip())
                 self.logger.error("An error occured, please check the logs.")
+    
+    def _cleanup_local_temp_files(self):
+        """Clean up local temporary files after successful execution"""
+        temp_files = [
+            "func_source.py",
+            "func_name.txt",
+            "func.pkl",
+            "args.pkl",
+            "result.pkl",
+            "spython.py",
+            "sbatch.sh",
+            "slurmray_server.py",
+            "requirements_to_install.txt",
+        ]
+        
+        for temp_file in temp_files:
+            file_path = os.path.join(self.launcher.project_path, temp_file)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                self.logger.debug(f"Removed temporary file: {temp_file}")
 
     def _write_server_script(self):
         """This funtion will write a script with the given specifications to run slurmray on the cluster"""

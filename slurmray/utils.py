@@ -4,6 +4,7 @@ import threading
 import logging
 import os
 import re
+import hashlib
 
 class DependencyManager:
     """Manage dependencies and cache for remote execution"""
@@ -13,6 +14,8 @@ class DependencyManager:
         self.logger = logger
         self.cache_dir = os.path.join(project_path, ".slogs")
         self.cache_file = os.path.join(self.cache_dir, "requirements_cache.txt")
+        self.venv_hash_file = os.path.join(self.cache_dir, "venv_hash.txt")
+        self.env_hash_file = os.path.join(self.cache_dir, "env_hash.txt")
         
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir)
@@ -88,6 +91,94 @@ class DependencyManager:
                 # If local has no version, strict existence is enough (already checked)
         
         return to_install
+
+    def compute_requirements_hash(self, req_lines):
+        """
+        Compute a hash of the requirements file content.
+        This hash can be used to detect if the virtualenv needs to be recreated.
+        
+        Args:
+            req_lines: List of requirement lines (strings)
+            
+        Returns:
+            str: SHA256 hash of sorted requirements (hexdigest)
+        """
+        # Normalize requirements: sort and strip whitespace
+        normalized = sorted([line.strip() for line in req_lines if line.strip() and not line.strip().startswith('#')])
+        content = '\n'.join(normalized).encode('utf-8')
+        return hashlib.sha256(content).hexdigest()
+
+    def get_stored_venv_hash(self):
+        """
+        Get the stored virtualenv hash from cache.
+        
+        Returns:
+            str or None: The stored hash if it exists, None otherwise
+        """
+        if not os.path.exists(self.venv_hash_file):
+            return None
+        with open(self.venv_hash_file, 'r') as f:
+            return f.read().strip()
+
+    def store_venv_hash(self, req_hash):
+        """
+        Store the virtualenv hash to cache.
+        
+        Args:
+            req_hash: The hash to store
+        """
+        with open(self.venv_hash_file, 'w') as f:
+            f.write(req_hash)
+
+    def should_recreate_venv(self, req_lines):
+        """
+        Check if the virtualenv should be recreated based on requirements hash.
+        
+        Args:
+            req_lines: List of requirement lines (strings)
+            
+        Returns:
+            bool: True if venv should be recreated, False if it can be reused
+        """
+        current_hash = self.compute_requirements_hash(req_lines)
+        stored_hash = self.get_stored_venv_hash()
+        
+        if stored_hash is None:
+            # No hash stored, venv should be created/recreated
+            return True
+        
+        if current_hash != stored_hash:
+            # Hash mismatch, requirements changed, venv needs recreation
+            if self.logger:
+                self.logger.info(f"Requirements changed (hash mismatch), venv will be recreated.")
+            return True
+        
+        # Hash matches, venv can be reused
+        if self.logger:
+            self.logger.info(f"Requirements unchanged (hash matches), reusing existing venv.")
+        return False
+
+    def get_stored_env_hash(self):
+        """
+        Get the stored environment hash from cache.
+        
+        Returns:
+            str or None: The stored hash if it exists, None otherwise
+        """
+        if not os.path.exists(self.env_hash_file):
+            return None
+        with open(self.env_hash_file, 'r') as f:
+            return f.read().strip()
+
+    def store_env_hash(self, env_hash):
+        """
+        Store the environment hash to cache.
+        
+        Args:
+            env_hash: The hash to store
+        """
+        with open(self.env_hash_file, 'w') as f:
+            f.write(env_hash)
 
 class SSHTunnel:
     """Context manager for SSH port forwarding using Paramiko"""
