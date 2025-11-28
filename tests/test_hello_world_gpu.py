@@ -55,7 +55,7 @@ def test_hello_world_gpu():
     if server_password is None:
         server_password = getpass("Enter your cluster password: ")
     
-    launcher = RayLauncher(
+    cluster = RayLauncher(
         project_name="test_hello_world_gpu",
         files=[],
         modules=[],
@@ -70,7 +70,7 @@ def test_hello_world_gpu():
     )
     
     print("Launching GPU test job...")
-    result = launcher(hello_world_gpu, args={})
+    result = cluster(hello_world_gpu, args={})
     
     # Validations
     assert "message" in result, "Result should contain 'message' key"

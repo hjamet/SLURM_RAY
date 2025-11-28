@@ -27,17 +27,17 @@ def test_simple_function_source_transfer():
         project_path = os.path.join(tmpdir, "test_project")
         os.makedirs(project_path)
         
-        # Create launcher instance (minimal config)
-        launcher = RayLauncher(
+        # Create cluster instance (minimal config)
+        cluster = RayLauncher(
             project_name="test_source",
             server_run=False,  # Local mode
         )
         
         # Override project_path to use our temp directory
-        launcher.project_path = project_path
+        cluster.project_path = project_path
         
         # Serialize function
-        launcher._RayLauncher__serialize_func_and_args(simple_func, {"x": 5})
+        cluster._RayLauncher__serialize_func_and_args(simple_func, {"x": 5})
         
         # Verify files were created
         func_source_path = os.path.join(project_path, "func_source.py")
@@ -74,13 +74,13 @@ def test_function_with_global_source_transfer():
         project_path = os.path.join(tmpdir, "test_project")
         os.makedirs(project_path)
         
-        launcher = RayLauncher(
+        cluster = RayLauncher(
             project_name="test_global",
             server_run=False,
         )
-        launcher.project_path = project_path
+        cluster.project_path = project_path
         
-        launcher._RayLauncher__serialize_func_and_args(func_with_global, {"x": 10})
+        cluster._RayLauncher__serialize_func_and_args(func_with_global, {"x": 10})
         
         # Load and test
         func_source_path = os.path.join(project_path, "func_source.py")
@@ -120,13 +120,13 @@ def test_class_method_source_transfer():
         project_path = os.path.join(tmpdir, "test_project")
         os.makedirs(project_path)
         
-        launcher = RayLauncher(
+        cluster = RayLauncher(
             project_name="test_method",
             server_run=False,
         )
-        launcher.project_path = project_path
+        cluster.project_path = project_path
         
-        launcher._RayLauncher__serialize_func_and_args(obj.method, {"x": 5})
+        cluster._RayLauncher__serialize_func_and_args(obj.method, {"x": 5})
         
         # Load and test
         func_source_path = os.path.join(project_path, "func_source.py")
@@ -160,13 +160,13 @@ def test_lambda_source_transfer():
         project_path = os.path.join(tmpdir, "test_project")
         os.makedirs(project_path)
         
-        launcher = RayLauncher(
+        cluster = RayLauncher(
             project_name="test_lambda",
             server_run=False,
         )
-        launcher.project_path = project_path
+        cluster.project_path = project_path
         
-        launcher._RayLauncher__serialize_func_and_args(lambda_func, {"x": 4})
+        cluster._RayLauncher__serialize_func_and_args(lambda_func, {"x": 4})
         
         # Verify source was created
         func_source_path = os.path.join(project_path, "func_source.py")
@@ -192,14 +192,14 @@ def test_fallback_to_dill():
         project_path = os.path.join(tmpdir, "test_project")
         os.makedirs(project_path)
         
-        launcher = RayLauncher(
+        cluster = RayLauncher(
             project_name="test_fallback",
             server_run=False,
         )
-        launcher.project_path = project_path
+        cluster.project_path = project_path
         
         # This should not crash, but should log a warning
-        launcher._RayLauncher__serialize_func_and_args(builtin_func, {"x": [1, 2, 3]})
+        cluster._RayLauncher__serialize_func_and_args(builtin_func, {"x": [1, 2, 3]})
         
         # Verify that func.pkl exists (fallback)
         func_pkl_path = os.path.join(project_path, "func.pkl")

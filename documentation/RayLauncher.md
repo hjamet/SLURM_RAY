@@ -59,7 +59,7 @@ class RayLauncher(
 To launch the job, call the instance with the function and its arguments:
 
 ```python
-result = launcher(func, args={}, cancel_old_jobs=True, serialize=True)
+result = cluster(func, args={}, cancel_old_jobs=True, serialize=True)
 ```
 
 - **func** (`Callable`): Function to execute. This function should not be remote but can use ray ressources.
@@ -82,7 +82,7 @@ def example_func(x):
     )
     return result
 
-launcher = RayLauncher(
+cluster = RayLauncher(
     project_name="example",
     files=[],
     node_nbr=1,
@@ -93,7 +93,7 @@ launcher = RayLauncher(
     cluster="slurm",
 )
 
-result = launcher(example_func, args={"x": 5})
+result = cluster(example_func, args={"x": 5})
 print(result)
 ```
 

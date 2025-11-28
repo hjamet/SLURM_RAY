@@ -87,7 +87,7 @@ def example_func(x):
     )
     return result
 
-launcher = RayLauncher(
+cluster = RayLauncher(
     project_name="example_slurm",
     files=[],  # List of files to push to the cluster
     modules=[],  # List of modules to load (CUDA & CUDNN auto-added if use_gpu=True)
@@ -106,7 +106,7 @@ launcher = RayLauncher(
 # Note: When running with server_run=True, SlurmRay automatically sets up an SSH tunnel 
 # to the Ray Dashboard, accessible at http://localhost:8888 during job execution.
 
-result = launcher(example_func, args={"x": 1})
+result = cluster(example_func, args={"x": 1})
 print(result)
 ```
 
@@ -123,7 +123,7 @@ def example_func(x):
     )
     return result
 
-launcher = RayLauncher(
+cluster = RayLauncher(
     project_name="example_desi",
     files=[],  # List of files to push to the server
     node_nbr=1,  # Always 1 for Desi (single server)
@@ -137,7 +137,7 @@ launcher = RayLauncher(
     cluster="desi",  # Use Desi backend (Smart Lock scheduling)
 )
 
-result = launcher(example_func, args={"x": 21})
+result = cluster(example_func, args={"x": 21})
 print(result)
 ```
 
@@ -167,7 +167,7 @@ DESI_PASSWORD=your_password
 If you need to force a complete reinstallation of the virtual environment (e.g., due to corruption, version conflicts, or for a clean installation), you can use the `force_reinstall_venv` parameter:
 
 ```python
-launcher = RayLauncher(
+cluster = RayLauncher(
     project_name="example",
     func=example_func,
     args={"x": 1},

@@ -57,8 +57,8 @@ def manual_test_desi_gpu():
     print("🚀 Launching Desi GPU & Dashboard Test...")
     print("ℹ️  This test will connect to Desi, request GPU resources, and verify the environment.")
 
-    # Initialize Launcher
-    launcher = RayLauncher(
+    # Initialize cluster
+    cluster = RayLauncher(
         project_name="test_desi_gpu_dashboard",
         files=[],
         modules=[], # Desi doesn't use modules
@@ -74,7 +74,7 @@ def manual_test_desi_gpu():
     )
     
     try:
-        result = launcher(gpu_check_func, args={"x": "test_dashboard"})
+        result = cluster(gpu_check_func, args={"x": "test_dashboard"})
         print("\n✅ Execution Completed!")
         print("-" * 50)
         print(f"Python Version: {result.get('python_version')}")

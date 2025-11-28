@@ -20,7 +20,7 @@ def main():
     print("Le script devrait capturer l'interruption et annuler le job SLURM automatiquement.")
     print("==========================================\n")
 
-    launcher = RayLauncher(
+    cluster = RayLauncher(
         project_name="test_interruption",
         node_nbr=1,
         use_gpu=False,
@@ -34,7 +34,7 @@ def main():
 
     print("Lancement du job... Préparez-vous à faire Ctrl+C une fois le Job ID affiché !")
     try:
-        result = launcher(long_running_function, args={"x": 10})
+        result = cluster(long_running_function, args={"x": 10})
         print(f"Résultat (inattendu si interrompu): {result}")
     except KeyboardInterrupt:
         print("\nInterruption capturée dans le main (normalement géré par RayLauncher avant)")

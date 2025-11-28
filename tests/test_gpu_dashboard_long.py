@@ -121,7 +121,7 @@ def test_gpu_dashboard_long():
     if server_password is None:
         server_password = getpass("Enter your cluster password: ")
     
-    launcher = RayLauncher(
+    cluster = RayLauncher(
         project_name="test_gpu_dashboard_long",
         files=[],
         modules=[],  # Modules CUDA/CUDNN seront ajoutés automatiquement avec use_gpu=True
@@ -143,7 +143,7 @@ def test_gpu_dashboard_long():
     print()
     
     try:
-        result = launcher(gpu_long_task, args={"duration_minutes": 5})  # 5 minutes pour explorer le dashboard
+        result = cluster(gpu_long_task, args={"duration_minutes": 5})  # 5 minutes pour explorer le dashboard
         
         print()
         print("=" * 60)

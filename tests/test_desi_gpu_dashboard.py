@@ -27,7 +27,7 @@ def job_func(x):
 
 def test_desi_gpu_dashboard():
     print("Initializing RayLauncher for Desi...")
-    launcher = RayLauncher(
+    cluster = RayLauncher(
         project_name="test_desi_gpu",
         files=[],
         modules=[],  # Ignored on Desi
@@ -75,10 +75,10 @@ def test_desi_gpu_dashboard():
     monitor_thread.daemon = True  # Allow main to exit even if this is running
     monitor_thread.start()
 
-    # Run launcher (BLOCKING) in main thread
-    print("Starting launcher in main thread...")
+    # Run cluster (BLOCKING) in main thread
+    print("Starting cluster in main thread...")
     try:
-        result = launcher(job_func, args={"x": 1})
+        result = cluster(job_func, args={"x": 1})
         print("Job result:", result)
 
         # Verifications

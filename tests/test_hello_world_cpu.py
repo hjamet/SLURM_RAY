@@ -37,7 +37,7 @@ def test_hello_world_cpu():
     if server_password is None:
         server_password = getpass("Enter your cluster password: ")
     
-    launcher = RayLauncher(
+    cluster = RayLauncher(
         project_name="test_hello_world_cpu",
         files=[],
         modules=[],
@@ -52,7 +52,7 @@ def test_hello_world_cpu():
     )
     
     print("Launching CPU test job...")
-    result = launcher(hello_world_cpu, args={})
+    result = cluster(hello_world_cpu, args={})
     
     # Validations
     assert "message" in result, "Result should contain 'message' key"

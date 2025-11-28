@@ -425,7 +425,7 @@ if __name__ == "__main__":
         )
         return result
 
-    launcher = RayLauncher(
+    cluster = RayLauncher(
         project_name="example",  # Name of the project (will create a directory with this name in the current directory)
         files=(
             ["documentation/RayLauncher.html"]
@@ -440,5 +440,5 @@ if __name__ == "__main__":
         cluster="desi",  # Use Desi backend (credentials loaded from .env: DESI_USERNAME and DESI_PASSWORD)
     )
 
-    result = launcher(example_func, args={"x": 5})  # Execute function with arguments
+    result = cluster(example_func, args={"x": 5})  # Execute function with arguments
     print(result)

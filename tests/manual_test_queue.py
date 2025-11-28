@@ -18,7 +18,7 @@ def main():
     print("Si le job démarre tout de suite, vous ne verrez peut-être pas le message.")
     print("========================================\n")
 
-    launcher = RayLauncher(
+    cluster = RayLauncher(
         project_name="test_queue_display",
         node_nbr=1,
         use_gpu=False,
@@ -31,7 +31,7 @@ def main():
     )
 
     print("Lancement du job...")
-    result = launcher(simple_func, args={"x": 5})
+    result = cluster(simple_func, args={"x": 5})
     print(f"Résultat : {result}")
 
 if __name__ == "__main__":

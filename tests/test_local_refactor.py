@@ -13,7 +13,7 @@ def test_local_execution():
     if os.path.exists(f".slogs/{project_name}"):
         shutil.rmtree(f".slogs/{project_name}")
 
-    launcher = RayLauncher(
+    cluster = RayLauncher(
         project_name=project_name,
         files=[],
         modules=[],
@@ -27,10 +27,10 @@ def test_local_execution():
         server_password="password",
     )
     
-    print(f"Launcher backend type: {type(launcher.backend)}")
-    assert "LocalBackend" in str(type(launcher.backend))
+    print(f"Cluster backend type: {type(cluster.backend)}")
+    assert "LocalBackend" in str(type(cluster.backend))
     
-    result = launcher(simple_func, args={"x": 10})
+    result = cluster(simple_func, args={"x": 10})
     print(f"Result: {result}")
     
     assert result == 20
