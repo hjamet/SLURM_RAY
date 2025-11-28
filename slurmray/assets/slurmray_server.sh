@@ -8,7 +8,12 @@ mv -t slurmray-server/.slogs/server func.pkl args.pkl
 cd slurmray-server
 
 # Load modules
-module load gcc rust python/3.12.1 cuda cudnn
+# Using specific versions for Curnagl compatibility (SLURM 24.05.3)
+# gcc/13.2.0: Latest GCC version
+# python/3.12.1: Latest Python version on Curnagl
+# cuda/12.6.2: Latest CUDA version
+# cudnn/9.2.0.82-12: Compatible with cuda/12.6.2
+module load gcc/13.2.0 rust python/3.12.1 cuda/12.6.2 cudnn/9.2.0.82-12
 
 # Check if venv exists
 if [ ! -d ".venv" ]; then

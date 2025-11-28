@@ -87,11 +87,33 @@ class RayLauncher:
         
         self.__setup_logger()
         
-        self.modules = ["gcc", "python/3.12.1"] + [
-            mod for mod in modules if mod not in ["gcc", "python/3.12.1"]
-        ]
-        if self.use_gpu is True and "cuda" not in self.modules:
-            self.modules += ["cuda", "cudnn"]
+        # Default modules with specific versions for Curnagl compatibility
+        # Using latest stable versions available on Curnagl (SLURM 24.05.3)
+        # gcc/13.2.0: Latest GCC version
+        # python/3.12.1: Latest Python version on Curnagl
+        # cuda/12.6.2: Latest CUDA version
+        # cudnn/9.2.0.82-12: Compatible with cuda/12.6.2
+        default_modules = ["gcc/13.2.0", "python/3.12.1"]
+        
+        # Filter out any gcc or python modules from user list (we use defaults)
+        # Allow user to override by providing specific versions
+        user_modules = []
+        for mod in modules:
+            # Skip if it's a gcc or python module (user can override by providing full version)
+            if mod.startswith("gcc") or mod.startswith("python"):
+                continue
+            user_modules.append(mod)
+        
+        self.modules = default_modules + user_modules
+        
+        if self.use_gpu is True:
+            # Check if user provided specific cuda/cudnn versions
+            has_cuda = any("cuda" in mod for mod in self.modules)
+            has_cudnn = any("cudnn" in mod for mod in self.modules)
+            if not has_cuda:
+                self.modules.append("cuda/12.6.2")
+            if not has_cudnn:
+                self.modules.append("cudnn/9.2.0.82-12")
             
         # --- Validation des Arguments ---
         self._validate_arguments()
