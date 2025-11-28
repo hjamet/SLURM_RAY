@@ -37,11 +37,28 @@ with open(os.path.join(PROJECT_PATH, "args.pkl"), "rb") as f:
     args = dill.load(f)
 
 # Run the function
-result = func(**args)
+try:
+    result = func(**args)
+except Exception as e:
+    print(f"Error executing function: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
 
 # Write the result
-with open(os.path.join(PROJECT_PATH, "result.pkl"), "wb") as f:
-    dill.dump(result, f)
+result_path = os.path.join(PROJECT_PATH, "result.pkl")
+try:
+    with open(result_path, "wb") as f:
+        dill.dump(result, f)
+    print(f"Result written to {result_path}")
+except Exception as e:
+    print(f"Error writing result: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
     
 # Stop ray
-ray.shutdown()
+try:
+    ray.shutdown()
+except Exception as e:
+    print(f"Warning: Error shutting down Ray: {e}")

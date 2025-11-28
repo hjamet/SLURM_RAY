@@ -19,7 +19,9 @@ class DesiBackend(RemoteMixin):
 
     def run(self, cancel_old_jobs: bool = True) -> Any:
         """Run the job on Desi"""
+        self.logger.info("Connecting to Desi server...")
         self._connect()
+        self.logger.info("Connected successfully")
         
         # Check Python version compatibility
         self._check_python_version_compatibility(self.ssh_client)
@@ -39,7 +41,7 @@ class DesiBackend(RemoteMixin):
         should_recreate_venv = True
         if self.launcher.force_reinstall_venv:
             # Force recreation: remove venv if it exists
-            self.logger.info("Force reinstall enabled: removing existing virtualenv...")
+            self.logger.info("Recreating virtual environment...")
             self.ssh_client.exec_command(f"rm -rf {base_dir}/venv")
             should_recreate_venv = True
         elif os.path.exists(req_file):
@@ -57,7 +59,6 @@ class DesiBackend(RemoteMixin):
                 venv_exists = stdout.read().decode('utf-8').strip() == "exists"
                 if venv_exists:
                     should_recreate_venv = False
-                    self.logger.info("Virtualenv can be reused (requirements hash matches)")
         
         # Smart cleanup: preserve venv if hash matches
         if should_recreate_venv:
@@ -66,13 +67,11 @@ class DesiBackend(RemoteMixin):
             # Create flag file to force venv recreation in script
             if self.launcher.force_reinstall_venv:
                 self.ssh_client.exec_command(f"touch {base_dir}/.force_reinstall")
-            self.logger.info("Virtualenv will be recreated (requirements changed or missing)")
         else:
             # Clean up everything except venv and cache
             self.ssh_client.exec_command(f"mkdir -p {base_dir} && find {base_dir} -mindepth 1 ! -name 'venv' ! -path '{base_dir}/venv/*' ! -name '.slogs' ! -path '{base_dir}/.slogs/*' -delete")
             # Remove flag file if it exists
             self.ssh_client.exec_command(f"rm -f {base_dir}/.force_reinstall")
-            self.logger.info("Preserving virtualenv (requirements unchanged)")
         
         # Generate Python script (spython.py) that will run on Desi
         # This script uses RayLauncher in LOCAL mode (but on the remote machine)
@@ -84,15 +83,23 @@ class DesiBackend(RemoteMixin):
         req_file_to_push = self._optimize_requirements(self.ssh_client, venv_cmd)
         
         # Push files
-        self.logger.info("Pushing files to Desi...")
-        for file in os.listdir(self.launcher.project_path):
-            if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".txt"):
-                if file == "requirements.txt":
-                    continue
+        files_to_push = [f for f in os.listdir(self.launcher.project_path) 
+                        if (f.endswith(".py") or f.endswith(".pkl") or f.endswith(".txt")) 
+                        and f != "requirements.txt"]
+        if files_to_push:
+            self.logger.info(f"Uploading {len(files_to_push)} file(s) to server...")
+            for file in files_to_push:
                 sftp.put(os.path.join(self.launcher.project_path, file), f"{base_dir}/{file}")
         
         # Push optimized requirements as requirements.txt
-        sftp.put(req_file_to_push, f"{base_dir}/requirements.txt")
+        if os.path.exists(req_file_to_push):
+            sftp.put(req_file_to_push, f"{base_dir}/requirements.txt")
+        else:
+            # Ensure no stale requirements.txt exists on remote if local one is missing
+            try:
+                sftp.remove(f"{base_dir}/requirements.txt")
+            except IOError:
+                pass # File didn't exist
         
         # Store venv hash on remote for future checks
         if os.path.exists(req_file):
@@ -107,6 +114,7 @@ class DesiBackend(RemoteMixin):
             dep_manager.store_venv_hash(current_hash)
         
         # Copy source code of slurmray to server (since it's not on PyPI)
+        self.logger.info("Uploading slurmray source code...")
         self._push_source_code(sftp, base_dir)
         
         for file in self.launcher.files:
@@ -119,13 +127,7 @@ class DesiBackend(RemoteMixin):
         self.ssh_client.exec_command(f"chmod +x {base_dir}/{runner_script}")
         
         # Run the script
-        self.logger.info("Running job on Desi...")
-        
-        # Smart Lock Logic is implemented inside the runner script or wrapper python?
-        # The user asked for "Smart Lock" to be implemented:
-        # "Implémenter un système de Scheduling Maison... Le runner doit vérifier un fichier de lock..."
-        # It's better to implement this in Python inside the runner script or a wrapper.
-        # Let's create a 'desi_wrapper.py' that does the locking then runs 'spython.py'.
+        self.logger.info("Starting job execution...")
         
         desi_wrapper_script = "desi_wrapper.py"
         self._write_desi_wrapper(desi_wrapper_script)
@@ -133,27 +135,42 @@ class DesiBackend(RemoteMixin):
         
         # Execute
         cmd = f"cd {base_dir} && ./run_desi.sh"
-        stdin, stdout, stderr = self.ssh_client.exec_command(cmd, get_pty=True) # get_pty to allow killing?
+        stdin, stdout, stderr = self.ssh_client.exec_command(cmd, get_pty=True)
         
         # Stream output
-        job_started = False
         tunnel = None
+        ray_started = False
         
-        # Read output
+        # Read output line by line
         while True:
             line = stdout.readline()
             if not line:
                 break
-            print(line, end="")
-            self.logger.info(line.strip())
             
-            if "Started a local Ray instance" in line or "View the dashboard at" in line:
-                job_started = True
+            # Filter out noisy messages and format nicely
+            line_stripped = line.strip()
+            if not line_stripped:
+                continue
+                
+            # Skip pkill errors (already handled silently)
+            if "pkill:" in line_stripped:
+                continue
+                
+            # Detect Ray startup
+            if ("Started a local Ray instance" in line_stripped or "View the dashboard at" in line_stripped) and not ray_started:
+                ray_started = True
+                # Extract dashboard URL if present
+                if "http://" in line_stripped:
+                    # Extract URL from line
+                    import re
+                    url_match = re.search(r'http://[^\s]+', line_stripped)
+                    if url_match:
+                        dashboard_url = url_match.group(0)
+                        self.logger.info(f"Ray dashboard started at {dashboard_url}")
+                
                 # Start SSH Tunnel
                 if not tunnel:
-                    self.logger.info("Ray started. Setting up SSH tunnel for dashboard...")
                     try:
-                        # Connect to localhost on the remote server (Desi)
                         tunnel = SSHTunnel(
                             ssh_host=self.launcher.server_ssh,
                             ssh_username=self.launcher.server_username,
@@ -164,42 +181,104 @@ class DesiBackend(RemoteMixin):
                             logger=self.logger
                         )
                         tunnel.__enter__()
-                        self.logger.info("Dashboard accessible at http://localhost:8888")
+                        self.logger.info("Dashboard accessible locally at http://localhost:8888")
                     except Exception as e:
-                        self.logger.warning(f"Failed to create SSH tunnel: {e}")
+                        self.logger.warning(f"Could not establish SSH tunnel: {e}")
                         tunnel = None
+                continue
             
-        stdout.channel.recv_exit_status()
+            # Print other important messages (including errors)
+            if any(keyword in line_stripped for keyword in ["Lock acquired", "Starting Payload", "Loaded function", "Job started", "Function execution", "Result written", "Releasing lock", "Lock released", "Error", "Traceback", "Exception"]):
+                print(line, end="")
+                if "Error" in line_stripped or "Traceback" in line_stripped or "Exception" in line_stripped:
+                    self.logger.error(line_stripped)
+                else:
+                    self.logger.info(line_stripped)
+        
+        # Read any remaining stderr
+        stderr_output = stderr.read().decode('utf-8')
+        if stderr_output.strip():
+            self.logger.error(f"Script errors:\n{stderr_output}")
+            print(stderr_output, end="")
+            
+        exit_status = stdout.channel.recv_exit_status()
+        
+        # Check if script failed
+        if exit_status != 0:
+            self.logger.error(f"Job script exited with non-zero status: {exit_status}")
+            # Try to get stderr for more info
+            try:
+                stderr_lines = stderr.readlines()
+                if stderr_lines:
+                    self.logger.error("Script errors:")
+                    for line in stderr_lines:
+                        self.logger.error(line.strip())
+            except Exception:
+                pass
         
         # Close tunnel
         if tunnel:
             tunnel.__exit__(None, None, None)
         
+        # Wait a bit for file system to sync
+        time.sleep(2)
+        
+        # Wait for result file to be created on remote (with timeout)
+        self.logger.info("Waiting for job completion...")
+        max_wait = 300  # 5 minutes max
+        wait_start = time.time()
+        result_available = False
+        
+        while time.time() - wait_start < max_wait:
+            try:
+                # Check if result.pkl exists on remote
+                stdin, stdout, stderr = self.ssh_client.exec_command(f"test -f {base_dir}/result.pkl && echo exists || echo missing")
+                stdout.channel.recv_exit_status()  # Wait for command to complete
+                output = stdout.read().decode('utf-8').strip()
+                if output == "exists":
+                    result_available = True
+                    break
+            except Exception as e:
+                self.logger.debug(f"Error checking for result file: {e}")
+            time.sleep(1)
+        
+        if not result_available:
+            # Debug: list files on remote
+            try:
+                stdin, stdout, stderr = self.ssh_client.exec_command(f"ls -la {base_dir}/")
+                stdout.channel.recv_exit_status()
+                files = stdout.read().decode('utf-8')
+                self.logger.error(f"Result file not found. Remote directory contents:\n{files}")
+            except Exception:
+                pass
+            raise FileNotFoundError(f"Job did not complete within {max_wait}s timeout")
+        
         # Download result
-        self.logger.info("Downloading result...")
+        self.logger.info("Retrieving results...")
+        result_path = os.path.join(self.launcher.project_path, "result.pkl")
         try:
-            sftp.get(f"{base_dir}/result.pkl", os.path.join(self.launcher.project_path, "result.pkl"))
-            self.logger.info("Result downloaded!")
-            
-            # Clean up remote temporary files (preserve venv and cache)
-            self.logger.info("Cleaning up remote temporary files...")
-            self.ssh_client.exec_command(
-                f"cd {base_dir} && "
-                f"find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.pkl' -o -name '*.sh' -o -name '*.txt' \\) "
-                f"! -name 'requirements.txt' -delete && "
-                f"rm -rf .slogs/server 2>/dev/null || true"
-            )
-            
-            # Clean up local temporary files after successful download
-            self._cleanup_local_temp_files()
-            
-        except FileNotFoundError:
-             self.logger.error("Result file not found.")
-             
-        # Load result
-        with open(os.path.join(self.launcher.project_path, "result.pkl"), "rb") as f:
+            sftp.get(f"{base_dir}/result.pkl", result_path)
+            self.logger.info("Results retrieved successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to download result file: {e}")
+            raise
+        
+        # Load result BEFORE cleanup (cleanup removes result.pkl)
+        with open(result_path, "rb") as f:
             result = dill.load(f)
-            
+        
+        # Clean up remote temporary files (preserve venv and cache)
+        self.ssh_client.exec_command(
+            f"cd {base_dir} && "
+            f"find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.pkl' -o -name '*.sh' -o -name '*.txt' \\) "
+            f"! -name 'requirements.txt' -delete && "
+            f"rm -rf .slogs/server 2>/dev/null || true"
+        )
+        
+        # Clean up local temporary files after successful download
+        # Note: result.pkl is included in cleanup but we've already loaded it
+        self._cleanup_local_temp_files()
+        
         return result
     
     def _cleanup_local_temp_files(self):
@@ -277,6 +356,9 @@ class DesiBackend(RemoteMixin):
         # Desi is a single machine (or we treat it as such for now). 
         # Ray should run in local mode or with address='auto' but without Slurm specifics.
         # It's basically local execution on a remote machine.
+        # Use port 0 to let Ray choose a free port to avoid "address already in use" errors if previous run didn't clean up
+        # However, we need to know the port for the tunnel.
+        # Better strategy: Try to clean up previous ray instances before starting
         local_mode = f"\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8265,\nruntime_env = {self.launcher.runtime_env},\n"
         
         text = text.replace(
@@ -292,12 +374,11 @@ class DesiBackend(RemoteMixin):
 # Desi Runner Script
 set -e  # Exit immediately if a command exits with a non-zero status
 
-# Setup Environment (if needed, e.g. load modules or activate conda)
-# Assuming python is available or venv creation
+# Clean up any previous Ray instances (silently)
+pkill -f ray 2>/dev/null || true
 
 # Check for force reinstall flag
 if [ -f ".force_reinstall" ]; then
-    echo "Force reinstall flag detected: removing existing virtualenv..."
     rm -rf venv
     rm -f .force_reinstall
 fi
@@ -310,14 +391,15 @@ fi
 # Activate venv
 source venv/bin/activate
 
-# Install dependencies (only missing ones if venv was preserved)
-pip install -r requirements.txt
+# Install dependencies if requirements file exists
+if [ -f requirements.txt ]; then
+    pip install -q -r requirements.txt
+fi
 
 # Add current directory to PYTHONPATH to make 'slurmray' importable
 export PYTHONPATH=$PYTHONPATH:.
 
-# Run Wrapper (Smart Lock + Script)
-# If wrapper fails, bash script fails (due to set -e), so ssh exec_command fails
+# Run wrapper (Smart Lock + Script execution)
 python3 desi_wrapper.py
 """
         with open(os.path.join(self.launcher.project_path, filename), "w") as f:
@@ -337,39 +419,37 @@ MAX_RETRIES = 1000
 RETRY_DELAY = 30 # seconds
 
 def acquire_lock():
-    print("Acquiring lock...")
     lock_fd = open(LOCK_FILE, 'w')
     try:
         # Try to acquire non-blocking exclusive lock
         fcntl.lockf(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        print("Lock acquired!")
         return lock_fd
     except IOError:
+        lock_fd.close()
         return None
 
 def main():
-    print("Starting Smart Lock Scheduler...")
-    
     lock_fd = None
     retries = 0
     
     while lock_fd is None:
         lock_fd = acquire_lock()
         if lock_fd is None:
-            print(f"Resources busy. Waiting... (Attempt {{retries + 1}})")
+            if retries == 0:
+                print("Waiting for resources to become available...")
             time.sleep(RETRY_DELAY)
             retries += 1
+            if retries > MAX_RETRIES:
+                print(f"Timeout: Could not acquire lock after 1000 attempts")
+                sys.exit(1)
             
     # Lock acquired, run payload
     try:
-        print("Starting Payload (spython.py)...")
         subprocess.check_call([sys.executable, "spython.py"])
     finally:
         # Release lock
-        print("Releasing lock...")
         fcntl.lockf(lock_fd, fcntl.LOCK_UN)
         lock_fd.close()
-        print("Lock released.")
 
 if __name__ == "__main__":
     main()
