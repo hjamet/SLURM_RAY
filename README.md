@@ -99,8 +99,8 @@ launcher = RayLauncher(
     runtime_env={"env_vars": {"NCCL_SOCKET_IFNAME": "eno1"}},
     server_run=True,  # Run on cluster, not locally
     server_ssh="curnagl.dcsr.unil.ch",  # Slurm cluster address
-    server_username="your_username",
-    server_password=None,  # Will be prompted or loaded from .env
+    server_username="your_username",  # Optional: loaded from CURNAGL_USERNAME if not provided
+    server_password=None,  # Optional: loaded from CURNAGL_PASSWORD if not provided, otherwise prompted
     cluster="slurm",  # Use Slurm backend (default)
 )
 
@@ -135,8 +135,8 @@ launcher = RayLauncher(
     max_running_time=30,  # Not enforced by scheduler
     server_run=True,  # Run on remote server
     server_ssh="130.223.73.209",  # Desi server IP (or use default)
-    server_username="your_username",  # Will be loaded from DESI_USERNAME env var if not provided
-    server_password=None,  # Will be prompted or loaded from DESI_PASSWORD env var
+    server_username="your_username",  # Optional: loaded from DESI_USERNAME if not provided
+    server_password=None,  # Optional: loaded from DESI_PASSWORD if not provided, otherwise prompted
     cluster="desi",  # Use Desi backend (Smart Lock scheduling)
 )
 
@@ -146,17 +146,22 @@ print(result)
 
 ### Environment Variables
 
-You can store credentials in a `.env` file to avoid entering them each time:
+SlurmRay automatically loads credentials from a `.env` file in your project directory. You can store credentials there to avoid entering them each time:
 
 ```bash
-# For Curnagl
+# For Curnagl (Slurm)
 CURNAGL_USERNAME=your_username
 CURNAGL_PASSWORD=your_password
 
-# For Desi
+# For Desi (ISIPOL09)
 DESI_USERNAME=your_username
 DESI_PASSWORD=your_password
 ```
+
+**Credential loading priority:**
+1. **Environment variables** (from `.env` file or system environment) - loaded automatically
+2. **Explicit parameters** passed to `RayLauncher()` constructor
+3. **Default values** (for username) or **interactive prompt** (for password)
 
 **Note:** The `.env` file should be in your `.gitignore` to avoid committing credentials.
 
@@ -347,6 +352,5 @@ The Launcher documentation is available [here](https://htmlpreview.github.io/?ht
 
 | Tâche | Objectif | État | Dépendances |
 |---|---|---|---|
-| **Améliorer la gestion des credentials (username/password) via .env** | Modifier RayLauncher pour charger automatiquement `server_username` et `server_password` depuis un fichier `.env` local, tout en gardant la rétrocompatibilité avec les paramètres explicites passés au constructeur. Le système doit d'abord vérifier les variables d'environnement (via `python-dotenv`), puis les paramètres explicites, et enfin demander interactivement si aucun n'est trouvé. Cette amélioration améliore la sécurité (évite de hardcoder les mots de passe) et l'ergonomie pour les utilisateurs fréquents qui peuvent stocker leurs credentials de manière sécurisée dans un fichier `.env` ignoré par Git. | 📅 À faire | - |
 | **Mettre à jour la documentation pour tout avoir dans le repo** | Remplacer les liens externes dans README.md par du contenu local, intégrer la documentation de RayLauncher directement dans le repository pour éviter les dépendances vers des sites externes. Migrer toute la documentation externe (liens actuels vers sites tiers ou HTML prévisualisés) directement dans le dépôt (dossier `docs/` ou Markdown). L'objectif est que le repository soit auto-suffisant et que la documentation versionnée suive l'évolution du code. Cela garantit que la documentation est toujours à jour et accessible même si les sites externes changent ou disparaissent. | 📅 À faire | - |
 | **Créer des scripts de test GPU et dashboard pour Curnagl et Desi** | Créer deux scripts de test automatisés et complets pour valider le bon fonctionnement des deux clusters. Le script pour Curnagl (`tests/test_curnagl_gpu_dashboard.py`) doit lancer un job Slurm avec GPU, vérifier l'accès au GPU via PyTorch (disponibilité CUDA, nombre de GPUs, noms des GPUs), valider les ressources Ray, et s'assurer que le dashboard Ray est accessible localement via le tunnel SSH automatique sur http://localhost:8888 pendant l'exécution du job. Le script pour Desi (`tests/test_desi_gpu_dashboard.py`) doit effectuer les mêmes vérifications mais adaptées au backend Desi (Smart Lock, pas de modules Slurm). Les deux scripts doivent inclure des vérifications explicites de l'accessibilité du dashboard local (test de connexion HTTP sur le port local, vérification que le tunnel SSH est actif, validation que le contenu du dashboard répond correctement). Après la création des scripts, exécuter le script Desi pour valider immédiatement l'accès au GPU et l'accessibilité locale du dashboard sur le serveur ISIPOL09. Ces scripts serviront de tests de validation rapide après toute modification importante du système de lancement ou des backends. | 📅 À faire | - |

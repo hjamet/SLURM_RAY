@@ -4,6 +4,9 @@ import os
 import dill
 import logging
 import signal
+from getpass import getpass
+
+from dotenv import load_dotenv
 
 from slurmray.backend.slurm import SlurmBackend
 from slurmray.backend.local import LocalBackend
@@ -59,13 +62,59 @@ class RayLauncher:
             runtime_env (dict, optional): Environment variables to share between all the workers. Can be useful for issues like https://github.com/ray-project/ray/issues/418. Default to empty.
             server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster/server ressources. Defaults to True.
             server_ssh (str, optional): If `server_run` is set to true, the address of the server to use. Defaults to "curnagl.dcsr.unil.ch" for Slurm mode, or "130.223.73.209" for Desi mode (auto-detected if cluster='desi').
-            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect. Defaults to "hjamet" (Slurm) or "henri" (Desi).
-            server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. Can also be provided via environment variables (CURNAGL_PASSWORD for Slurm, DESI_PASSWORD for Desi). CAUTION: never write your password in the code. Defaults to None.
+            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect. Credentials are automatically loaded from a `.env` file (CURNAGL_USERNAME for Slurm, DESI_USERNAME for Desi) if available. Priority: environment variables → explicit parameter → default ("hjamet" for Slurm, "henri" for Desi).
+            server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. Credentials are automatically loaded from a `.env` file (CURNAGL_PASSWORD for Slurm, DESI_PASSWORD for Desi) if available. Priority: explicit parameter → environment variables → interactive prompt. CAUTION: never write your password in the code. Defaults to None.
             log_file (str, optional): Path to the log file. Defaults to "logs/RayLauncher.log".
             cluster (str, optional): Type of cluster/backend to use: 'slurm' (default, e.g. Curnagl) or 'desi' (ISIPOL09/Desi server). Defaults to "slurm".
             force_reinstall_venv (bool, optional): Force complete removal and recreation of virtual environment on remote server/cluster. This will delete the existing venv and reinstall all packages from requirements.txt. Use this if the venv is corrupted or you need a clean installation. Defaults to False.
         """
-        # Save the parameters
+        # Load environment variables from .env file
+        load_dotenv()
+        
+        # Determine cluster type first (needed for credential loading)
+        self.cluster_type = cluster.lower() # 'slurm' or 'desi'
+        
+        # Determine environment variable names based on cluster type
+        if self.cluster_type == "desi":
+            env_username_key = "DESI_USERNAME"
+            env_password_key = "DESI_PASSWORD"
+            default_username = "henri"
+        else:  # slurm
+            env_username_key = "CURNAGL_USERNAME"
+            env_password_key = "CURNAGL_PASSWORD"
+            default_username = "hjamet"
+        
+        # Load credentials with priority: .env → explicit parameter → default/prompt
+        # Priority 1: Load from environment variables (from .env or system env)
+        env_username = os.getenv(env_username_key)
+        env_password = os.getenv(env_password_key)
+        
+        # For username: env → explicit parameter → default
+        # If username is the default value, prefer env if available (user likely wants .env)
+        # If username is different from default, it's likely an explicit parameter, so use it
+        if server_username != default_username:
+            # Explicit parameter provided (different from default)
+            self.server_username = server_username
+        elif env_username:
+            # Username is default value, prefer env if available
+            self.server_username = env_username
+        else:
+            # Use default
+            self.server_username = default_username
+        
+        # For password: explicit parameter → env → None (will prompt later if needed)
+        # Explicit parameter takes precedence over env
+        if server_password is not None:
+            # Explicit parameter provided
+            self.server_password = server_password
+        elif env_password:
+            # Load from environment
+            self.server_password = env_password
+        else:
+            # None: will be prompted by backend if needed
+            self.server_password = None
+        
+        # Save the other parameters
         self.project_name = project_name
         self.func = func
         self.args = args
@@ -77,16 +126,8 @@ class RayLauncher:
         self.runtime_env = runtime_env
         self.server_run = server_run
         self.server_ssh = server_ssh
-        self.server_username = server_username
-        self.server_password = server_password
         self.log_file = log_file
-        self.cluster_type = cluster.lower() # 'slurm' or 'desi'
         self.force_reinstall_venv = force_reinstall_venv
-
-        # Set default username if not provided based on cluster type
-        if self.server_username == "hjamet" and self.cluster_type == "desi":
-            # Try to load from env or use default 'henri' for Desi
-            self.server_username = os.getenv("DESI_USERNAME", "henri")
         
         self.__setup_logger()
         

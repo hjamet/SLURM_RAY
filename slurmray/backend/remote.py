@@ -30,23 +30,13 @@ class RemoteMixin(ClusterBackend):
         while not connected:
             try:
                 if self.launcher.server_password is None:
-                    # Try loading from env if available, otherwise prompt
-                    # Only use generic env vars if specific ones aren't set or if logic dictates
-                    # Check if password was passed in __init__ (already handled by launcher init)
-                    
-                    # Explicitly check for DESI_PASSWORD if cluster is desi
-                    if hasattr(self.launcher, 'cluster_type') and self.launcher.cluster_type == 'desi':
-                         env_pass = os.environ.get("DESI_PASSWORD")
-                         if env_pass:
-                             self.launcher.server_password = env_pass
-
-                    if self.launcher.server_password is None:
-                        # Add ssh key support? Assuming password for now as per original code
-                        try:
-                            self.launcher.server_password = getpass("Enter your cluster password: ")
-                        except Exception:
-                            # Handle case where getpass fails (e.g. non-interactive terminal)
-                            pass
+                    # Password not provided: prompt interactively
+                    # (Credentials from .env or explicit parameters are already loaded in RayLauncher.__init__)
+                    try:
+                        self.launcher.server_password = getpass("Enter your cluster password: ")
+                    except Exception:
+                        # Handle case where getpass fails (e.g. non-interactive terminal)
+                        pass
 
                 if self.launcher.server_password is None:
                      raise ValueError("No password provided and cannot prompt (non-interactive)")
