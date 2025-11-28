@@ -235,6 +235,7 @@ class SSHTunnel:
             if self.local_port == 0:
                 self.local_port = local_socket.getsockname()[1]
             local_socket.listen(5)
+            local_socket._closed = False  # Track if server is closed
             self.forward_server = local_socket
             
             def forward_handler(client_socket):
@@ -275,14 +276,23 @@ class SSHTunnel:
                     thread2.start()
                     thread1.join()
                     thread2.join()
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Silently ignore connection errors when tunnel is closing
+                    if self.forward_server and not self.forward_server._closed:
+                        # Only log if server is still supposed to be running
+                        pass
                 finally:
-                    client_socket.close()
+                    try:
+                        client_socket.close()
+                    except Exception:
+                        pass
             
             def accept_handler():
                 while True:
                     try:
+                        # Check if server is closed before accepting
+                        if hasattr(self.forward_server, '_closed') and self.forward_server._closed:
+                            break
                         client_socket, addr = self.forward_server.accept()
                         thread = threading.Thread(
                             target=forward_handler,
@@ -290,6 +300,9 @@ class SSHTunnel:
                             daemon=True,
                         )
                         thread.start()
+                    except (OSError, socket.error):
+                        # Socket closed or connection refused - normal when shutting down
+                        break
                     except Exception:
                         break
             
@@ -318,9 +331,14 @@ class SSHTunnel:
         """Close SSH tunnel"""
         if self.forward_server:
             try:
+                # Mark server as closed first to prevent new connections
+                self.forward_server._closed = True
                 self.forward_server.close()
             except Exception:
                 pass
         if self.ssh_client:
-            self.ssh_client.close()
+            try:
+                self.ssh_client.close()
+            except Exception:
+                pass
         return False

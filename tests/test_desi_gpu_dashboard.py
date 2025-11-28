@@ -30,10 +30,8 @@ def test_desi_gpu_dashboard():
     cluster = RayLauncher(
         project_name="test_desi_gpu",
         files=[],
-        modules=[],  # Ignored on Desi
         node_nbr=1,  # Always 1
         use_gpu=False,  # Managed via Smart Lock on Desi, but Ray still detects if present
-        memory=8,
         max_running_time=10,
         server_run=True,
         server_ssh="130.223.73.209",  # Desi IP

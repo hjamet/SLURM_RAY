@@ -111,6 +111,7 @@ class RayLauncher:
         # Save the other parameters
         self.project_name = project_name
         self.files = files
+        self.modules = modules
         self.node_nbr = node_nbr
         self.use_gpu = use_gpu
         self.memory = memory
@@ -120,6 +121,15 @@ class RayLauncher:
         self.server_ssh = server_ssh
         self.log_file = log_file
         self.force_reinstall_venv = force_reinstall_venv
+
+        # Track which parameters were explicitly passed (for warnings)
+        import inspect
+
+        frame = inspect.currentframe()
+        args, _, _, values = inspect.getargvalues(frame)
+        self._explicit_params = {
+            arg: values[arg] for arg in args[1:] if arg in values
+        }  # Skip 'self'
 
         self.__setup_logger()
 
@@ -223,12 +233,13 @@ class RayLauncher:
                     f"Warning: Desi cluster only supports single node execution. node_nbr={self.node_nbr} will be ignored (effectively 1)."
                 )
 
-            if self.modules:
+            # Only warn if parameters were explicitly passed (not defaults)
+            if "modules" in self._explicit_params and self.modules:
                 self.logger.warning(
                     "Warning: Modules loading is not supported on Desi (no module system). Modules list will be ignored."
                 )
 
-            if self.memory != 64:  # Assuming 64 is default
+            if "memory" in self._explicit_params and self.memory != 64:  # 64 is default
                 self.logger.warning(
                     "Warning: Memory allocation is not enforced on Desi (shared resource)."
                 )
