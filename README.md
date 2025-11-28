@@ -29,46 +29,46 @@ pip install slurmray
 - Valid credentials (username/password)
 - Python 3.12+ on both local and remote machines
 
-## Principaux résultats
+## Key Results
 
-| Métrique | Valeur | Notes |
+| Metric | Value | Notes |
 |---|---|---|
-| Support Backend | Slurm, Desi (SSH) | Curnagl & ISIPOL09 supportés |
-| Gestion de tâches | Ray | Distribution automatique |
-| Installation | Optimisée | Installation incrémentale avec cache et détection de versions |
-| Dashboard | Intégré | Ouverture automatique dans le navigateur (via tunnel SSH) |
-| Compatibilité | Python 3.8 - 3.12 | Gestion automatique de la sérialisation inter-versions |
+| Backend Support | Slurm, Desi (SSH) | Curnagl & ISIPOL09 supported |
+| Task Management | Ray | Automatic distribution |
+| Installation | Optimized | Incremental installation with cache and version detection |
+| Dashboard | Integrated | Automatic browser opening (via SSH tunnel) |
+| Compatibility | Python 3.8 - 3.12 | Automatic inter-version serialization handling |
 
-## Plan du repo
+## Repository Structure
 
 ```
 root/
-├── slurmray/               # Code source du package
-│   ├── backend/            # Implémentations backends (Slurm, Desi, Local)
-│   ├── assets/             # Templates de scripts (sbatch, spython)
-│   └── RayLauncher.py      # Classe principale
-├── tests/                  # Tests unitaires et d'intégration
-├── documentation/          # Documentation du projet
-├── logs/                   # Logs d'exécution
-├── poetry.lock             # Dépendances lock
-├── pyproject.toml          # Configuration Poetry
-└── README.md               # Documentation principale
+├── slurmray/               # Package source code
+│   ├── backend/            # Backend implementations (Slurm, Desi, Local)
+│   ├── assets/             # Script templates (sbatch, spython)
+│   └── RayLauncher.py      # Main class
+├── tests/                  # Unit and integration tests
+├── documentation/          # Project documentation
+├── logs/                   # Execution logs
+├── poetry.lock             # Locked dependencies
+├── pyproject.toml          # Poetry configuration
+└── README.md               # Main documentation
 ```
 
-## Scripts d'entrée principaux (scripts/)
+## Main Entry Scripts (scripts/)
 
-| Chemin | Description | Exemple | Explication |
+| Path | Description | Example | Explanation |
 |---|---|---|---|
-| `slurmray/cli.py` | Interface CLI principale | `slurmray curnagl` ou `slurmray desi` | *Lance l'interface interactive pour gérer les jobs et accéder au dashboard. Supporte Curnagl (Slurm) et Desi (ISIPOL09). Par défaut, affiche l'aide si aucun cluster n'est spécifié.* |
-| `install.sh` | Script d'installation local | `./install.sh` ou `./install.sh --force-reinstall` | *Installe les dépendances avec Poetry. Utiliser `--force-reinstall` pour supprimer et recréer l'environnement virtuel local avant installation.* |
+| `slurmray/cli.py` | Main CLI interface | `slurmray curnagl` or `slurmray desi` | *Launches the interactive interface to manage jobs and access the dashboard. Supports Curnagl (Slurm) and Desi (ISIPOL09). By default, displays help if no cluster is specified.* |
+| `install.sh` | Local installation script | `./install.sh` or `./install.sh --force-reinstall` | *Installs dependencies with Poetry. Use `--force-reinstall` to remove and recreate the local virtual environment before installation.* |
 
-## Scripts exécutables secondaires (scripts/utils/)
+## Secondary Executable Scripts (scripts/utils/)
 
-| Chemin | Description | Exemple | Explication |
+| Path | Description | Example | Explanation |
 |---|---|---|---|
-| `tests/test_gpu_dashboard_long.py` | Test GPU et dashboard avec job long | `poetry run python tests/test_gpu_dashboard_long.py` | *Lance un job GPU de 5 minutes pour tester le dashboard via l'interface CLI* |
-| `tests/test_curnagl_gpu_dashboard.py` | Test automatisé Curnagl (GPU + Dashboard) | `poetry run python tests/test_curnagl_gpu_dashboard.py` | *Lance un job Slurm avec GPU, vérifie PyTorch/Ray et l'accès local au dashboard via tunnel SSH* |
-| `tests/test_desi_gpu_dashboard.py` | Test automatisé Desi (GPU + Dashboard) | `poetry run python tests/test_desi_gpu_dashboard.py` | *Lance un job sur Desi (Smart Lock), vérifie PyTorch/Ray et l'accès local au dashboard via tunnel SSH* |
+| `tests/test_gpu_dashboard_long.py` | GPU and dashboard test with long job | `poetry run python tests/test_gpu_dashboard_long.py` | *Launches a 5-minute GPU job to test the dashboard via the CLI interface* |
+| `tests/test_curnagl_gpu_dashboard.py` | Automated Curnagl test (GPU + Dashboard) | `poetry run python tests/test_curnagl_gpu_dashboard.py` | *Launches a Slurm job with GPU, verifies PyTorch/Ray and local dashboard access via SSH tunnel* |
+| `tests/test_desi_gpu_dashboard.py` | Automated Desi test (GPU + Dashboard) | `poetry run python tests/test_desi_gpu_dashboard.py` | *Launches a job on Desi (Smart Lock), verifies PyTorch/Ray and local dashboard access via SSH tunnel* |
 
 ## Usage
 
@@ -347,7 +347,7 @@ The Launcher documentation is available [here](documentation/RayLauncher.md).
 
 # Roadmap
 
-| Tâche | Objectif | État | Dépendances |
+| Task | Objective | Status | Dependencies |
 |---|---|---|---|
-| **Intégrer Prometheus pour le monitoring des métriques Ray** | Intégrer Prometheus dans le module RayLauncher pour permettre le monitoring des métriques système et applicatives de Ray. Ray expose automatiquement des métriques Prometheus sur chaque nœud du cluster, mais il faut configurer Prometheus pour les scraper. L'implémentation doit : (1) Configurer Ray pour exposer les métriques Prometheus en activant l'export de métriques dans `ray start` (via `--metrics-export-port` dans `sbatch_template.sh` et configuration équivalente pour Desi), (2) Créer un mécanisme de découverte automatique des endpoints de métriques en utilisant soit le service discovery file-based (`/tmp/ray/prom_metrics_service_discovery.json`) soit l'HTTP service discovery via l'endpoint `/api/prometheus/sd` du dashboard Ray, (3) Configurer Prometheus pour scraper les métriques (optionnellement avec auto-discovery via file SD ou HTTP SD), (4) Intégrer cette configuration dans les backends Slurm et Desi, en gérant le port forwarding SSH pour permettre l'accès local à Prometheus si nécessaire, (5) Documenter l'utilisation et la configuration dans le README et la documentation, (6) Optionnellement intégrer Grafana avec les dashboards par défaut de Ray (disponibles dans `/tmp/ray/session_latest/metrics/grafana/dashboards`) pour la visualisation. Les métriques doivent être accessibles en local via tunnel SSH similaire au dashboard Ray. Cette fonctionnalité doit être optionnelle et activable via un paramètre du constructeur `RayLauncher` (ex: `enable_prometheus: bool = False`). | 📅 À faire | Refactoriser l'API de RayLauncher pour séparer configuration et exécution |
+| **Integrate Prometheus for Ray metrics monitoring** | Integrate Prometheus into the RayLauncher module to enable monitoring of Ray system and application metrics. Ray automatically exposes Prometheus metrics on each cluster node, but Prometheus must be configured to scrape them. The implementation must: (1) Configure Ray to expose Prometheus metrics by enabling metrics export in `ray start` (via `--metrics-export-port` in `sbatch_template.sh` and equivalent configuration for Desi), (2) Create an automatic discovery mechanism for metrics endpoints using either file-based service discovery (`/tmp/ray/prom_metrics_service_discovery.json`) or HTTP service discovery via the Ray dashboard endpoint `/api/prometheus/sd`, (3) Configure Prometheus to scrape metrics (optionally with auto-discovery via file SD or HTTP SD), (4) Integrate this configuration into Slurm and Desi backends, managing SSH port forwarding to enable local access to Prometheus if necessary, (5) Document usage and configuration in the README and documentation, (6) Optionally integrate Grafana with Ray's default dashboards (available in `/tmp/ray/session_latest/metrics/grafana/dashboards`) for visualization. Metrics must be accessible locally via SSH tunnel similar to the Ray dashboard. This feature must be optional and activatable via a `RayLauncher` constructor parameter (e.g., `enable_prometheus: bool = False`). | 📅 To do | Refactor RayLauncher API to separate configuration and execution |
 
