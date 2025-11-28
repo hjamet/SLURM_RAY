@@ -16,12 +16,16 @@ class DesiBackend(RemoteMixin):
     # Constants for Desi environment
     SERVER_BASE_DIR = "/home/users/{username}/slurmray-server" # Need to check where to write on Desi. assuming home.
     PYTHON_CMD = "/usr/bin/python3" # To be verified
+    
+    def __init__(self, launcher):
+        super().__init__(launcher)
+        self.tunnel = None
 
     def run(self, cancel_old_jobs: bool = True) -> Any:
         """Run the job on Desi"""
-        self.logger.info("Connecting to Desi server...")
+        self.logger.info("🔌 Connecting to Desi server...")
         self._connect()
-        self.logger.info("Connected successfully")
+        self.logger.info("✅ Connected successfully")
         
         # Check Python version compatibility
         self._check_python_version_compatibility(self.ssh_client)
@@ -41,7 +45,7 @@ class DesiBackend(RemoteMixin):
         should_recreate_venv = True
         if self.launcher.force_reinstall_venv:
             # Force recreation: remove venv if it exists
-            self.logger.info("Recreating virtual environment...")
+            self.logger.info("🔄 Recreating virtual environment...")
             self.ssh_client.exec_command(f"rm -rf {base_dir}/venv")
             should_recreate_venv = True
         elif os.path.exists(req_file):
@@ -87,7 +91,7 @@ class DesiBackend(RemoteMixin):
                         if (f.endswith(".py") or f.endswith(".pkl") or f.endswith(".txt")) 
                         and f != "requirements.txt"]
         if files_to_push:
-            self.logger.info(f"Uploading {len(files_to_push)} file(s) to server...")
+            self.logger.info(f"📤 Uploading {len(files_to_push)} file(s) to server...")
             for file in files_to_push:
                 sftp.put(os.path.join(self.launcher.project_path, file), f"{base_dir}/{file}")
         
@@ -114,7 +118,7 @@ class DesiBackend(RemoteMixin):
             dep_manager.store_venv_hash(current_hash)
         
         # Copy source code of slurmray to server (since it's not on PyPI)
-        self.logger.info("Uploading slurmray source code...")
+        self.logger.info("📦 Uploading slurmray source code...")
         self._push_source_code(sftp, base_dir)
         
         for file in self.launcher.files:
@@ -127,7 +131,7 @@ class DesiBackend(RemoteMixin):
         self.ssh_client.exec_command(f"chmod +x {base_dir}/{runner_script}")
         
         # Run the script
-        self.logger.info("Starting job execution...")
+        self.logger.info("🚀 Starting job execution...")
         
         desi_wrapper_script = "desi_wrapper.py"
         self._write_desi_wrapper(desi_wrapper_script)
@@ -138,7 +142,6 @@ class DesiBackend(RemoteMixin):
         stdin, stdout, stderr = self.ssh_client.exec_command(cmd, get_pty=True)
         
         # Stream output
-        tunnel = None
         ray_started = False
         
         # Read output line by line
@@ -166,12 +169,12 @@ class DesiBackend(RemoteMixin):
                     url_match = re.search(r'http://[^\s]+', line_stripped)
                     if url_match:
                         dashboard_url = url_match.group(0)
-                        self.logger.info(f"Ray dashboard started at {dashboard_url}")
+                        self.logger.info(f"📊 Ray dashboard started at {dashboard_url}")
                 
                 # Start SSH Tunnel
-                if not tunnel:
+                if not self.tunnel:
                     try:
-                        tunnel = SSHTunnel(
+                        self.tunnel = SSHTunnel(
                             ssh_host=self.launcher.server_ssh,
                             ssh_username=self.launcher.server_username,
                             ssh_password=self.launcher.server_password,
@@ -180,20 +183,34 @@ class DesiBackend(RemoteMixin):
                             remote_port=8265,
                             logger=self.logger
                         )
-                        tunnel.__enter__()
-                        self.logger.info("Dashboard accessible locally at http://localhost:8888")
+                        self.tunnel.__enter__()
+                        self.logger.info("🌐 Dashboard accessible locally at http://localhost:8888")
                     except Exception as e:
-                        self.logger.warning(f"Could not establish SSH tunnel: {e}")
-                        tunnel = None
+                        self.logger.warning(f"⚠️  Could not establish SSH tunnel: {e}")
+                        self.tunnel = None
                 continue
             
-            # Print other important messages (including errors)
-            if any(keyword in line_stripped for keyword in ["Lock acquired", "Starting Payload", "Loaded function", "Job started", "Function execution", "Result written", "Releasing lock", "Lock released", "Error", "Traceback", "Exception"]):
-                print(line, end="")
+            # Print all output (user's print statements and important messages)
+            # Filter out only very noisy system messages
+            if not any(noise in line_stripped for noise in ["pkill:", "WARNING:"]):
+                # Always print user output
+                print(line, end="", flush=True)
+                
+                # Log important system messages with emojis
                 if "Error" in line_stripped or "Traceback" in line_stripped or "Exception" in line_stripped:
-                    self.logger.error(line_stripped)
-                else:
-                    self.logger.info(line_stripped)
+                    self.logger.error(f"❌ {line_stripped}")
+                elif "Lock acquired" in line_stripped:
+                    self.logger.info(f"🔒 {line_stripped}")
+                elif "Starting Payload" in line_stripped:
+                    self.logger.info(f"🚀 {line_stripped}")
+                elif "Loaded function" in line_stripped:
+                    self.logger.info(f"📦 {line_stripped}")
+                elif "Job started" in line_stripped or "Sleeping" in line_stripped:
+                    self.logger.info(f"▶️  {line_stripped}")
+                elif "Result written" in line_stripped:
+                    self.logger.info(f"💾 {line_stripped}")
+                elif "Releasing lock" in line_stripped or "Lock released" in line_stripped:
+                    self.logger.info(f"🔓 {line_stripped}")
         
         # Read any remaining stderr
         stderr_output = stderr.read().decode('utf-8')
@@ -216,15 +233,12 @@ class DesiBackend(RemoteMixin):
             except Exception:
                 pass
         
-        # Close tunnel
-        if tunnel:
-            tunnel.__exit__(None, None, None)
-        
         # Wait a bit for file system to sync
+        # Keep tunnel open during job execution - it will be closed at the end of run()
         time.sleep(2)
         
         # Wait for result file to be created on remote (with timeout)
-        self.logger.info("Waiting for job completion...")
+        self.logger.info("⏳ Waiting for job completion...")
         max_wait = 300  # 5 minutes max
         wait_start = time.time()
         result_available = False
@@ -254,11 +268,11 @@ class DesiBackend(RemoteMixin):
             raise FileNotFoundError(f"Job did not complete within {max_wait}s timeout")
         
         # Download result
-        self.logger.info("Retrieving results...")
+        self.logger.info("📥 Retrieving results...")
         result_path = os.path.join(self.launcher.project_path, "result.pkl")
         try:
             sftp.get(f"{base_dir}/result.pkl", result_path)
-            self.logger.info("Results retrieved successfully")
+            self.logger.info("✅ Results retrieved successfully")
         except Exception as e:
             self.logger.error(f"Failed to download result file: {e}")
             raise
@@ -266,6 +280,11 @@ class DesiBackend(RemoteMixin):
         # Load result BEFORE cleanup (cleanup removes result.pkl)
         with open(result_path, "rb") as f:
             result = dill.load(f)
+        
+        # Close tunnel now that job is complete
+        if self.tunnel:
+            self.tunnel.__exit__(None, None, None)
+            self.tunnel = None
         
         # Clean up remote temporary files (preserve venv and cache)
         self.ssh_client.exec_command(
