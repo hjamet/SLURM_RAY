@@ -17,13 +17,13 @@ dill.settings["recurse"] = True
 
 class RayLauncher:
     """A class that automatically connects RAY workers and executes the function requested by the user.
-    
+
     Official tool from DESI @ HEC UNIL.
-    
+
     Supports two execution modes:
     - **Slurm mode** (`cluster='slurm'`): For Slurm-based clusters like Curnagl. Uses sbatch/squeue for job management.
     - **Desi mode** (`cluster='desi'`): For standalone servers like ISIPOL09. Uses Smart Lock scheduling for resource management.
-    
+
     The launcher automatically selects the appropriate backend based on the `cluster` parameter and environment detection.
     """
 
@@ -44,7 +44,7 @@ class RayLauncher:
         server_username: str = None,
         server_password: str = None,
         log_file: str = "logs/RayLauncher.log",
-        cluster: str = "slurm", # 'slurm' (curnagl) or 'desi'
+        cluster: str = "slurm",  # 'slurm' (curnagl) or 'desi'
         force_reinstall_venv: bool = False,
     ):
         """Initialize the launcher
@@ -70,10 +70,10 @@ class RayLauncher:
         """
         # Load environment variables from .env file
         load_dotenv()
-        
+
         # Determine cluster type first (needed for credential loading)
-        self.cluster_type = cluster.lower() # 'slurm' or 'desi'
-        
+        self.cluster_type = cluster.lower()  # 'slurm' or 'desi'
+
         # Determine environment variable names based on cluster type
         if self.cluster_type == "desi":
             env_username_key = "DESI_USERNAME"
@@ -83,12 +83,12 @@ class RayLauncher:
             env_username_key = "CURNAGL_USERNAME"
             env_password_key = "CURNAGL_PASSWORD"
             default_username = "hjamet"
-        
+
         # Load credentials with priority: .env → explicit parameter → default/prompt
         # Priority 1: Load from environment variables (from .env or system env)
         env_username = os.getenv(env_username_key)
         env_password = os.getenv(env_password_key)
-        
+
         # For username: explicit parameter → env → default
         if server_username is not None:
             # Explicit parameter provided
@@ -99,7 +99,7 @@ class RayLauncher:
         else:
             # Use default
             self.server_username = default_username
-        
+
         # For password: explicit parameter → env → None (will prompt later if needed)
         # Explicit parameter takes precedence over env
         if server_password is not None:
@@ -111,7 +111,7 @@ class RayLauncher:
         else:
             # None: will be prompted by backend if needed
             self.server_password = None
-        
+
         # Save the other parameters
         self.project_name = project_name
         self.func = func
@@ -126,9 +126,9 @@ class RayLauncher:
         self.server_ssh = server_ssh
         self.log_file = log_file
         self.force_reinstall_venv = force_reinstall_venv
-        
+
         self.__setup_logger()
-        
+
         # Default modules with specific versions for Curnagl compatibility
         # Using latest stable versions available on Curnagl (SLURM 24.05.3)
         # gcc/13.2.0: Latest GCC version
@@ -136,7 +136,7 @@ class RayLauncher:
         # cuda/12.6.2: Latest CUDA version
         # cudnn/9.2.0.82-12: Compatible with cuda/12.6.2
         default_modules = ["gcc/13.2.0", "python/3.12.1"]
-        
+
         # Filter out any gcc or python modules from user list (we use defaults)
         # Allow user to override by providing specific versions
         user_modules = []
@@ -145,9 +145,9 @@ class RayLauncher:
             if mod.startswith("gcc") or mod.startswith("python"):
                 continue
             user_modules.append(mod)
-        
+
         self.modules = default_modules + user_modules
-        
+
         if self.use_gpu is True:
             # Check if user provided specific cuda/cudnn versions
             has_cuda = any("cuda" in mod for mod in self.modules)
@@ -156,7 +156,7 @@ class RayLauncher:
                 self.modules.append("cuda/12.6.2")
             if not has_cudnn:
                 self.modules.append("cudnn/9.2.0.82-12")
-            
+
         # --- Validation des Arguments ---
         self._validate_arguments()
 
@@ -169,7 +169,7 @@ class RayLauncher:
         self.project_path = os.path.join(self.pwd_path, ".slogs", self.project_name)
         if not os.path.exists(self.project_path):
             os.makedirs(self.project_path)
-            
+
         # Initialize Backend
         if self.server_run:
             if self.cluster_type == "desi":
@@ -177,11 +177,13 @@ class RayLauncher:
             elif self.cluster_type == "slurm":
                 self.backend = SlurmBackend(self)
             else:
-                raise ValueError(f"Unknown cluster type: {self.cluster_type}. Use 'slurm' or 'desi'.")
-        elif self.cluster: # Running ON a cluster (Slurm)
-             self.backend = SlurmBackend(self)
+                raise ValueError(
+                    f"Unknown cluster type: {self.cluster_type}. Use 'slurm' or 'desi'."
+                )
+        elif self.cluster:  # Running ON a cluster (Slurm)
+            self.backend = SlurmBackend(self)
         else:
-             self.backend = LocalBackend(self)
+            self.backend = LocalBackend(self)
 
     def __setup_logger(self):
         """Setup the logger"""
@@ -193,22 +195,22 @@ class RayLauncher:
         # Configure the logger
         self.logger = logging.getLogger(f"RayLauncher-{self.project_name}")
         self.logger.setLevel(logging.INFO)
-        
+
         # Remove existing handlers to avoid duplication if instantiated multiple times
         if self.logger.hasHandlers():
             self.logger.handlers.clear()
 
         # File handler (constantly rewritten)
-        file_handler = logging.FileHandler(self.log_file, mode='w')
+        file_handler = logging.FileHandler(self.log_file, mode="w")
         file_handler.setLevel(logging.INFO)
-        file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
         file_handler.setFormatter(file_formatter)
         self.logger.addHandler(file_handler)
 
         # Console handler (only warnings and errors)
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.WARNING)
-        console_formatter = logging.Formatter('%(levelname)s: %(message)s')
+        console_formatter = logging.Formatter("%(levelname)s: %(message)s")
         console_handler.setFormatter(console_formatter)
         self.logger.addHandler(console_handler)
 
@@ -217,30 +219,40 @@ class RayLauncher:
         if self.cluster_type == "desi":
             # Update default server_ssh if not provided or if it's the default Curnagl one
             if self.server_ssh == "curnagl.dcsr.unil.ch":
-                self.logger.info("Switching default server_ssh to Desi IP (130.223.73.209)")
+                self.logger.info(
+                    "Switching default server_ssh to Desi IP (130.223.73.209)"
+                )
                 self.server_ssh = "130.223.73.209"
-            
+
             if self.node_nbr > 1:
-                self.logger.warning(f"Warning: Desi cluster only supports single node execution. node_nbr={self.node_nbr} will be ignored (effectively 1).")
-            
+                self.logger.warning(
+                    f"Warning: Desi cluster only supports single node execution. node_nbr={self.node_nbr} will be ignored (effectively 1)."
+                )
+
             if self.modules:
-                self.logger.warning("Warning: Modules loading is not supported on Desi (no module system). Modules list will be ignored.")
-                
-            if self.memory != 64: # Assuming 64 is default
-                 self.logger.warning("Warning: Memory allocation is not enforced on Desi (shared resource).")
+                self.logger.warning(
+                    "Warning: Modules loading is not supported on Desi (no module system). Modules list will be ignored."
+                )
+
+            if self.memory != 64:  # Assuming 64 is default
+                self.logger.warning(
+                    "Warning: Memory allocation is not enforced on Desi (shared resource)."
+                )
 
     def _handle_signal(self, signum, frame):
         """Handle interruption signals (SIGINT, SIGTERM) to cleanup resources"""
         sig_name = signal.Signals(signum).name
         self.logger.warning(f"Signal {sig_name} received. Cleaning up resources...")
         print(f"\nInterruption received ({sig_name}). Canceling job and cleaning up...")
-        
-        if hasattr(self, 'backend'):
-            if hasattr(self.backend, 'job_id') and self.backend.job_id:
+
+        if hasattr(self, "backend"):
+            if hasattr(self.backend, "job_id") and self.backend.job_id:
                 self.backend.cancel(self.backend.job_id)
-            elif hasattr(self, 'job_id') and self.job_id: # Fallback if we stored it on launcher
-                 self.backend.cancel(self.job_id)
-        
+            elif (
+                hasattr(self, "job_id") and self.job_id
+            ):  # Fallback if we stored it on launcher
+                self.backend.cancel(self.job_id)
+
         sys.exit(1)
 
     def __call__(self, cancel_old_jobs: bool = True, serialize: bool = True) -> Any:
@@ -272,23 +284,23 @@ class RayLauncher:
 
     def __serialize_func_and_args(self, func: Callable = None, args: list = None):
         """Serialize the function and the arguments
-        
+
         This method attempts to serialize functions using source code extraction
         (via inspect.getsource() or dill.source.getsource()) for better compatibility
         across Python versions. If source extraction fails, it falls back to dill
         bytecode serialization.
-        
+
         **Limitations of source-based serialization:**
         - Functions with closures: Only the function body is captured, not the captured
           variables. The function may fail at runtime if it depends on closure variables.
         - Functions defined in interactive shells or dynamically compiled code may not
           have accessible source.
         - Lambda functions defined inline may have limited source information.
-        
+
         **Fallback behavior:**
         - If source extraction fails, dill bytecode serialization is used as fallback.
         - This ensures backward compatibility but may fail with Python version mismatches.
-        
+
         Args:
             func (Callable, optional): Function to serialize. Defaults to None.
             args (list, optional): Arguments of the function. Defaults to None.
@@ -298,10 +310,11 @@ class RayLauncher:
         # Try to get source code for the function (more robust across versions)
         source_extracted = False
         source_method = None
-        
+
         # Method 1: Try inspect.getsource() (standard library, most common)
         try:
             import inspect
+
             source = inspect.getsource(func)
             source_method = "inspect.getsource"
             source_extracted = True
@@ -311,11 +324,11 @@ class RayLauncher:
             self.logger.debug(f"inspect.getsource() failed: {e}")
         except Exception as e:
             self.logger.debug(f"inspect.getsource() unexpected error: {e}")
-        
+
         # Method 2: Try dill.source.getsource() as alternative
         if not source_extracted:
             try:
-                if hasattr(dill, 'source') and hasattr(dill.source, 'getsource'):
+                if hasattr(dill, "source") and hasattr(dill.source, "getsource"):
                     source = dill.source.getsource(func)
                     source_method = "dill.source.getsource"
                     source_extracted = True
@@ -323,17 +336,19 @@ class RayLauncher:
                     self.logger.debug("dill.source.getsource() not available")
             except Exception as e:
                 self.logger.debug(f"dill.source.getsource() failed: {e}")
-        
+
         # Process and save source if extracted
         if source_extracted:
             try:
                 # Handle indentation if the function is defined inside another
                 # Deduplicate indentation
-                lines = source.split('\n')
+                lines = source.split("\n")
                 if lines:
                     first_line = lines[0]
                     # Skip empty lines at the start
-                    first_non_empty = next((i for i, line in enumerate(lines) if line.strip()), 0)
+                    first_non_empty = next(
+                        (i for i, line in enumerate(lines) if line.strip()), 0
+                    )
                     if first_non_empty < len(lines):
                         first_line = lines[first_non_empty]
                         indent = len(first_line) - len(first_line.lstrip())
@@ -347,18 +362,20 @@ class RayLauncher:
                                     deduplicated_lines.append(line)
                             else:  # Empty line
                                 deduplicated_lines.append("")
-                        source = '\n'.join(deduplicated_lines)
-                
+                        source = "\n".join(deduplicated_lines)
+
                 # Save source code
                 with open(os.path.join(self.project_path, "func_source.py"), "w") as f:
                     f.write(source)
-                
+
                 # Save function name for loading
                 with open(os.path.join(self.project_path, "func_name.txt"), "w") as f:
                     f.write(func.__name__)
-                
-                self.logger.info(f"Function source extracted successfully using {source_method}")
-                
+
+                self.logger.info(
+                    f"Function source extracted successfully using {source_method}"
+                )
+
             except Exception as e:
                 self.logger.warning(f"Failed to process/save function source: {e}")
                 source_extracted = False
@@ -407,21 +424,17 @@ if __name__ == "__main__":
         project_name="example",  # Name of the project (will create a directory with this name in the current directory)
         func=example_func,  # Function to execute
         args={"x": 5},  # Arguments of the function
-        files=[
-            "documentation/RayLauncher.html"
-        ] if os.path.exists("documentation/RayLauncher.html") else [],  # List of files to push to the cluster
-        modules=[],  # List of modules to load on the curnagl Cluster (CUDA & CUDNN are automatically added if use_gpu=True)
-        node_nbr=1,  # Number of nodes to use
-        use_gpu=True,  # If you need A100 GPU, you can set it to True
-        memory=8,  # In MegaBytes
-        max_running_time=5,  # In minutes
+        files=(
+            ["documentation/RayLauncher.html"]
+            if os.path.exists("documentation/RayLauncher.html")
+            else []
+        ),  # List of files to push to the server
+        use_gpu=True,  # If you need GPU, you can set it to True
         runtime_env={
             "env_vars": {"NCCL_SOCKET_IFNAME": "eno1"}
         },  # Example of environment variable
-        server_run=True,  # To run the code on the cluster and not locally
-        server_ssh="curnagl.dcsr.unil.ch",  # Address of the SLURM server
-        server_username="hjamet",  # Username to connect to the server
-        server_password=None,  # Will be asked in the terminal
+        server_run=True,  # To run the code on the server and not locally
+        cluster="desi",  # Use Desi backend (credentials loaded from .env: DESI_USERNAME and DESI_PASSWORD)
     )
 
     result = launcher()
