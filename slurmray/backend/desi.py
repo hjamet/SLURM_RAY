@@ -482,13 +482,11 @@ export PYTHONPATH=$PYTHONPATH:.
 
 # Run wrapper (Smart Lock + Script execution)
 echo "🔒 Acquiring Smart Lock and starting job..."
+# Use venv Python (venv is already activated above)
 """
         
-        if use_pyenv:
-            content += f"""{pyenv_setup} && {python3_cmd} desi_wrapper.py
-"""
-        else:
-            content += f"""{python3_cmd} desi_wrapper.py
+        # After venv activation, use the venv's python, not the system/pyenv python
+        content += """python desi_wrapper.py
 """
         
         with open(os.path.join(self.launcher.project_path, filename), "w") as f:
@@ -537,8 +535,14 @@ def main():
     
     print("✅ Lock acquired! Starting job execution...")
     # Lock acquired, run payload
+    # Use venv Python if available, otherwise fallback to sys.executable
+    venv_python = os.path.join(os.path.dirname(__file__), "venv", "bin", "python")
+    if os.path.exists(venv_python):
+        python_cmd = venv_python
+    else:
+        python_cmd = sys.executable
     try:
-        subprocess.check_call([sys.executable, "spython.py"])
+        subprocess.check_call([python_cmd, "spython.py"])
     finally:
         # Release lock
         print("🔓 Releasing Smart Lock...")
