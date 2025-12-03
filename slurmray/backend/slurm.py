@@ -804,6 +804,7 @@ cd slurmray-server
         
         if use_pyenv:
             script_content += f"""# Using pyenv for Python version management
+export PATH="$HOME/.pyenv/bin:/usr/local/bin:/opt/pyenv/bin:$PATH"
 {pyenv_setup}
 """
         else:
@@ -840,8 +841,16 @@ source .venv/bin/activate
 # Install requirements (pip will skip packages that are already installed)
 # Note: requirements.txt is already optimized by Python to only include missing packages
 echo "📥 Installing dependencies from requirements.txt..."
-pip install wheel
-pip install --progress-bar off -r requirements.txt
+if ! pip install --quiet wheel >/dev/null 2>&1; then
+    echo "❌ Error installing wheel" >&2
+    pip install wheel 2>&1 | grep -E "(error|Error|ERROR|failed|Failed|FAILED|WARNING)" >&2 || true
+    exit 1
+fi
+if ! pip install --progress-bar off --quiet -r requirements.txt >/dev/null 2>&1; then
+    echo "❌ Error installing dependencies" >&2
+    pip install --progress-bar off -r requirements.txt 2>&1 | grep -E "(error|Error|ERROR|failed|Failed|FAILED|WARNING)" >&2 || true
+    exit 1
+fi
 echo "✅ Dependencies installed"
 
 # Fix torch bug (https://github.com/pytorch/pytorch/issues/111469)

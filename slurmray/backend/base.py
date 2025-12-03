@@ -404,24 +404,61 @@ class ClusterBackend(ABC):
         """
         if not ssh_client:
             return None
-            
-        # Check if pyenv is available
-        stdin, stdout, stderr = ssh_client.exec_command("command -v pyenv || which pyenv")
+        
+        # Try multiple methods to detect and initialize pyenv
+        # Method 1: Try to initialize pyenv and check if it works
+        # This handles cases where pyenv is installed but needs shell initialization
+        test_cmd = 'bash -c \'export PATH="$HOME/.pyenv/bin:$PATH" && eval "$(pyenv init -)" 2>/dev/null && pyenv --version 2>&1 || echo "NOT_FOUND"\''
+        stdin, stdout, stderr = ssh_client.exec_command(test_cmd)
         exit_status = stdout.channel.recv_exit_status()
         stdout_output = stdout.read().decode('utf-8').strip()
+        stderr_output = stderr.read().decode('utf-8').strip()
         
-        if exit_status != 0 or not stdout_output:
+        # Check if pyenv is available (either in output or via exit status)
+        pyenv_available = False
+        if "NOT_FOUND" not in stdout_output and exit_status == 0:
+            # Try another method: check if pyenv command exists after init
+            test_cmd2 = 'bash -c \'export PATH="$HOME/.pyenv/bin:$PATH" && eval "$(pyenv init -)" 2>/dev/null && command -v pyenv 2>&1 || echo "NOT_FOUND"\''
+            stdin2, stdout2, stderr2 = ssh_client.exec_command(test_cmd2)
+            exit_status2 = stdout2.channel.recv_exit_status()
+            stdout_output2 = stdout2.read().decode('utf-8').strip()
+            
+            if "NOT_FOUND" not in stdout_output2 and exit_status2 == 0:
+                pyenv_available = True
+                if self.logger:
+                    self.logger.info(f"✅ pyenv found on remote server (initialized via shell)")
+        
+        # Method 2: Try direct path check (for system-wide or shared installations)
+        if not pyenv_available:
+            test_cmd3 = 'bash -c \'export PATH="$HOME/.pyenv/bin:/usr/local/bin:/opt/pyenv/bin:$PATH" && command -v pyenv 2>&1 || which pyenv 2>&1 || echo "NOT_FOUND"\''
+            stdin3, stdout3, stderr3 = ssh_client.exec_command(test_cmd3)
+            exit_status3 = stdout3.channel.recv_exit_status()
+            stdout_output3 = stdout3.read().decode('utf-8').strip()
+            
+            if "NOT_FOUND" not in stdout_output3 and exit_status3 == 0 and stdout_output3:
+                # Try to initialize it
+                test_cmd4 = f'bash -c \'export PATH="$HOME/.pyenv/bin:/usr/local/bin:/opt/pyenv/bin:$PATH" && eval "$(pyenv init -)" 2>/dev/null && pyenv --version 2>&1 || echo "NOT_FOUND"\''
+                stdin4, stdout4, stderr4 = ssh_client.exec_command(test_cmd4)
+                exit_status4 = stdout4.channel.recv_exit_status()
+                stdout_output4 = stdout4.read().decode('utf-8').strip()
+                
+                if "NOT_FOUND" not in stdout_output4 and exit_status4 == 0:
+                    pyenv_available = True
+                    if self.logger:
+                        self.logger.info(f"✅ pyenv found on remote server: {stdout_output3}")
+        
+        if not pyenv_available:
             if self.logger:
                 self.logger.warning("⚠️ pyenv not available on remote server, falling back to system Python")
             return None
         
-        if self.logger:
-            self.logger.info(f"✅ pyenv found on remote server: {stdout_output}")
+        # Build the pyenv initialization command that works
+        # Use the same initialization method that worked during detection
+        pyenv_init_cmd = 'export PATH="$HOME/.pyenv/bin:/usr/local/bin:/opt/pyenv/bin:$PATH" && eval "$(pyenv init -)" 2>/dev/null'
         
         # Check if the Python version is already installed
-        stdin, stdout, stderr = ssh_client.exec_command(
-            f'eval "$(pyenv init -)" 2>/dev/null; pyenv versions --bare | grep -E "^{python_version}$"'
-        )
+        check_cmd = f'bash -c \'{pyenv_init_cmd} && pyenv versions --bare | grep -E "^{python_version}$" || echo ""\''
+        stdin, stdout, stderr = ssh_client.exec_command(check_cmd)
         exit_status = stdout.channel.recv_exit_status()
         installed_versions = stdout.read().decode('utf-8').strip()
         
@@ -432,10 +469,8 @@ class ClusterBackend(ABC):
             
             # Install Python version via pyenv (with timeout to avoid hanging)
             # Note: pyenv install can take a long time, so we use a timeout
-            stdin, stdout, stderr = ssh_client.exec_command(
-                f'eval "$(pyenv init -)" 2>/dev/null; timeout 600 pyenv install -s {python_version} 2>&1',
-                get_pty=True
-            )
+            install_cmd = f'bash -c \'{pyenv_init_cmd} && timeout 600 pyenv install -s {python_version} 2>&1\''
+            stdin, stdout, stderr = ssh_client.exec_command(install_cmd, get_pty=True)
             
             # Wait for command to complete (with timeout)
             import time
@@ -478,5 +513,6 @@ class ClusterBackend(ABC):
             str: Command prefix to use Python via pyenv
         """
         # Return a command that initializes pyenv and sets the version
-        # This will be used in shell scripts as: eval "$(pyenv init -)" && pyenv shell X.Y.Z && python
-        return f'eval "$(pyenv init -)" && pyenv shell {python_version} && python'
+        # Use the same initialization method that works during detection
+        # This will be used in shell scripts
+        return f'export PATH="$HOME/.pyenv/bin:/usr/local/bin:/opt/pyenv/bin:$PATH" && eval "$(pyenv init -)" 2>/dev/null && pyenv shell {python_version} && python'

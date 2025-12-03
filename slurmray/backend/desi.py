@@ -429,6 +429,7 @@ pkill -f ray 2>/dev/null || true
         
         if use_pyenv:
             content += f"""# Using pyenv for Python version management
+export PATH="$HOME/.pyenv/bin:/usr/local/bin:/opt/pyenv/bin:$PATH"
 {pyenv_setup}
 """
         else:
@@ -465,8 +466,13 @@ source venv/bin/activate
 # Install dependencies if requirements file exists
 if [ -f requirements.txt ]; then
     echo "📥 Installing dependencies from requirements.txt..."
-    pip install --progress-bar off -r requirements.txt
-    echo "✅ Dependencies installed"
+    if pip install --progress-bar off --quiet -r requirements.txt >/dev/null 2>&1; then
+        echo "✅ Dependencies installed"
+    else
+        echo "❌ Error installing dependencies" >&2
+        pip install --progress-bar off -r requirements.txt 2>&1 | grep -E "(error|Error|ERROR|failed|Failed|FAILED|WARNING)" >&2 || true
+        exit 1
+    fi
 else
     echo "⚠️  No requirements.txt found, skipping dependency installation"
 fi
