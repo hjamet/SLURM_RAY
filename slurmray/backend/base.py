@@ -40,6 +40,72 @@ class ClusterBackend(ABC):
         """
         pass
 
+    def _get_editable_packages(self):
+        """
+        Detect packages installed in editable mode (development installs).
+        
+        Returns:
+            set: Set of package names (normalized to lowercase) installed in editable mode.
+                 Returns empty set if detection fails.
+        """
+        editable_packages = set()
+        
+        # Try JSON format first (more reliable parsing)
+        result = subprocess.run(
+            ["pip", "list", "-e", "--format=json"],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            import json
+            try:
+                packages = json.loads(result.stdout)
+                for pkg in packages:
+                    name = pkg.get('name', '').strip()
+                    if name:
+                        # Clean extras e.g. package[extra] -> package
+                        if '[' in name:
+                            name = name.split('[')[0]
+                        editable_packages.add(name.lower())
+            except json.JSONDecodeError:
+                # Fall back to text parsing if JSON fails
+                pass
+        
+        # Fallback to standard text format if JSON not available or failed
+        if not editable_packages:
+            result = subprocess.run(
+                ["pip", "list", "-e"],
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                # Parse table format: skip header lines, extract package names
+                lines = result.stdout.strip().split('\n')
+                for line in lines:
+                    # Skip header lines
+                    if not line.strip() or line.startswith('Package') or '---' in line:
+                        continue
+                    # Extract package name (first column)
+                    parts = line.split()
+                    if parts:
+                        package_name = parts[0].strip()
+                        # Clean extras e.g. package[extra] -> package
+                        if '[' in package_name:
+                            package_name = package_name.split('[')[0]
+                        editable_packages.add(package_name.lower())
+        
+        if result.returncode != 0:
+            if self.logger:
+                self.logger.warning(f"Failed to detect editable packages: {result.stderr}")
+            return set()
+        
+        if self.logger and editable_packages:
+            self.logger.info(f"Detected editable packages: {', '.join(sorted(editable_packages))}")
+        
+        return editable_packages
+
     def _generate_requirements(self, force_regenerate=False):
         """
         Generate requirements.txt.
@@ -52,6 +118,22 @@ class ClusterBackend(ABC):
         req_file = os.path.join(self.launcher.project_path, "requirements.txt")
         dep_manager = DependencyManager(self.launcher.project_path, self.logger)
         
+        # Helper function to extract package name from a requirement line
+        def get_package_name(line):
+            """Extract normalized package name from requirement line."""
+            line = line.strip()
+            if not line or line.startswith('#'):
+                return None
+            # Split by ==, @, or other operators to get package name
+            name_part = line.split("==")[0].split(" @ ")[0].split("<")[0].split(">")[0].split(";")[0].strip()
+            # Clean extras e.g. package[extra] -> package
+            if '[' in name_part:
+                name_part = name_part.split('[')[0]
+            return name_part.lower()
+        
+        # Detect editable packages once (used for filtering and hash computation)
+        editable_packages = self._get_editable_packages()
+        
         # Check if we should skip regeneration
         if not force_regenerate and os.path.exists(req_file):
             # Get current environment packages hash
@@ -63,6 +145,12 @@ class ClusterBackend(ABC):
             )
             if result.returncode == 0:
                 current_env_lines = result.stdout.strip().split('\n')
+                # Filter editable packages from hash computation for consistency
+                if editable_packages:
+                    current_env_lines = [
+                        line for line in current_env_lines
+                        if get_package_name(line) not in editable_packages
+                    ]
                 current_env_hash = dep_manager.compute_requirements_hash(current_env_lines)
                 
                 # Check stored environment hash
@@ -88,8 +176,16 @@ class ClusterBackend(ABC):
         
         with open(f"{self.launcher.project_path}/requirements.txt", "r") as file:
             lines = file.readlines()
+            
             # Filter out slurmray, ray and dill
             lines = [line for line in lines if "slurmray" not in line and "ray" not in line and "dill" not in line]
+            
+            # Filter out editable packages (development installs)
+            if editable_packages:
+                lines = [
+                    line for line in lines
+                    if get_package_name(line) not in editable_packages
+                ]
             
             # Filter out ray dependencies that pip-chill picks up but should be managed by ray installation
             # This prevents version conflicts when moving between Python versions (e.g. 3.12 local -> 3.8 remote)
@@ -129,6 +225,12 @@ class ClusterBackend(ABC):
         )
         if result.returncode == 0:
             env_lines = result.stdout.strip().split('\n')
+            # Filter editable packages from hash computation for consistency
+            if editable_packages:
+                env_lines = [
+                    line for line in env_lines
+                    if get_package_name(line) not in editable_packages
+                ]
             env_hash = dep_manager.compute_requirements_hash(env_lines)
             dep_manager.store_env_hash(env_hash)
 
