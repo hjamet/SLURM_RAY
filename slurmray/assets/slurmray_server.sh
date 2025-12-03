@@ -35,8 +35,10 @@ source .venv/bin/activate
 
 # Install requirements (pip will skip packages that are already installed)
 # Note: requirements.txt is already optimized by Python to only include missing packages
+echo "📥 Installing dependencies from requirements.txt..."
 pip install wheel
-pip install -r requirements.txt
+pip install --progress-bar off -r requirements.txt
+echo "✅ Dependencies installed"
 
 # Fix torch bug (https://github.com/pytorch/pytorch/issues/111469)
 export LD_LIBRARY_PATH=$HOME/slurmray-server/.venv/lib/python3.9/site-packages/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH

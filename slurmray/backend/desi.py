@@ -406,13 +406,17 @@ pkill -f ray 2>/dev/null || true
 
 # Check for force reinstall flag
 if [ -f ".force_reinstall" ]; then
+    echo "🔄 Force reinstall detected: removing existing virtualenv..."
     rm -rf venv
     rm -f .force_reinstall
 fi
 
 # Create venv if it doesn't exist
 if [ ! -d "venv" ]; then
+    echo "📦 Creating virtual environment..."
     python3 -m venv venv
+else
+    echo "✅ Using existing virtual environment"
 fi
 
 # Activate venv
@@ -420,13 +424,18 @@ source venv/bin/activate
 
 # Install dependencies if requirements file exists
 if [ -f requirements.txt ]; then
-    pip install -q -r requirements.txt
+    echo "📥 Installing dependencies from requirements.txt..."
+    pip install --progress-bar off -r requirements.txt
+    echo "✅ Dependencies installed"
+else
+    echo "⚠️  No requirements.txt found, skipping dependency installation"
 fi
 
 # Add current directory to PYTHONPATH to make 'slurmray' importable
 export PYTHONPATH=$PYTHONPATH:.
 
 # Run wrapper (Smart Lock + Script execution)
+echo "🔒 Acquiring Smart Lock and starting job..."
 python3 desi_wrapper.py
 """
         with open(os.path.join(self.launcher.project_path, filename), "w") as f:
@@ -459,24 +468,30 @@ def main():
     lock_fd = None
     retries = 0
     
+    print("🔒 Attempting to acquire Smart Lock...")
     while lock_fd is None:
         lock_fd = acquire_lock()
         if lock_fd is None:
             if retries == 0:
-                print("Waiting for resources to become available...")
+                print("⏳ Waiting for resources to become available (another job may be running)...")
+            elif retries % 10 == 0:  # Log every 10 retries (every 5 minutes)
+                print(f"⏳ Still waiting... (attempt {retries}/{MAX_RETRIES})")
             time.sleep(RETRY_DELAY)
             retries += 1
             if retries > MAX_RETRIES:
-                print(f"Timeout: Could not acquire lock after 1000 attempts")
+                print(f"❌ Timeout: Could not acquire lock after {MAX_RETRIES} attempts ({MAX_RETRIES * RETRY_DELAY / 60:.1f} minutes)")
                 sys.exit(1)
-            
+    
+    print("✅ Lock acquired! Starting job execution...")
     # Lock acquired, run payload
     try:
         subprocess.check_call([sys.executable, "spython.py"])
     finally:
         # Release lock
+        print("🔓 Releasing Smart Lock...")
         fcntl.lockf(lock_fd, fcntl.LOCK_UN)
         lock_fd.close()
+        print("✅ Lock released")
 
 if __name__ == "__main__":
     main()
