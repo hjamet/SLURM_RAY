@@ -220,18 +220,26 @@ class DesiBackend(RemoteMixin):
             
         exit_status = stdout.channel.recv_exit_status()
         
-        # Check if script failed
+        # Check if script failed - fail-fast immediately
         if exit_status != 0:
-            self.logger.error(f"Job script exited with non-zero status: {exit_status}")
-            # Try to get stderr for more info
-            try:
-                stderr_lines = stderr.readlines()
-                if stderr_lines:
-                    self.logger.error("Script errors:")
-                    for line in stderr_lines:
-                        self.logger.error(line.strip())
-            except Exception:
-                pass
+            # Collect error information
+            error_msg = f"Job script exited with non-zero status: {exit_status}"
+            if stderr_output.strip():
+                error_msg += f"\nScript errors:\n{stderr_output}"
+            
+            # Log the error
+            self.logger.error(error_msg)
+            
+            # Close tunnel if open
+            if self.tunnel:
+                try:
+                    self.tunnel.__exit__(None, None, None)
+                except Exception:
+                    pass
+                self.tunnel = None
+            
+            # Raise exception immediately (fail-fast)
+            raise RuntimeError(error_msg)
         
         # Wait a bit for file system to sync
         # Keep tunnel open during job execution - it will be closed at the end of run()

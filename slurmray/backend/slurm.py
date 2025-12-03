@@ -579,7 +579,28 @@ class SlurmBackend(ClusterBackend):
                     self.job_id = job_id
                     self.logger.info(f"Job ID detected: {job_id}")
 
-        stdout.channel.recv_exit_status()
+        exit_status = stdout.channel.recv_exit_status()
+        
+        # Check if script failed - fail-fast immediately
+        if exit_status != 0:
+            # Collect error information
+            stderr_output = stderr.read().decode('utf-8')
+            error_msg = f"Server script exited with non-zero status: {exit_status}"
+            if stderr_output.strip():
+                error_msg += f"\nScript errors:\n{stderr_output}"
+            
+            # Log the error
+            self.logger.error(error_msg)
+            
+            # Close tunnel if open
+            if tunnel:
+                try:
+                    tunnel.__exit__(None, None, None)
+                except Exception:
+                    pass
+            
+            # Raise exception immediately (fail-fast)
+            raise RuntimeError(error_msg)
         
         # If job ID not found in output, try to find it via squeue
         if not job_id:
