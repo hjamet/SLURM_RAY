@@ -21,13 +21,13 @@ pip install slurmray
 ### For Slurm clusters (e.g., Curnagl)
 - Access to a Slurm cluster with SSH access
 - Valid credentials (username/password)
-- Python 3.12+ on both local and cluster machines
+- Python 3.9+ on local machine (Python 3.8+ supported on remote cluster via source serialization)
 
 ### For Desi server (ISIPOL09)
 - VPN access to the DESI network (if required)
 - SSH access to `130.223.73.209`
 - Valid credentials (username/password)
-- Python 3.12+ on both local and remote machines
+- Python 3.9+ on local machine (Python 3.8+ supported on remote server via source serialization)
 
 ## Key Results
 
@@ -37,7 +37,7 @@ pip install slurmray
 | Task Management | Ray | Automatic distribution |
 | Installation | Optimized | Incremental installation with cache and version detection |
 | Dashboard | Integrated | Automatic browser opening (via SSH tunnel) |
-| Compatibility | Python 3.8 - 3.12 | Automatic inter-version serialization handling |
+| Compatibility | Python 3.9+ (local), Python 3.8+ (remote) | Automatic inter-version serialization handling |
 
 ## Repository Structure
 
