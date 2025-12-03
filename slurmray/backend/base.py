@@ -298,55 +298,185 @@ class ClusterBackend(ABC):
         self.logger.info(f"Optimization: {len(to_install)} packages to install.")
         return delta_file
 
-    def _check_python_version_compatibility(self, ssh_client=None):
+    def _check_python_version_compatibility(self, ssh_client=None, pyenv_command=None):
         """
         Check Python version compatibility between local and remote environments.
-        Warns if there are significant version differences.
+        Uses pyenv if available, otherwise falls back to system Python.
         
         Args:
             ssh_client: Optional SSH client for remote version check. If None, only logs local version.
+            pyenv_command: Optional pyenv command prefix (from _get_pyenv_python_command)
+            
+        Returns:
+            bool: True if versions are compatible (same major.minor), False otherwise
         """
-        local_version = sys.version_info
-        local_version_str = f"{local_version.major}.{local_version.minor}.{local_version.micro}"
+        # Get local version from launcher if available, otherwise use sys.version_info
+        if hasattr(self.launcher, 'local_python_version'):
+            local_version_str = self.launcher.local_python_version
+            import re
+            match = re.match(r'(\d+)\.(\d+)\.(\d+)', local_version_str)
+            if match:
+                local_major = int(match.group(1))
+                local_minor = int(match.group(2))
+                local_micro = int(match.group(3))
+            else:
+                local_version = sys.version_info
+                local_major = local_version.major
+                local_minor = local_version.minor
+                local_micro = local_version.micro
+                local_version_str = f"{local_major}.{local_minor}.{local_micro}"
+        else:
+            local_version = sys.version_info
+            local_major = local_version.major
+            local_minor = local_version.minor
+            local_micro = local_version.micro
+            local_version_str = f"{local_major}.{local_minor}.{local_micro}"
         
         if self.logger:
             self.logger.info(f"Local Python version: {local_version_str}")
         
-        if ssh_client:
-            # Check remote Python version
-            try:
-                stdin, stdout, stderr = ssh_client.exec_command("python3 --version")
-                remote_version_output = stdout.read().decode('utf-8').strip()
-                if remote_version_output:
-                    # Extract version from "Python X.Y.Z"
-                    import re
-                    match = re.search(r'(\d+)\.(\d+)\.(\d+)', remote_version_output)
-                    if match:
-                        remote_major = int(match.group(1))
-                        remote_minor = int(match.group(2))
-                        remote_micro = int(match.group(3))
-                        
+        if not ssh_client:
+            return True  # Assume compatible if we can't check
+        
+        # Check remote Python version (prefer pyenv if available)
+        try:
+            if pyenv_command:
+                # Use pyenv to get Python version
+                cmd = f'{pyenv_command} --version'
+            else:
+                # Fallback to system Python
+                cmd = "python3 --version"
+            
+            stdin, stdout, stderr = ssh_client.exec_command(cmd)
+            remote_version_output = stdout.read().decode('utf-8').strip()
+            
+            if remote_version_output:
+                # Extract version from "Python X.Y.Z"
+                import re
+                match = re.search(r'(\d+)\.(\d+)\.(\d+)', remote_version_output)
+                if match:
+                    remote_major = int(match.group(1))
+                    remote_minor = int(match.group(2))
+                    remote_micro = int(match.group(3))
+                    
+                    if self.logger:
+                        version_source = "pyenv" if pyenv_command else "system"
+                        self.logger.info(f"Remote Python version ({version_source}): {remote_version_output}")
+                    
+                    # Check compatibility: same major.minor = compatible
+                    is_compatible = (local_major == remote_major and local_minor == remote_minor)
+                    
+                    if is_compatible:
                         if self.logger:
-                            self.logger.info(f"Remote Python version: {remote_version_output}")
-                        
-                        # Check for significant version differences
-                        if local_version.major != remote_major:
+                            self.logger.info("✅ Python versions are compatible (same major.minor)")
+                    else:
+                        if local_major != remote_major:
                             if self.logger:
                                 self.logger.warning(
-                                    f"Python major version mismatch: local={local_version.major}, remote={remote_major}. "
-                                    f"This may cause compatibility issues. SlurmRay uses source-based serialization "
-                                    f"to mitigate this, but some issues may still occur."
-                                )
-                        elif local_version.minor != remote_minor:
-                            if self.logger:
-                                self.logger.info(
-                                    f"Python minor version difference: local={local_version.major}.{local_version.minor}, "
-                                    f"remote={remote_major}.{remote_minor}. This should generally be fine with "
-                                    f"source-based serialization."
+                                    f"⚠️ Python major version mismatch: local={local_major}, remote={remote_major}. "
+                                    f"This may cause compatibility issues."
                                 )
                         else:
                             if self.logger:
-                                self.logger.info("Python versions are compatible.")
-            except Exception as e:
+                                self.logger.warning(
+                                    f"⚠️ Python minor version difference: local={local_major}.{local_minor}, "
+                                    f"remote={remote_major}.{remote_minor}. This may cause compatibility issues."
+                                )
+                    
+                    return is_compatible
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Could not check remote Python version: {e}")
+        
+        # If we can't determine, assume incompatible to be safe
+        return False
+
+    def _setup_pyenv_python(self, ssh_client, python_version: str) -> str:
+        """
+        Setup pyenv on remote server to use the specified Python version.
+        
+        Args:
+            ssh_client: SSH client connected to remote server
+            python_version: Python version string (e.g., "3.12.1")
+            
+        Returns:
+            str: Command to use Python via pyenv, or None if pyenv is not available
+        """
+        if not ssh_client:
+            return None
+            
+        # Check if pyenv is available
+        stdin, stdout, stderr = ssh_client.exec_command("command -v pyenv || which pyenv")
+        exit_status = stdout.channel.recv_exit_status()
+        stdout_output = stdout.read().decode('utf-8').strip()
+        
+        if exit_status != 0 or not stdout_output:
+            if self.logger:
+                self.logger.warning("⚠️ pyenv not available on remote server, falling back to system Python")
+            return None
+        
+        if self.logger:
+            self.logger.info(f"✅ pyenv found on remote server: {stdout_output}")
+        
+        # Check if the Python version is already installed
+        stdin, stdout, stderr = ssh_client.exec_command(
+            f'eval "$(pyenv init -)" 2>/dev/null; pyenv versions --bare | grep -E "^{python_version}$"'
+        )
+        exit_status = stdout.channel.recv_exit_status()
+        installed_versions = stdout.read().decode('utf-8').strip()
+        
+        if python_version not in installed_versions.split('\n'):
+            # Version not installed, try to install it
+            if self.logger:
+                self.logger.info(f"📦 Installing Python {python_version} via pyenv (this may take a few minutes)...")
+            
+            # Install Python version via pyenv (with timeout to avoid hanging)
+            # Note: pyenv install can take a long time, so we use a timeout
+            stdin, stdout, stderr = ssh_client.exec_command(
+                f'eval "$(pyenv init -)" 2>/dev/null; timeout 600 pyenv install -s {python_version} 2>&1',
+                get_pty=True
+            )
+            
+            # Wait for command to complete (with timeout)
+            import time
+            start_time = time.time()
+            timeout_seconds = 600  # 10 minutes timeout
+            
+            while stdout.channel.exit_status_ready() == False:
+                if time.time() - start_time > timeout_seconds:
+                    if self.logger:
+                        self.logger.warning(f"⚠️ pyenv install timeout after {timeout_seconds}s, falling back to system Python")
+                    return None
+                time.sleep(1)
+            
+            exit_status = stdout.channel.recv_exit_status()
+            stderr_output = stderr.read().decode('utf-8')
+            
+            if exit_status != 0:
                 if self.logger:
-                    self.logger.warning(f"Could not check remote Python version: {e}")
+                    self.logger.warning(f"⚠️ Failed to install Python {python_version} via pyenv: {stderr_output}")
+                    self.logger.warning("⚠️ Falling back to system Python")
+                return None
+            
+            if self.logger:
+                self.logger.info(f"✅ Python {python_version} installed successfully via pyenv")
+        else:
+            if self.logger:
+                self.logger.info(f"✅ Python {python_version} already installed via pyenv")
+        
+        # Return command to use pyenv Python
+        return self._get_pyenv_python_command(python_version)
+    
+    def _get_pyenv_python_command(self, python_version: str) -> str:
+        """
+        Get the command to use Python via pyenv.
+        
+        Args:
+            python_version: Python version string (e.g., "3.12.1")
+            
+        Returns:
+            str: Command prefix to use Python via pyenv
+        """
+        # Return a command that initializes pyenv and sets the version
+        # This will be used in shell scripts as: eval "$(pyenv init -)" && pyenv shell X.Y.Z && python
+        return f'eval "$(pyenv init -)" && pyenv shell {python_version} && python'

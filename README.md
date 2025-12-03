@@ -200,13 +200,43 @@ This will:
 
 ## Function Serialization and Python Version Compatibility
 
-SlurmRay uses **source code extraction** (via `inspect.getsource()` or `dill.source.getsource()`) as the primary method for function serialization. This approach provides better compatibility across Python versions (e.g., Python 3.12 locally and Python 3.8 on the remote server) compared to bytecode serialization.
+SlurmRay uses **automatic Python version synchronization via pyenv** and **intelligent serialization strategy** to optimize performance while maintaining compatibility across different Python versions.
+
+### Python Version Management with pyenv
+
+SlurmRay automatically detects your local Python version (from `.python-version` file or `sys.version_info`) and synchronizes it on remote servers using pyenv:
+
+1. **Automatic detection**: Reads `.python-version` file or uses current Python version
+2. **pyenv installation**: If pyenv is available on the remote server, SlurmRay automatically installs the matching Python version (if not already installed)
+3. **Version activation**: The remote execution uses the same Python version as your local environment
+4. **Fallback**: If pyenv is not available, SlurmRay falls back to system Python (modules for Slurm, system Python for Desi) with appropriate warnings
+
+**Note**: pyenv must be installed and accessible on the remote server. If pyenv is not available, SlurmRay will use the system Python and may show compatibility warnings.
+
+### Serialization Strategy
+
+SlurmRay uses different serialization strategies based on Python version compatibility:
+
+1. **When versions are compatible** (same major.minor, e.g., 3.12.1 local and 3.12.0 remote):
+   - **🔄 Prioritizes dill pickle serialization** for better performance
+   - Faster execution and better support for complex objects
+   - Falls back to source extraction if pickle fails
+
+2. **When versions are incompatible** or local execution:
+   - **⚠️ Uses source code extraction** (via `inspect.getsource()` or `dill.source.getsource()`) for better compatibility
+   - The function's source code is extracted and saved to `func_source.py`
+   - Remote execution runs the source code, avoiding bytecode incompatibilities
+   - Falls back to `dill` bytecode serialization if source extraction fails
 
 ### How It Works
 
-1. **Source extraction**: The function's source code is extracted and saved to `func_source.py`
-2. **Remote execution**: The source code is executed on the remote server, avoiding bytecode incompatibilities
-3. **Fallback**: If source extraction fails, SlurmRay falls back to `dill` bytecode serialization (may fail with version mismatches)
+1. **Version detection**: Local Python version is detected from `.python-version` or `sys.version_info`
+2. **pyenv setup**: On remote server, pyenv installs/activates the matching Python version
+3. **Compatibility check**: Versions are compared (same major.minor = compatible)
+4. **Serialization**: 
+   - Compatible versions → dill pickle (🔄)
+   - Incompatible versions → source extraction (⚠️)
+5. **Remote execution**: Function is executed using the synchronized Python version
 
 ### Limitations
 
@@ -220,10 +250,11 @@ SlurmRay uses **source code extraction** (via `inspect.getsource()` or `dill.sou
 
 ### Best Practices
 
+- **Use `.python-version` file**: Create a `.python-version` file in your project root to explicitly specify the Python version
 - **Prefer simple functions**: Functions with minimal dependencies work best
 - **Pass dependencies as arguments**: Instead of using closures or globals, pass required values as function arguments
 - **Test locally first**: Validate your function works correctly before submitting to the cluster
-- **Check logs**: If source extraction fails, check the logs for warnings and ensure `func.pkl` fallback is available
+- **Check logs**: Logs indicate which serialization method is used (🔄 for dill pickle, ⚠️ for source extraction)
 
 ## Tests
 

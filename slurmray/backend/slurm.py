@@ -453,8 +453,14 @@ class SlurmBackend(ClusterBackend):
                 self.launcher.server_password = None
                 self.logger.warning("Wrong password, please try again.")
 
-        # Check Python version compatibility
-        self._check_python_version_compatibility(ssh_client)
+        # Setup pyenv Python version if available
+        self.pyenv_python_cmd = None
+        if hasattr(self.launcher, 'local_python_version'):
+            self.pyenv_python_cmd = self._setup_pyenv_python(ssh_client, self.launcher.local_python_version)
+        
+        # Check Python version compatibility (with pyenv if available)
+        is_compatible = self._check_python_version_compatibility(ssh_client, self.pyenv_python_cmd)
+        self.python_version_compatible = is_compatible
 
         # Write server script
         self._write_server_script()
@@ -543,9 +549,10 @@ class SlurmBackend(ClusterBackend):
             # Also store locally
             dep_manager.store_venv_hash(current_hash)
         
-        # Copy the server script to the server
+        # Write and copy the server script to the server
+        self._write_slurmray_server_sh()
         sftp.put(
-            os.path.join(self.launcher.module_path, "assets", "slurmray_server.sh"),
+            os.path.join(self.launcher.project_path, "slurmray_server.sh"),
             "slurmray_server.sh",
         )
         # Chmod script
@@ -747,6 +754,113 @@ class SlurmBackend(ClusterBackend):
         script_file = "slurmray_server.py"
         with open(os.path.join(self.launcher.project_path, script_file), "w") as f:
             f.write(text)
+
+    def _write_slurmray_server_sh(self):
+        """Write the slurmray_server.sh script with pyenv support if available"""
+        # Determine Python command
+        if self.pyenv_python_cmd:
+            # Use pyenv: the command already includes eval and pyenv shell
+            python_cmd = self.pyenv_python_cmd.split(" && ")[-1]  # Extract just "python" from the command
+            python3_cmd = python_cmd.replace("python", "python3")
+            pyenv_setup = self.pyenv_python_cmd.rsplit(" && ", 1)[0]  # Get "eval ... && pyenv shell X.Y.Z"
+            use_pyenv = True
+        else:
+            # Fallback to system Python
+            python_cmd = "python"
+            python3_cmd = "python3"
+            pyenv_setup = ""
+            use_pyenv = False
+        
+        # Filter out python module from modules list if using pyenv
+        modules_list = self.launcher.modules.copy()
+        if use_pyenv:
+            modules_list = [m for m in modules_list if not m.startswith("python")]
+        
+        modules_str = " ".join(modules_list) if modules_list else ""
+        
+        script_content = f"""#!/bin/sh
+
+echo "Installing slurmray server"
+
+# Copy files
+mv -t slurmray-server requirements.txt slurmray_server.py
+mv -t slurmray-server/.slogs/server func.pkl args.pkl 
+cd slurmray-server
+
+# Load modules
+# Using specific versions for Curnagl compatibility (SLURM 24.05.3)
+# gcc/13.2.0: Latest GCC version
+# python module is loaded only if pyenv is not available
+# cuda/12.6.2: Latest CUDA version
+# cudnn/9.2.0.82-12: Compatible with cuda/12.6.2
+"""
+        
+        if modules_str:
+            script_content += f"module load {modules_str}\n"
+        
+        script_content += f"""
+# Setup pyenv if available
+"""
+        
+        if use_pyenv:
+            script_content += f"""# Using pyenv for Python version management
+{pyenv_setup}
+"""
+        else:
+            script_content += """# pyenv not available, using system Python
+"""
+        
+        script_content += f"""
+# Create venv if it doesn't exist (hash check is done in Python before file upload)
+# If venv needs recreation, it has already been removed by Python
+# Check for force reinstall flag
+if [ -f ".force_reinstall" ]; then
+    echo "Force reinstall flag detected: removing existing virtualenv..."
+    rm -rf .venv
+    rm -f .force_reinstall
+fi
+
+if [ ! -d ".venv" ]; then
+    echo "Creating virtualenv..."
+"""
+        
+        if use_pyenv:
+            script_content += f"""    {pyenv_setup} && {python3_cmd} -m venv .venv
+"""
+        else:
+            script_content += f"""    {python3_cmd} -m venv .venv
+"""
+        
+        script_content += f"""else
+    echo "Using existing virtualenv (requirements unchanged)..."
+fi
+
+source .venv/bin/activate
+
+# Install requirements (pip will skip packages that are already installed)
+# Note: requirements.txt is already optimized by Python to only include missing packages
+echo "📥 Installing dependencies from requirements.txt..."
+pip install wheel
+pip install --progress-bar off -r requirements.txt
+echo "✅ Dependencies installed"
+
+# Fix torch bug (https://github.com/pytorch/pytorch/issues/111469)
+export LD_LIBRARY_PATH=$HOME/slurmray-server/.venv/lib/python3.9/site-packages/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH
+
+
+# Run server
+"""
+        
+        if use_pyenv:
+            script_content += f"""{pyenv_setup} && {python_cmd} -u slurmray_server.py
+"""
+        else:
+            script_content += f"""{python_cmd} -u slurmray_server.py
+"""
+        
+        script_file = "slurmray_server.sh"
+        with open(os.path.join(self.launcher.project_path, script_file), "w") as f:
+            f.write(script_content)
 
     def _push_file(
         self, file_path: str, sftp: paramiko.SFTPClient, ssh_client: paramiko.SSHClient

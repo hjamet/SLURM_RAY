@@ -137,6 +137,9 @@ class RayLauncher:
 
         self.__setup_logger()
 
+        # Detect local Python version
+        self.local_python_version = self._detect_local_python_version()
+
         # Default modules with specific versions for Curnagl compatibility
         # Using latest stable versions available on Curnagl (SLURM 24.05.3)
         # gcc/13.2.0: Latest GCC version
@@ -221,6 +224,31 @@ class RayLauncher:
         console_formatter = logging.Formatter("%(levelname)s: %(message)s")
         console_handler.setFormatter(console_formatter)
         self.logger.addHandler(console_handler)
+
+    def _detect_local_python_version(self) -> str:
+        """Detect local Python version from .python-version file or sys.version_info
+        
+        Returns:
+            str: Python version in format "X.Y.Z" (e.g., "3.12.1")
+        """
+        # Try to read from .python-version file first
+        python_version_file = os.path.join(self.pwd_path, ".python-version")
+        if os.path.exists(python_version_file):
+            with open(python_version_file, "r") as f:
+                version_str = f.read().strip()
+                # Validate format (should be X.Y or X.Y.Z)
+                import re
+                if re.match(r'^\d+\.\d+(\.\d+)?$', version_str):
+                    # If only X.Y, add .0 for micro version
+                    if version_str.count('.') == 1:
+                        version_str = f"{version_str}.0"
+                    self.logger.info(f"Detected Python version from .python-version: {version_str}")
+                    return version_str
+        
+        # Fallback to sys.version_info
+        version_str = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        self.logger.info(f"Detected Python version from sys.version_info: {version_str}")
+        return version_str
 
     def _validate_arguments(self):
         """Validate arguments and warn about inconsistencies"""
@@ -467,11 +495,11 @@ class RayLauncher:
     def __serialize_func_and_args(self, func: Callable = None, args: list = None):
         """Serialize the function and the arguments
 
-        This method attempts to serialize functions using source code extraction
-        (via inspect.getsource() or dill.source.getsource()) for better compatibility
-        across Python versions. If source extraction fails, it falls back to dill
-        bytecode serialization.
-
+        This method uses different serialization strategies based on Python version compatibility:
+        - If Python versions are compatible (same major.minor) AND server_run=True:
+          Privilégies dill pickle serialization for better performance
+        - Otherwise: Uses source code extraction for better compatibility across versions
+        
         **Limitations of source-based serialization:**
         - Functions with closures: Only the function body is captured, not the captured
           variables. The function may fail at runtime if it depends on closure variables.
@@ -480,8 +508,8 @@ class RayLauncher:
         - Lambda functions defined inline may have limited source information.
 
         **Fallback behavior:**
+        - If dill pickle fails (incompatible versions), falls back to source extraction
         - If source extraction fails, dill bytecode serialization is used as fallback.
-        - This ensures backward compatibility but may fail with Python version mismatches.
 
         Args:
             func (Callable, optional): Function to serialize. Defaults to None.
@@ -489,15 +517,59 @@ class RayLauncher:
         """
         self.logger.info("Serializing function and arguments...")
 
+        # Check if Python versions are compatible (for server_run mode)
+        python_versions_compatible = False
+        if self.server_run and hasattr(self, 'backend'):
+            if hasattr(self.backend, 'python_version_compatible'):
+                python_versions_compatible = self.backend.python_version_compatible
+            elif hasattr(self.backend, 'pyenv_python_cmd') and self.backend.pyenv_python_cmd:
+                # If pyenv is used, assume versions are compatible (same version installed)
+                python_versions_compatible = True
+
+        # Determine serialization strategy
+        prefer_dill_pickle = python_versions_compatible and self.server_run
+        
+        if prefer_dill_pickle:
+            self.logger.info("🔄 Python versions are compatible: prioritizing dill pickle serialization for better performance")
+        else:
+            if self.server_run:
+                self.logger.info("⚠️ Python versions may be incompatible: using source extraction for better compatibility")
+            else:
+                self.logger.info("Using source extraction (local execution mode)")
+
         # Try to get source code for the function (more robust across versions)
         source_extracted = False
         source_method = None
+        dill_pickle_used = False
 
         # Analyze dependencies
         # (imports_list, sources_list, is_safe)
         extra_imports, extra_sources, is_safe = self._resolve_dependencies(func)
 
-        if is_safe:
+        # If versions are compatible, try dill pickle first
+        if prefer_dill_pickle:
+            try:
+                # Try to pickle the function directly with dill
+                test_pickle_path = os.path.join(self.project_path, "func_test.pkl")
+                with open(test_pickle_path, "wb") as f:
+                    dill.dump(func, f)
+                
+                # If successful, use pickle
+                dill_pickle_used = True
+                source_extracted = False  # Don't extract source
+                self.logger.info("🔄 Successfully serialized function with dill pickle (versions compatible)")
+                
+                # Clean up test file
+                if os.path.exists(test_pickle_path):
+                    os.remove(test_pickle_path)
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ dill pickle failed (fallback to source extraction): {e}")
+                dill_pickle_used = False
+                # Continue with source extraction below
+
+        # Try source extraction if dill pickle wasn't used (or failed)
+        if not dill_pickle_used and is_safe:
             # Method 1: Try inspect.getsource() (standard library, most common)
             try:
                 source = inspect.getsource(func)
@@ -579,23 +651,22 @@ class RayLauncher:
                 source_extracted = False
 
         # If source extraction failed or was skipped, ensure no stale source files exist
-        if not source_extracted:
-            # ... cleanup logic ...
-            source_path = os.path.join(self.project_path, "func_source.py")
-            name_path = os.path.join(self.project_path, "func_name.txt")
-            if os.path.exists(source_path):
-                os.remove(source_path)
-            if os.path.exists(name_path):
-                os.remove(name_path)
+        if not source_extracted and not dill_pickle_used:
+                source_path = os.path.join(self.project_path, "func_source.py")
+                name_path = os.path.join(self.project_path, "func_name.txt")
+                if os.path.exists(source_path):
+                    os.remove(source_path)
+                if os.path.exists(name_path):
+                    os.remove(name_path)
 
-            if not is_safe:
-                self.logger.warning(
-                    "Function unsafe for source extraction (unresolvable globals/closures). Fallback to pickle."
-                )
-            else:
-                self.logger.warning("Source extraction failed. Fallback to pickle.")
+                if not is_safe:
+                    self.logger.warning(
+                        "⚠️ Function unsafe for source extraction (unresolvable globals/closures). Fallback to pickle."
+                    )
+                else:
+                    self.logger.warning("⚠️ Source extraction failed. Fallback to pickle.")
 
-        # Always pickle the function (legacy/default method and fallback)
+        # Always pickle the function (used by dill pickle strategy or as fallback)
         with open(os.path.join(self.project_path, "func.pkl"), "wb") as f:
             dill.dump(func, f)
 

@@ -27,8 +27,14 @@ class DesiBackend(RemoteMixin):
         self._connect()
         self.logger.info("✅ Connected successfully")
         
-        # Check Python version compatibility
-        self._check_python_version_compatibility(self.ssh_client)
+        # Setup pyenv Python version if available
+        self.pyenv_python_cmd = None
+        if hasattr(self.launcher, 'local_python_version'):
+            self.pyenv_python_cmd = self._setup_pyenv_python(self.ssh_client, self.launcher.local_python_version)
+        
+        # Check Python version compatibility (with pyenv if available)
+        is_compatible = self._check_python_version_compatibility(self.ssh_client, self.pyenv_python_cmd)
+        self.python_version_compatible = is_compatible
         
         sftp = self.ssh_client.open_sftp()
         
@@ -397,6 +403,20 @@ class DesiBackend(RemoteMixin):
 
     def _write_runner_script(self, filename, base_dir):
         """Write bash script to set up env and run wrapper"""
+        # Determine Python command
+        if self.pyenv_python_cmd:
+            # Use pyenv: the command already includes eval and pyenv shell
+            python_cmd = self.pyenv_python_cmd.split(" && ")[-1]  # Extract just "python" from the command
+            python3_cmd = python_cmd.replace("python", "python3")
+            pyenv_setup = self.pyenv_python_cmd.rsplit(" && ", 1)[0]  # Get "eval ... && pyenv shell X.Y.Z"
+            use_pyenv = True
+        else:
+            # Fallback to system Python
+            python_cmd = "python"
+            python3_cmd = "python3"
+            pyenv_setup = ""
+            use_pyenv = False
+        
         content = f"""#!/bin/bash
 # Desi Runner Script
 set -e  # Exit immediately if a command exits with a non-zero status
@@ -404,6 +424,18 @@ set -e  # Exit immediately if a command exits with a non-zero status
 # Clean up any previous Ray instances (silently)
 pkill -f ray 2>/dev/null || true
 
+# Setup pyenv if available
+"""
+        
+        if use_pyenv:
+            content += f"""# Using pyenv for Python version management
+{pyenv_setup}
+"""
+        else:
+            content += """# pyenv not available, using system Python
+"""
+        
+        content += f"""
 # Check for force reinstall flag
 if [ -f ".force_reinstall" ]; then
     echo "🔄 Force reinstall detected: removing existing virtualenv..."
@@ -414,8 +446,16 @@ fi
 # Create venv if it doesn't exist
 if [ ! -d "venv" ]; then
     echo "📦 Creating virtual environment..."
-    python3 -m venv venv
-else
+"""
+        
+        if use_pyenv:
+            content += f"""    {pyenv_setup} && {python3_cmd} -m venv venv
+"""
+        else:
+            content += f"""    {python3_cmd} -m venv venv
+"""
+        
+        content += f"""else
     echo "✅ Using existing virtual environment"
 fi
 
@@ -436,8 +476,15 @@ export PYTHONPATH=$PYTHONPATH:.
 
 # Run wrapper (Smart Lock + Script execution)
 echo "🔒 Acquiring Smart Lock and starting job..."
-python3 desi_wrapper.py
 """
+        
+        if use_pyenv:
+            content += f"""{pyenv_setup} && {python3_cmd} desi_wrapper.py
+"""
+        else:
+            content += f"""{python3_cmd} desi_wrapper.py
+"""
+        
         with open(os.path.join(self.launcher.project_path, filename), "w") as f:
             f.write(content)
 
