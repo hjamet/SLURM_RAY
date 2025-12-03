@@ -137,6 +137,13 @@ class RayLauncher:
 
         self.__setup_logger()
 
+        # Create the project directory if not exists (needed for pwd_path)
+        self.pwd_path = os.getcwd()
+        self.module_path = os.path.dirname(os.path.abspath(__file__))
+        self.project_path = os.path.join(self.pwd_path, ".slogs", self.project_name)
+        if not os.path.exists(self.project_path):
+            os.makedirs(self.project_path)
+
         # Detect local Python version
         self.local_python_version = self._detect_local_python_version()
 
@@ -173,13 +180,6 @@ class RayLauncher:
 
         # Check if this code is running on a cluster (only relevant for Slurm, usually)
         self.cluster = os.path.exists("/usr/bin/sbatch")
-
-        # Create the project directory if not exists
-        self.pwd_path = os.getcwd()
-        self.module_path = os.path.dirname(os.path.abspath(__file__))
-        self.project_path = os.path.join(self.pwd_path, ".slogs", self.project_name)
-        if not os.path.exists(self.project_path):
-            os.makedirs(self.project_path)
 
         # Initialize Backend
         if self.server_run:
