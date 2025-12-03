@@ -392,7 +392,14 @@ class DesiBackend(RemoteMixin):
         # Use port 0 to let Ray choose a free port to avoid "address already in use" errors if previous run didn't clean up
         # However, we need to know the port for the tunnel.
         # Better strategy: Try to clean up previous ray instances before starting
-        local_mode = f"\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8265,\nruntime_env = {self.launcher.runtime_env},\n"
+        # Add Ray warning suppression to runtime_env if not already present
+        runtime_env = self.launcher.runtime_env.copy()
+        if "env_vars" not in runtime_env:
+            runtime_env["env_vars"] = {}
+        if "RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO" not in runtime_env["env_vars"]:
+            runtime_env["env_vars"]["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
+        
+        local_mode = f"\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8265,\nruntime_env = {runtime_env},\n"
         
         text = text.replace(
             "{{LOCAL_MODE}}",

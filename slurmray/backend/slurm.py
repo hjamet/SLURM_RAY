@@ -130,7 +130,14 @@ class SlurmBackend(ClusterBackend):
         text = text.replace("{{PROJECT_PATH}}", f'"{self.launcher.project_path}"')
         local_mode = ""
         if self.launcher.cluster or self.launcher.server_run:
-            local_mode = f"\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8265,\nruntime_env = {self.launcher.runtime_env},\n"
+            # Add Ray warning suppression to runtime_env if not already present
+            runtime_env = self.launcher.runtime_env.copy()
+            if "env_vars" not in runtime_env:
+                runtime_env["env_vars"] = {}
+            if "RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO" not in runtime_env["env_vars"]:
+                runtime_env["env_vars"]["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
+            
+            local_mode = f"\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8265,\nruntime_env = {runtime_env},\n"
         text = text.replace(
             "{{LOCAL_MODE}}",
             local_mode,

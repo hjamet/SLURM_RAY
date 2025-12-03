@@ -120,6 +120,17 @@ class RayLauncher:
         self.use_gpu = use_gpu
         self.memory = memory
         self.max_running_time = max_running_time
+        
+        # Set default runtime_env and add Ray warning suppression
+        if runtime_env is None:
+            runtime_env = {"env_vars": {}}
+        elif "env_vars" not in runtime_env:
+            runtime_env["env_vars"] = {}
+        
+        # Suppress Ray FutureWarning about accelerator visible devices
+        if "RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO" not in runtime_env["env_vars"]:
+            runtime_env["env_vars"]["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
+        
         self.runtime_env = runtime_env
         self.server_run = server_run
         self.server_ssh = server_ssh
@@ -265,8 +276,14 @@ class RayLauncher:
                     f"Warning: Desi cluster only supports single node execution. node_nbr={self.node_nbr} will be ignored (effectively 1)."
                 )
 
-            # Only warn if parameters were explicitly passed (not defaults)
-            if "modules" in self._explicit_params and self.modules:
+            # Only warn if modules were explicitly passed by user (not just defaults)
+            # Check if user provided modules beyond the default ones (gcc/python) or GPU modules (cuda/cudnn)
+            # GPU modules are added automatically if use_gpu=True, so they don't count as user-provided
+            user_provided_modules = [
+                m for m in self.modules 
+                if not (m.startswith("gcc") or m.startswith("python") or m.startswith("cuda") or m.startswith("cudnn"))
+            ]
+            if "modules" in self._explicit_params and user_provided_modules:
                 self.logger.warning(
                     "Warning: Modules loading is not supported on Desi (no module system). Modules list will be ignored."
                 )
@@ -713,6 +730,7 @@ if __name__ == "__main__":
         },  # Example of environment variable
         server_run=True,  # To run the code on the server and not locally
         cluster="desi",  # Use Desi backend (credentials loaded from .env: DESI_USERNAME and DESI_PASSWORD)
+        force_reinstall_venv=True,  # Force reinstall venv to test with Python 3.12.1
     )
 
     result = cluster(example_func, args={"x": 5})  # Execute function with arguments

@@ -495,9 +495,11 @@ class ClusterBackend(ABC):
             
             if self.logger:
                 self.logger.info(f"✅ Python {python_version} installed successfully via pyenv")
+                print(f"✅ Python {python_version} installed and will be used via pyenv")
         else:
             if self.logger:
                 self.logger.info(f"✅ Python {python_version} already installed via pyenv")
+                print(f"✅ Python {python_version} will be used via pyenv")
         
         # Return command to use pyenv Python
         return self._get_pyenv_python_command(python_version)

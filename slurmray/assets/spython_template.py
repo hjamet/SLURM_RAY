@@ -8,6 +8,9 @@ PROJECT_PATH = {{PROJECT_PATH}}
 # Add the project path to the python path
 sys.path.append(PROJECT_PATH)
 
+# Suppress Ray FutureWarning about accelerator visible devices
+os.environ.setdefault("RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO", "0")
+
 # Start the ray cluster
 ray.init({{LOCAL_MODE}})
 
