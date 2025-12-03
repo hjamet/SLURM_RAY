@@ -5,6 +5,7 @@ import signal
 import sys
 import webbrowser
 import argparse
+import threading
 from abc import ABC, abstractmethod
 from rich.console import Console
 from rich.table import Table

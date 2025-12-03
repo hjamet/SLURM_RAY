@@ -475,11 +475,11 @@ def main():
             if retries == 0:
                 print("⏳ Waiting for resources to become available (another job may be running)...")
             elif retries % 10 == 0:  # Log every 10 retries (every 5 minutes)
-                print(f"⏳ Still waiting... (attempt {retries}/{MAX_RETRIES})")
+                print(f"⏳ Still waiting... (attempt {{retries}}/{{MAX_RETRIES}})")
             time.sleep(RETRY_DELAY)
             retries += 1
             if retries > MAX_RETRIES:
-                print(f"❌ Timeout: Could not acquire lock after {MAX_RETRIES} attempts ({MAX_RETRIES * RETRY_DELAY / 60:.1f} minutes)")
+                print(f"❌ Timeout: Could not acquire lock after {{MAX_RETRIES}} attempts ({{MAX_RETRIES * RETRY_DELAY / 60:.1f}} minutes)")
                 sys.exit(1)
     
     print("✅ Lock acquired! Starting job execution...")
