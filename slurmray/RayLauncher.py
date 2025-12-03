@@ -4,6 +4,10 @@ import os
 import dill
 import logging
 import signal
+import dis
+import builtins
+import inspect
+from typing import Any, Callable, List, Tuple, Set
 from getpass import getpass
 
 from dotenv import load_dotenv
@@ -298,6 +302,168 @@ class RayLauncher:
             signal.signal(signal.SIGINT, original_sigint)
             signal.signal(signal.SIGTERM, original_sigterm)
 
+    def _dedent_source(self, source: str) -> str:
+        """Dedent source code"""
+        lines = source.split("\n")
+        if not lines:
+            return source
+
+        first_line = lines[0]
+        # Skip empty lines at the start
+        first_non_empty = next((i for i, line in enumerate(lines) if line.strip()), 0)
+
+        if first_non_empty < len(lines):
+            first_line = lines[first_non_empty]
+            indent = len(first_line) - len(first_line.lstrip())
+
+            # Deduplicate indentation, but preserve empty lines
+            deduplicated_lines = []
+            for line in lines:
+                if line.strip():  # Non-empty line
+                    if len(line) >= indent:
+                        deduplicated_lines.append(line[indent:])
+                    else:
+                        deduplicated_lines.append(line)
+                else:  # Empty line
+                    deduplicated_lines.append("")
+            return "\n".join(deduplicated_lines)
+
+        return source
+
+    def _resolve_dependencies(
+        self, func: Callable
+    ) -> Tuple[List[str], List[str], bool]:
+        """
+        Analyze function dependencies and resolve them recursively.
+        Returns: (imports_to_add, source_code_to_add, is_safe)
+        """
+        imports = set()
+        sources = []  # List of (name, source) tuples to sort or deduplicate?
+        # Actually simple list is fine, but order matters?
+        # Dependencies should come before usage?
+        # Python functions are late-binding, so order of definition doesn't matter strictly
+        # as long as they are defined before CALL.
+        # But for variables/classes it might matter.
+        # We'll append sources.
+
+        sources_map = {}  # name -> source
+
+        queue = [func]
+        processed_funcs = set()  # code objects or funcs
+
+        import inspect
+
+        while queue:
+            current_func = queue.pop(0)
+
+            # Use code object for identity if possible, else func object
+            func_id = current_func
+            if hasattr(current_func, "__code__"):
+                func_id = current_func.__code__
+
+            if func_id in processed_funcs:
+                continue
+            processed_funcs.add(func_id)
+
+            # Closures are still hard. Reject them.
+            if hasattr(current_func, "__code__") and current_func.__code__.co_freevars:
+                self.logger.debug(
+                    f"Function {current_func.__name__} uses closures. Unsafe."
+                )
+                return [], [], False
+
+            builtin_names = set(dir(builtins))
+            global_names = set()
+
+            # Find global names used
+            try:
+                for instruction in dis.get_instructions(current_func):
+                    if instruction.opname == "LOAD_GLOBAL":
+                        if instruction.argval not in builtin_names:
+                            global_names.add(instruction.argval)
+            except Exception as e:
+                self.logger.debug(f"Bytecode analysis failed for {current_func}: {e}")
+                # If it's the main func, we must fail. If it's a dependency, maybe we can skip?
+                # Better fail safe.
+                return [], [], False
+
+            # Resolve each name
+            for name in global_names:
+                # If name is not in globals, it might be a problem
+                if (
+                    not hasattr(current_func, "__globals__")
+                    or name not in current_func.__globals__
+                ):
+                    # Maybe it's a recursive self-reference?
+                    if (
+                        hasattr(current_func, "__name__")
+                        and name == current_func.__name__
+                    ):
+                        continue
+                    self.logger.debug(f"Global '{name}' not found in function globals.")
+                    return [], [], False
+
+                obj = current_func.__globals__[name]
+
+                # Case 1: Module
+                if inspect.ismodule(obj):
+                    if obj.__name__ == name:
+                        imports.add(f"import {name}")
+                    else:
+                        imports.add(f"import {obj.__name__} as {name}")
+
+                # Case 2: Function (User defined)
+                elif inspect.isfunction(obj):
+                    if obj not in queue and obj.__code__ not in processed_funcs:
+                        try:
+                            src = inspect.getsource(obj)
+                            sources_map[name] = self._dedent_source(src)
+                            queue.append(obj)
+                        except:
+                            self.logger.debug(
+                                f"Could not get source for function '{name}'"
+                            )
+                            return [], [], False
+
+                # Case 3: Class
+                elif inspect.isclass(obj):
+                    # We don't recurse into classes yet, just add source
+                    if name not in sources_map:
+                        try:
+                            src = inspect.getsource(obj)
+                            sources_map[name] = self._dedent_source(src)
+                        except:
+                            self.logger.debug(
+                                f"Could not get source for class '{name}'"
+                            )
+                            return [], [], False
+
+                # Case 4: Builtin function/method
+                elif inspect.isbuiltin(obj):
+                    mod = inspect.getmodule(obj)
+                    if mod:
+                        if obj.__name__ == name:
+                            imports.add(f"from {mod.__name__} import {name}")
+                        else:
+                            imports.add(
+                                f"from {mod.__name__} import {obj.__name__} as {name}"
+                            )
+                    else:
+                        return [], [], False
+
+                else:
+                    self.logger.debug(
+                        f"Unsupported global object type: {type(obj)} for '{name}'"
+                    )
+                    return [], [], False
+
+        # Sort imports for consistency
+        sorted_imports = sorted(list(imports))
+        # Sources
+        sorted_sources = list(sources_map.values())
+
+        return sorted_imports, sorted_sources, True
+
     def __serialize_func_and_args(self, func: Callable = None, args: list = None):
         """Serialize the function and the arguments
 
@@ -327,58 +493,74 @@ class RayLauncher:
         source_extracted = False
         source_method = None
 
-        # Method 1: Try inspect.getsource() (standard library, most common)
-        try:
-            import inspect
+        # Analyze dependencies
+        # (imports_list, sources_list, is_safe)
+        extra_imports, extra_sources, is_safe = self._resolve_dependencies(func)
 
-            source = inspect.getsource(func)
-            source_method = "inspect.getsource"
-            source_extracted = True
-        except (OSError, TypeError) as e:
-            # OSError: source code not available (e.g., built-in, C extension)
-            # TypeError: not a function or method
-            self.logger.debug(f"inspect.getsource() failed: {e}")
-        except Exception as e:
-            self.logger.debug(f"inspect.getsource() unexpected error: {e}")
-
-        # Method 2: Try dill.source.getsource() as alternative
-        if not source_extracted:
+        if is_safe:
+            # Method 1: Try inspect.getsource() (standard library, most common)
             try:
-                if hasattr(dill, "source") and hasattr(dill.source, "getsource"):
-                    source = dill.source.getsource(func)
-                    source_method = "dill.source.getsource"
-                    source_extracted = True
-                else:
-                    self.logger.debug("dill.source.getsource() not available")
+                source = inspect.getsource(func)
+                source_method = "inspect.getsource"
+
+                # Combine parts
+                # 1. Imports
+                # 2. Dependency sources
+                # 3. Main function source
+
+                parts = []
+                if extra_imports:
+                    parts.extend(extra_imports)
+                    parts.append("")  # newline
+
+                if extra_sources:
+                    parts.extend(extra_sources)
+                    parts.append("")  # newline
+
+                # Dedent main source
+                source = self._dedent_source(source)
+                parts.append(source)
+
+                final_source = "\n".join(parts)
+
+                source = final_source
+                source_extracted = True
+
+            except (OSError, TypeError) as e:
+                self.logger.debug(f"inspect.getsource() failed: {e}")
             except Exception as e:
-                self.logger.debug(f"dill.source.getsource() failed: {e}")
+                self.logger.debug(f"inspect.getsource() unexpected error: {e}")
+
+            # Method 2: Try dill.source.getsource()
+            # Note: dill doesn't support our dependency injection easily,
+            # so if inspect fails, we might just fallback to pickle.
+            # But let's keep it as backup for simple functions.
+            if not source_extracted:
+                # ... (existing dill logic) ...
+                # BUT we need to be careful. If we use dill source, we miss our injections.
+                # So if imports/sources are needed, we probably shouldn't use raw dill source.
+                # Since is_safe=True implies we resolved dependencies, we EXPECT them to be injected.
+                # If inspect fails, we can't easily combine dill source with our injections reliably
+                # (dill source might have different indentation/structure).
+                # So let's skip dill fallback if we have dependencies.
+                if not extra_imports and not extra_sources:
+                    try:
+                        if hasattr(dill, "source") and hasattr(
+                            dill.source, "getsource"
+                        ):
+                            source = dill.source.getsource(func)
+                            source_method = "dill.source.getsource"
+                            source_extracted = True
+                    except Exception as e:
+                        self.logger.debug(f"dill.source.getsource() failed: {e}")
 
         # Process and save source if extracted
         if source_extracted:
             try:
-                # Handle indentation if the function is defined inside another
-                # Deduplicate indentation
-                lines = source.split("\n")
-                if lines:
-                    first_line = lines[0]
-                    # Skip empty lines at the start
-                    first_non_empty = next(
-                        (i for i, line in enumerate(lines) if line.strip()), 0
-                    )
-                    if first_non_empty < len(lines):
-                        first_line = lines[first_non_empty]
-                        indent = len(first_line) - len(first_line.lstrip())
-                        # Deduplicate indentation, but preserve empty lines
-                        deduplicated_lines = []
-                        for line in lines:
-                            if line.strip():  # Non-empty line
-                                if len(line) >= indent:
-                                    deduplicated_lines.append(line[indent:])
-                                else:
-                                    deduplicated_lines.append(line)
-                            else:  # Empty line
-                                deduplicated_lines.append("")
-                        source = "\n".join(deduplicated_lines)
+                # Source is already prepared and dedented above if using inspect.
+                # If using dill (fallback path), we might need to dedent.
+                if source_method == "dill.source.getsource":
+                    source = self._dedent_source(source)
 
                 # Save source code
                 with open(os.path.join(self.project_path, "func_source.py"), "w") as f:
@@ -389,18 +571,29 @@ class RayLauncher:
                     f.write(func.__name__)
 
                 self.logger.info(
-                    f"Function source extracted successfully using {source_method}"
+                    f"Function source extracted successfully using {source_method} with dependencies."
                 )
 
             except Exception as e:
                 self.logger.warning(f"Failed to process/save function source: {e}")
                 source_extracted = False
-        else:
-            self.logger.warning(
-                "Could not extract function source code. "
-                "Falling back to dill bytecode serialization. "
-                "This may cause issues with Python version mismatches."
-            )
+
+        # If source extraction failed or was skipped, ensure no stale source files exist
+        if not source_extracted:
+            # ... cleanup logic ...
+            source_path = os.path.join(self.project_path, "func_source.py")
+            name_path = os.path.join(self.project_path, "func_name.txt")
+            if os.path.exists(source_path):
+                os.remove(source_path)
+            if os.path.exists(name_path):
+                os.remove(name_path)
+
+            if not is_safe:
+                self.logger.warning(
+                    "Function unsafe for source extraction (unresolvable globals/closures). Fallback to pickle."
+                )
+            else:
+                self.logger.warning("Source extraction failed. Fallback to pickle.")
 
         # Always pickle the function (legacy/default method and fallback)
         with open(os.path.join(self.project_path, "func.pkl"), "wb") as f:
