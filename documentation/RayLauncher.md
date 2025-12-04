@@ -8,9 +8,11 @@ A class that automatically connects RAY workers and executes the function reques
 
 **Official tool from DESI @ HEC UNIL.**
 
-Supports two execution modes:
-- **Slurm mode** (`cluster='slurm'`): For Slurm-based clusters like Curnagl. Uses sbatch/squeue for job management.
+Supports multiple execution modes:
+- **Curnagl mode** (`cluster='curnagl'`): For Slurm-based clusters like Curnagl. Uses sbatch/squeue for job management.
 - **Desi mode** (`cluster='desi'`): For standalone servers like ISIPOL09. Uses Smart Lock scheduling for resource management.
+- **Local mode** (`cluster='local'`): For local execution without remote server/cluster.
+- **Custom IP** (`cluster='<ip_or_hostname>'`): For custom Slurm clusters. Uses the provided IP/hostname.
 
 The launcher automatically selects the appropriate backend based on the `cluster` parameter and environment detection.
 
@@ -27,12 +29,13 @@ class RayLauncher(
     max_running_time: int = 60,
     runtime_env: dict = {"env_vars": {}},
     server_run: bool = True,
-    server_ssh: str = "curnagl.dcsr.unil.ch",
-    server_username: str = "hjamet",
+    server_ssh: str = None,  # Auto-detected from cluster parameter
+    server_username: str = None,
     server_password: str = None,
     log_file: str = "logs/RayLauncher.log",
-    cluster: str = "slurm",
+    cluster: str = "curnagl",  # 'curnagl', 'desi', 'local', or custom IP/hostname
     force_reinstall_venv: bool = False,
+    retention_days: int = 7,
 )
 ```
 
@@ -47,11 +50,12 @@ class RayLauncher(
 - **max_running_time** (`int`, optional): Maximum running time of the job in minutes. For Desi mode, this is not enforced by a scheduler. Defaults to 60.
 - **runtime_env** (`dict`, optional): Environment variables to share between all the workers. Can be useful for issues like https://github.com/ray-project/ray/issues/418. Default to empty.
 - **server_run** (`bool`, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster/server ressources. Defaults to True.
-- **server_ssh** (`str`, optional): If `server_run` is set to true, the address of the server to use. Defaults to "curnagl.dcsr.unil.ch" for Slurm mode, or "130.223.73.209" for Desi mode (auto-detected if cluster='desi').
-- **server_username** (`str`, optional): If `server_run` is set to true, the username with which you wish to connect. Credentials are automatically loaded from a `.env` file (CURNAGL_USERNAME for Slurm, DESI_USERNAME for Desi) if available. Priority: environment variables → explicit parameter → default ("hjamet" for Slurm, "henri" for Desi).
-- **server_password** (`str`, optional): If `server_run` is set to true, the password of the user to connect to the server. Credentials are automatically loaded from a `.env` file (CURNAGL_PASSWORD for Slurm, DESI_PASSWORD for Desi) if available. Priority: explicit parameter → environment variables → interactive prompt. CAUTION: never write your password in the code. Defaults to None.
+- **server_ssh** (`str`, optional): If `server_run` is set to true, the address of the server to use. Auto-detected from `cluster` parameter if not provided. Defaults to None (auto-detected).
+- **server_username** (`str`, optional): If `server_run` is set to true, the username with which you wish to connect. Credentials are automatically loaded from a `.env` file (CURNAGL_USERNAME for Curnagl/custom IP, DESI_USERNAME for Desi) if available. Priority: environment variables → explicit parameter → default ("hjamet" for Curnagl/custom IP, "henri" for Desi).
+- **server_password** (`str`, optional): If `server_run` is set to true, the password of the user to connect to the server. Credentials are automatically loaded from a `.env` file (CURNAGL_PASSWORD for Curnagl/custom IP, DESI_PASSWORD for Desi) if available. Priority: explicit parameter → environment variables → interactive prompt. CAUTION: never write your password in the code. Defaults to None.
 - **log_file** (`str`, optional): Path to the log file. Defaults to "logs/RayLauncher.log".
-- **cluster** (`str`, optional): Type of cluster/backend to use: 'slurm' (default, e.g. Curnagl) or 'desi' (ISIPOL09/Desi server). Defaults to "slurm".
+- **cluster** (`str`, optional): Cluster/server to use: 'curnagl' (default, Slurm cluster), 'desi' (ISIPOL09/Desi server), 'local' (local execution), or a custom IP/hostname (for custom Slurm clusters). Defaults to "curnagl".
+- **retention_days** (`int`, optional): Number of days to retain files and venv on the cluster before automatic cleanup. Must be between 1 and 30 days. Defaults to 7.
 - **force_reinstall_venv** (`bool`, optional): Force complete removal and recreation of virtual environment on remote server/cluster. This will delete the existing venv and reinstall all packages from requirements.txt. Use this if the venv is corrupted or you need a clean installation. Defaults to False.
 
 ### Execution
@@ -89,8 +93,7 @@ cluster = RayLauncher(
     use_gpu=True,
     memory=8,
     max_running_time=5,
-    server_run=True,
-    cluster="slurm",
+    cluster="curnagl",  # Use Curnagl cluster (server_ssh auto-detected)
 )
 
 result = cluster(example_func, args={"x": 5})

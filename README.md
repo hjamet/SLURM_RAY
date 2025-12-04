@@ -72,7 +72,7 @@ root/
 
 ## Usage
 
-### Mode 1: Slurm Cluster (Curnagl)
+### Mode 1: Curnagl Cluster (Slurm)
 
 ```python
 from slurmray.RayLauncher import RayLauncher
@@ -96,11 +96,9 @@ cluster = RayLauncher(
     memory=8,  # RAM per node in GB
     max_running_time=5,  # Maximum runtime in minutes
     runtime_env={"env_vars": {"NCCL_SOCKET_IFNAME": "eno1"}},
-    server_run=True,  # Run on cluster, not locally
-    server_ssh="curnagl.dcsr.unil.ch",  # Slurm cluster address
     server_username="your_username",  # Optional: loaded from CURNAGL_USERNAME if not provided
     server_password=None,  # Optional: loaded from CURNAGL_PASSWORD if not provided, otherwise prompted
-    cluster="slurm",  # Use Slurm backend (default)
+    cluster="curnagl",  # Use Curnagl cluster (server_ssh auto-detected to "curnagl.dcsr.unil.ch")
 )
 
 # Note: When running with server_run=True, SlurmRay automatically sets up an SSH tunnel 
@@ -130,14 +128,55 @@ cluster = RayLauncher(
     use_gpu=False,  # GPU available via Smart Lock
     memory=8,  # Not enforced, shared resource
     max_running_time=30,  # Not enforced by scheduler
-    server_run=True,  # Run on remote server
-    server_ssh="130.223.73.209",  # Desi server IP (or use default)
     server_username="your_username",  # Optional: loaded from DESI_USERNAME if not provided
     server_password=None,  # Optional: loaded from DESI_PASSWORD if not provided, otherwise prompted
-    cluster="desi",  # Use Desi backend (Smart Lock scheduling)
+    cluster="desi",  # Use Desi server (server_ssh auto-detected to "130.223.73.209")
 )
 
 result = cluster(example_func, args={"x": 21})
+print(result)
+```
+
+### Mode 3: Local Execution
+
+```python
+from slurmray.RayLauncher import RayLauncher
+import ray
+
+def example_func(x):
+    return ray.cluster_resources(), x * 2
+
+cluster = RayLauncher(
+    project_name="example_local",
+    cluster="local",  # Force local execution
+)
+
+result = cluster(example_func, args={"x": 10})
+print(result)
+```
+
+### Mode 4: Custom Slurm Cluster (Custom IP)
+
+```python
+from slurmray.RayLauncher import RayLauncher
+import ray
+
+def example_func(x):
+    return ray.cluster_resources(), x + 1
+
+cluster = RayLauncher(
+    project_name="example_custom",
+    files=[],
+    node_nbr=1,
+    use_gpu=False,
+    memory=8,
+    max_running_time=5,
+    server_username="your_username",  # Optional: loaded from CURNAGL_USERNAME if not provided
+    server_password=None,  # Optional: loaded from CURNAGL_PASSWORD if not provided, otherwise prompted
+    cluster="192.168.1.100",  # Custom IP or hostname (uses SlurmBackend)
+)
+
+result = cluster(example_func, args={"x": 5})
 print(result)
 ```
 
@@ -186,17 +225,42 @@ This will:
 
 **Note:** The force reinstall mechanism is safe and will not affect running jobs. The venv is only removed before job execution starts.
 
+### Automatic Cleanup and Retention Scheduling
+
+SlurmRay automatically manages file retention on remote clusters/servers to prevent disk space issues. You can control how long files are retained using the `retention_days` parameter:
+
+```python
+cluster = RayLauncher(
+    project_name="example",
+    retention_days=14,  # Retain files for 14 days (default: 7)
+    # ... other parameters
+)
+```
+
+**How it works:**
+- Each job execution updates a retention timestamp on the remote server/cluster
+- The `retention_days` parameter (1-30 days) specifies how long project files and venv should be retained
+- A cleanup script (`cleanup_old_projects.py`) can be run as a cron job to automatically remove projects that have exceeded their retention period
+- This prevents accumulation of old project files while allowing reuse of venv and cache between executions
+
+**Default behavior:**
+- Default retention period: **7 days**
+- Files are automatically marked with a timestamp on each execution
+- The cleanup script must be configured separately on the cluster/server (see `slurmray/assets/cleanup_old_projects.py`)
+
 ## Key Differences Between Modes
 
-| Feature | Slurm Mode | Desi Mode |
-|---|---|---|
-| **Scheduler** | Slurm (sbatch/squeue) | Smart Lock (file-based) |
-| **Multi-node** | Supported (`node_nbr > 1`) | Single node only |
-| **Modules** | Supported (`module load`) | Not supported |
-| **Memory allocation** | Enforced by Slurm | Shared resource |
-| **Time limit** | Enforced by Slurm | Not enforced |
-| **Queue management** | Slurm queue | Smart Lock queue |
-| **Default server** | `curnagl.dcsr.unil.ch` | `130.223.73.209` |
+| Feature | Curnagl Mode | Desi Mode | Local Mode | Custom IP |
+|---|---|---|---|---|
+| **Cluster parameter** | `cluster="curnagl"` | `cluster="desi"` | `cluster="local"` | `cluster="<ip_or_hostname>"` |
+| **Scheduler** | Slurm (sbatch/squeue) | Smart Lock (file-based) | None (local) | Slurm (sbatch/squeue) |
+| **Multi-node** | Supported (`node_nbr > 1`) | Single node only | Single node | Supported (`node_nbr > 1`) |
+| **Modules** | Supported (`module load`) | Not supported | Not supported | Supported (`module load`) |
+| **Memory allocation** | Enforced by Slurm | Shared resource | Local resources | Enforced by Slurm |
+| **Time limit** | Enforced by Slurm | Not enforced | Not enforced | Enforced by Slurm |
+| **Queue management** | Slurm queue | Smart Lock queue | None | Slurm queue |
+| **Default server** | `curnagl.dcsr.unil.ch` | `130.223.73.209` | None | Custom IP/hostname |
+| **Credentials** | CURNAGL_USERNAME/PASSWORD | DESI_USERNAME/PASSWORD | None | CURNAGL_USERNAME/PASSWORD |
 
 ## Function Serialization and Python Version Compatibility
 

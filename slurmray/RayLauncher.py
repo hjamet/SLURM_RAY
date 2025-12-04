@@ -24,9 +24,11 @@ class RayLauncher:
 
     Official tool from DESI @ HEC UNIL.
 
-    Supports two execution modes:
-    - **Slurm mode** (`cluster='slurm'`): For Slurm-based clusters like Curnagl. Uses sbatch/squeue for job management.
+    Supports multiple execution modes:
+    - **Curnagl mode** (`cluster='curnagl'`): For Slurm-based clusters like Curnagl. Uses sbatch/squeue for job management.
     - **Desi mode** (`cluster='desi'`): For standalone servers like ISIPOL09. Uses Smart Lock scheduling for resource management.
+    - **Local mode** (`cluster='local'`): For local execution without remote server/cluster.
+    - **Custom IP** (`cluster='<ip_or_hostname>'`): For custom Slurm clusters. Uses the provided IP/hostname.
 
     The launcher automatically selects the appropriate backend based on the `cluster` parameter and environment detection.
     """
@@ -42,11 +44,11 @@ class RayLauncher:
         max_running_time: int = 60,
         runtime_env: dict = {"env_vars": {}},
         server_run: bool = True,
-        server_ssh: str = "curnagl.dcsr.unil.ch",
+        server_ssh: str = None,  # Auto-detected from cluster parameter
         server_username: str = None,
         server_password: str = None,
         log_file: str = "logs/RayLauncher.log",
-        cluster: str = "slurm",  # 'slurm' (curnagl) or 'desi'
+        cluster: str = "curnagl",  # 'curnagl', 'desi', 'local', or custom IP/hostname
         force_reinstall_venv: bool = False,
         retention_days: int = 7,
     ):
@@ -62,26 +64,48 @@ class RayLauncher:
             max_running_time (int, optional): Maximum running time of the job in minutes. For Desi mode, this is not enforced by a scheduler. Defaults to 60.
             runtime_env (dict, optional): Environment variables to share between all the workers. Can be useful for issues like https://github.com/ray-project/ray/issues/418. Default to empty.
             server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster/server ressources. Defaults to True.
-            server_ssh (str, optional): If `server_run` is set to true, the address of the server to use. Defaults to "curnagl.dcsr.unil.ch" for Slurm mode, or "130.223.73.209" for Desi mode (auto-detected if cluster='desi').
-            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect. Credentials are automatically loaded from a `.env` file (CURNAGL_USERNAME for Slurm, DESI_USERNAME for Desi) if available. Priority: environment variables → explicit parameter → default ("hjamet" for Slurm, "henri" for Desi).
-            server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. Credentials are automatically loaded from a `.env` file (CURNAGL_PASSWORD for Slurm, DESI_PASSWORD for Desi) if available. Priority: explicit parameter → environment variables → interactive prompt. CAUTION: never write your password in the code. Defaults to None.
+            server_ssh (str, optional): If `server_run` is set to true, the address of the server to use. Auto-detected from `cluster` parameter if not provided. Defaults to None (auto-detected).
+            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect. Credentials are automatically loaded from a `.env` file (CURNAGL_USERNAME for Curnagl/custom IP, DESI_USERNAME for Desi) if available. Priority: environment variables → explicit parameter → default ("hjamet" for Curnagl/custom IP, "henri" for Desi).
+            server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. Credentials are automatically loaded from a `.env` file (CURNAGL_PASSWORD for Curnagl/custom IP, DESI_PASSWORD for Desi) if available. Priority: explicit parameter → environment variables → interactive prompt. CAUTION: never write your password in the code. Defaults to None.
             log_file (str, optional): Path to the log file. Defaults to "logs/RayLauncher.log".
-            cluster (str, optional): Type of cluster/backend to use: 'slurm' (default, e.g. Curnagl) or 'desi' (ISIPOL09/Desi server). Defaults to "slurm".
+            cluster (str, optional): Cluster/server to use: 'curnagl' (default, Slurm cluster), 'desi' (ISIPOL09/Desi server), 'local' (local execution), or a custom IP/hostname (for custom Slurm clusters). Defaults to "curnagl".
             force_reinstall_venv (bool, optional): Force complete removal and recreation of virtual environment on remote server/cluster. This will delete the existing venv and reinstall all packages from requirements.txt. Use this if the venv is corrupted or you need a clean installation. Defaults to False.
             retention_days (int, optional): Number of days to retain files and venv on the cluster before automatic cleanup. Must be between 1 and 30 days. Defaults to 7.
         """
         # Load environment variables from .env file
         load_dotenv()
 
-        # Determine cluster type first (needed for credential loading)
-        self.cluster_type = cluster.lower()  # 'slurm' or 'desi'
+        # Normalize cluster parameter
+        cluster_lower = cluster.lower()
+        
+        # Detect if cluster is a custom IP/hostname (not a known name)
+        is_custom_ip = cluster_lower not in ["curnagl", "desi", "local"]
+        
+        # Determine cluster type and backend type
+        if cluster_lower == "local":
+            self.cluster_type = "local"
+            self.backend_type = "local"
+            # Force local execution
+            self._force_local = True
+        else:
+            self._force_local = False
+            if cluster_lower == "desi":
+                self.cluster_type = "desi"
+                self.backend_type = "desi"
+            elif cluster_lower == "curnagl" or is_custom_ip:
+                self.cluster_type = "curnagl"  # Use "curnagl" for credential loading
+                self.backend_type = "slurm"  # Use SlurmBackend
+            else:
+                raise ValueError(
+                    f"Invalid cluster value: '{cluster}'. Use 'curnagl', 'desi', 'local', or a custom IP/hostname."
+                )
 
         # Determine environment variable names based on cluster type
         if self.cluster_type == "desi":
             env_username_key = "DESI_USERNAME"
             env_password_key = "DESI_PASSWORD"
             default_username = "henri"
-        else:  # slurm
+        else:  # curnagl or custom IP (both use CURNAGL credentials)
             env_username_key = "CURNAGL_USERNAME"
             env_password_key = "CURNAGL_PASSWORD"
             default_username = "hjamet"
@@ -141,8 +165,27 @@ class RayLauncher:
             runtime_env["env_vars"]["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
 
         self.runtime_env = runtime_env
-        self.server_run = server_run
-        self.server_ssh = server_ssh
+        # Update server_run if cluster is "local"
+        if hasattr(self, '_force_local') and self._force_local:
+            self.server_run = False
+        else:
+            self.server_run = server_run
+        
+        # Auto-detect server_ssh from cluster parameter if not provided
+        if self.server_run and server_ssh is None:
+            if cluster_lower == "desi":
+                self.server_ssh = "130.223.73.209"
+            elif cluster_lower == "curnagl":
+                self.server_ssh = "curnagl.dcsr.unil.ch"
+            elif is_custom_ip:
+                # Use the provided IP/hostname directly
+                self.server_ssh = cluster
+            else:
+                # Fallback (should not happen)
+                self.server_ssh = "curnagl.dcsr.unil.ch"
+        else:
+            self.server_ssh = server_ssh or "curnagl.dcsr.unil.ch"
+        
         self.log_file = log_file
         self.force_reinstall_venv = force_reinstall_venv
 
@@ -202,14 +245,16 @@ class RayLauncher:
         self.cluster = os.path.exists("/usr/bin/sbatch")
 
         # Initialize Backend
-        if self.server_run:
-            if self.cluster_type == "desi":
+        if self.backend_type == "local":
+            self.backend = LocalBackend(self)
+        elif self.server_run:
+            if self.backend_type == "desi":
                 self.backend = DesiBackend(self)
-            elif self.cluster_type == "slurm":
+            elif self.backend_type == "slurm":
                 self.backend = SlurmBackend(self)
             else:
                 raise ValueError(
-                    f"Unknown cluster type: {self.cluster_type}. Use 'slurm' or 'desi'."
+                    f"Unknown backend type: {self.backend_type}. This should not happen."
                 )
         elif self.cluster:  # Running ON a cluster (Slurm)
             self.backend = SlurmBackend(self)
@@ -294,12 +339,8 @@ class RayLauncher:
             )
 
         if self.cluster_type == "desi":
-            # Update default server_ssh if not provided or if it's the default Curnagl one
-            if self.server_ssh == "curnagl.dcsr.unil.ch":
-                self.logger.info(
-                    "Switching default server_ssh to Desi IP (130.223.73.209)"
-                )
-                self.server_ssh = "130.223.73.209"
+            # server_ssh is already set correctly in __init__
+            pass
 
             if self.node_nbr > 1:
                 self.logger.warning(
