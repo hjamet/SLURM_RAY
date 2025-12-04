@@ -49,6 +49,10 @@ class DesiBackend(RemoteMixin):
         # Generate requirements first to check venv hash
         self._generate_requirements()
 
+        # Add slurmray (unpinned for now to match legacy behavior, but could be pinned)
+        with open(f"{self.launcher.project_path}/requirements.txt", "a") as f:
+            f.write("slurmray\n")
+
         # Check if venv can be reused based on requirements hash
         dep_manager = DependencyManager(self.launcher.project_path, self.logger)
         req_file = os.path.join(self.launcher.project_path, "requirements.txt")
@@ -149,10 +153,6 @@ class DesiBackend(RemoteMixin):
         self._update_retention_timestamp(
             self.ssh_client, base_dir, self.launcher.retention_days
         )
-
-        # Copy source code of slurmray to server (since it's not on PyPI)
-        self.logger.info("📦 Uploading slurmray source code...")
-        self._push_source_code(sftp, base_dir)
 
         for file in self.launcher.files:
             self._push_file(file, sftp, base_dir)
@@ -385,39 +385,6 @@ class DesiBackend(RemoteMixin):
             if os.path.exists(file_path):
                 os.remove(file_path)
                 self.logger.debug(f"Removed temporary file: {temp_file}")
-
-    def _push_source_code(self, sftp, base_dir):
-        """Push local slurmray source code to remote server"""
-        self.logger.info("Pushing slurmray source code...")
-        source_path = os.path.dirname(
-            self.launcher.module_path
-        )  # Parent of slurmray package
-
-        # Walk through the slurmray directory
-        for root, dirs, files in os.walk(os.path.join(source_path, "slurmray")):
-            # Skip __pycache__
-            if "__pycache__" in root:
-                continue
-
-            rel_path = os.path.relpath(root, source_path)
-            remote_dir = os.path.join(base_dir, rel_path)
-
-            # Create remote directory
-            try:
-                stdin, stdout, stderr = self.ssh_client.exec_command(
-                    f"mkdir -p {remote_dir}"
-                )
-                stdout.channel.recv_exit_status()  # Wait for directory to be created
-            except Exception:
-                pass
-
-            for file in files:
-                if file.endswith(".pyc") or file.endswith(".pyo"):
-                    continue
-
-                local_file = os.path.join(root, file)
-                remote_file = os.path.join(remote_dir, file)
-                sftp.put(local_file, remote_file)
 
     def cancel(self, job_id: str):
         """Cancel job on Desi"""
