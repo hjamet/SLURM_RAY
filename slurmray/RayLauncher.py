@@ -216,6 +216,16 @@ class RayLauncher:
         else:
             self.backend = LocalBackend(self)
 
+        # Auto-detect and add editable package source paths to files list
+        if self.server_run:
+            editable_source_paths = self.backend._get_editable_package_source_paths()
+            for path in editable_source_paths:
+                if path not in self.files:
+                    self.files.append(path)
+                    self.logger.info(
+                        f"Auto-added editable package source to upload list: {path}"
+                    )
+
     def __setup_logger(self):
         """Setup the logger"""
         # Create the log directory if not exists

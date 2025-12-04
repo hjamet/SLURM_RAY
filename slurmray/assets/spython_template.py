@@ -8,6 +8,15 @@ PROJECT_PATH = {{PROJECT_PATH}}
 # Add the project path to the python path
 sys.path.append(PROJECT_PATH)
 
+# Add editable package source directories to sys.path
+# This handles packages uploaded from editable installs (e.g., Poetry projects)
+# Check for src/ directory (common Poetry src/ layout)
+# For flat layout, PROJECT_PATH is already in sys.path, so packages at root are importable
+src_path = os.path.join(PROJECT_PATH, "src")
+if os.path.exists(src_path) and os.path.isdir(src_path):
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)  # Insert at beginning for priority
+
 # Suppress Ray FutureWarning about accelerator visible devices
 os.environ.setdefault("RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO", "0")
 

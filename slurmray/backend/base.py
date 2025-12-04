@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, List
 import os
 import subprocess
 import sys
@@ -107,6 +107,94 @@ class ClusterBackend(ABC):
             )
 
         return editable_packages
+
+    def _get_editable_package_source_paths(self) -> List[str]:
+        """
+        Get source directory paths for all editable packages.
+        Returns paths relative to pwd_path that need to be uploaded.
+
+        Returns:
+            List[str]: List of relative paths to source directories
+        """
+        editable_packages = self._get_editable_packages()
+        source_paths = []
+
+        for pkg_name in editable_packages:
+            # Get package location using pip show
+            result = subprocess.run(
+                ["pip", "show", pkg_name], capture_output=True, text=True
+            )
+
+            if result.returncode != 0:
+                if self.logger:
+                    self.logger.warning(
+                        f"Could not get location for editable package {pkg_name}: {result.stderr}"
+                    )
+                continue
+
+            # Parse Location field from pip show output
+            location = None
+            for line in result.stdout.split("\n"):
+                if line.startswith("Location:"):
+                    location = line.split(":", 1)[1].strip()
+                    break
+
+            if not location:
+                if self.logger:
+                    self.logger.warning(
+                        f"Could not find Location field for editable package {pkg_name}"
+                    )
+                continue
+
+            # Convert to absolute path
+            location_abs = os.path.abspath(location)
+            pwd_abs = os.path.abspath(self.launcher.pwd_path)
+
+            # Check if location is within current project
+            if not location_abs.startswith(pwd_abs):
+                if self.logger:
+                    self.logger.warning(
+                        f"Editable package {pkg_name} location {location} is outside project {self.launcher.pwd_path}. Skipping."
+                    )
+                continue
+
+            # Get relative path from pwd_path
+            try:
+                rel_location = os.path.relpath(location_abs, pwd_abs)
+            except ValueError:
+                # Paths are on different drives (Windows) or cannot be made relative
+                if self.logger:
+                    self.logger.warning(
+                        f"Cannot make relative path for {location_abs} from {pwd_abs}"
+                    )
+                continue
+
+            # Determine what to upload based on layout
+            # The location points to the package directory (e.g., src/trail_rag or trail_rag)
+            parent_dir = os.path.dirname(rel_location)
+            package_dir_name = os.path.basename(rel_location)
+
+            # Check if it's a src/ layout
+            if os.path.basename(parent_dir) == "src":
+                # Layout src/: upload src/ directory
+                rel_path = parent_dir  # e.g., "src"
+            else:
+                # Layout flat: location is directly package_name/
+                if parent_dir == "." or parent_dir == "":
+                    # Package is at root level, upload the package directory
+                    rel_path = package_dir_name  # e.g., "trail_rag"
+                else:
+                    # Package is in a subdirectory, upload the parent
+                    rel_path = parent_dir
+
+            if rel_path and rel_path not in source_paths:
+                source_paths.append(rel_path)
+                if self.logger:
+                    self.logger.info(
+                        f"Auto-detected editable package source: {rel_path} (from package {pkg_name})"
+                    )
+
+        return source_paths
 
     def _generate_requirements(self, force_regenerate=False):
         """
