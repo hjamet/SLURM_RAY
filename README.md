@@ -215,36 +215,38 @@ SlurmRay automatically detects your local Python version (from `.python-version`
 
 ### Serialization Strategy
 
-SlurmRay uses different serialization strategies based on Python version compatibility:
+SlurmRay uses a **simplified serialization strategy** that prioritizes performance and reliability:
 
-1. **When versions are compatible** (same major.minor, e.g., 3.12.1 local and 3.12.0 remote):
-   - **🔄 Prioritizes dill pickle serialization** for better performance
-   - Faster execution and better support for complex objects
-   - Falls back to source extraction if pickle fails
+1. **🔄 Always tries dill pickle first**:
+   - Better performance (faster serialization/deserialization)
+   - Handles closures, complex objects, and local imports automatically
+   - With pyenv, Python versions are identical, so dill pickle should always work
+   - More reliable for functions with imports from local projects
 
-2. **When versions are incompatible** or local execution:
-   - **⚠️ Uses source code extraction** (via `inspect.getsource()` or `dill.source.getsource()`) for better compatibility
+2. **⚠️ Falls back to source extraction automatically** if dill pickle fails:
+   - Only happens when dill pickle cannot serialize the function
+   - Common reasons: Python version incompatibility (rare with pyenv), built-in functions, C functions
    - The function's source code is extracted and saved to `func_source.py`
    - Remote execution runs the source code, avoiding bytecode incompatibilities
-   - Falls back to `dill` bytecode serialization if source extraction fails
 
 ### How It Works
 
 1. **Version detection**: Local Python version is detected from `.python-version` or `sys.version_info`
 2. **pyenv setup**: On remote server, pyenv installs/activates the matching Python version
-3. **Compatibility check**: Versions are compared (same major.minor = compatible)
-4. **Serialization**: 
-   - Compatible versions → dill pickle (🔄)
-   - Incompatible versions → source extraction (⚠️)
-5. **Remote execution**: Function is executed using the synchronized Python version
+3. **Serialization**:
+   - **Step 1**: Always tries dill pickle serialization first
+   - **Step 2**: If dill pickle fails → automatically falls back to source extraction
+   - **Step 3**: If source extraction fails → uses dill pickle anyway (final fallback)
+4. **Remote execution**: Function is executed using the synchronized Python version
+
+**Key advantage**: With pyenv ensuring identical Python versions, dill pickle should always work. Source extraction is only used as a fallback for edge cases.
 
 ### Limitations
 
-**Functions with closures**: Only the function body is captured, not the captured variables. Functions that depend on closure variables may fail at runtime.
-
-**Functions with global dependencies**: Global variables referenced in the function are not automatically included. Ensure all required globals are available on the remote server or pass them as function arguments.
-
-**Built-in functions**: Built-in functions (e.g., `len`, `max`) cannot be serialized via source extraction and will fall back to `dill`.
+**Source extraction limitations** (only relevant when dill pickle fails):
+- Functions with closures: Only the function body is captured, not the captured variables. Functions that depend on closure variables may fail at runtime.
+- Functions with global dependencies: Global variables referenced in the function are not automatically included. Ensure all required globals are available on the remote server or pass them as function arguments.
+- Built-in functions: Built-in functions (e.g., `len`, `max`) cannot be serialized via source extraction and will fall back to `dill`.
 
 **Dynamically created functions**: Functions created at runtime or in interactive shells may not have accessible source code.
 

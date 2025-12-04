@@ -538,10 +538,15 @@ class RayLauncher:
     def __serialize_func_and_args(self, func: Callable = None, args: list = None):
         """Serialize the function and the arguments
 
-        This method uses different serialization strategies based on Python version compatibility:
-        - If Python versions are compatible (same major.minor) AND server_run=True:
-          Privilégies dill pickle serialization for better performance
-        - Otherwise: Uses source code extraction for better compatibility across versions
+        This method uses a simplified serialization strategy:
+        - **Always tries dill pickle first** (better performance, handles closures, complex objects)
+        - **Falls back to source extraction** only if dill pickle fails
+        - With pyenv, Python versions are identical, so dill pickle should always work
+
+        **Fallback to source extraction happens when:**
+        - Python versions are incompatible (rare with pyenv)
+        - Function is not serializable by dill (built-ins, C functions, etc.)
+        - Other serialization errors occur
 
         **Limitations of source-based serialization:**
         - Functions with closures: Only the function body is captured, not the captured
@@ -550,135 +555,136 @@ class RayLauncher:
           have accessible source.
         - Lambda functions defined inline may have limited source information.
 
-        **Fallback behavior:**
-        - If dill pickle fails (incompatible versions), falls back to source extraction
-        - If source extraction fails, dill bytecode serialization is used as fallback.
-
         Args:
             func (Callable, optional): Function to serialize. Defaults to None.
             args (list, optional): Arguments of the function. Defaults to None.
         """
         self.logger.info("Serializing function and arguments...")
 
-        # Check if Python versions are compatible (for server_run mode)
-        python_versions_compatible = False
-        if self.server_run and hasattr(self, "backend"):
-            if hasattr(self.backend, "python_version_compatible"):
-                python_versions_compatible = self.backend.python_version_compatible
-            elif (
-                hasattr(self.backend, "pyenv_python_cmd")
-                and self.backend.pyenv_python_cmd
-            ):
-                # If pyenv is used, assume versions are compatible (same version installed)
-                python_versions_compatible = True
-
-        # Determine serialization strategy
-        prefer_dill_pickle = python_versions_compatible and self.server_run
-
-        if prefer_dill_pickle:
-            self.logger.info(
-                "🔄 Python versions are compatible: prioritizing dill pickle serialization for better performance"
-            )
-        else:
-            if self.server_run:
-                self.logger.info(
-                    "⚠️ Python versions may be incompatible: using source extraction for better compatibility"
-                )
-            else:
-                self.logger.info("Using source extraction (local execution mode)")
-
-        # Try to get source code for the function (more robust across versions)
         source_extracted = False
         source_method = None
         dill_pickle_used = False
+        serialization_method = "dill_pickle"  # Default method
 
-        # Analyze dependencies
-        # (imports_list, sources_list, is_safe)
-        extra_imports, extra_sources, is_safe = self._resolve_dependencies(func)
+        # Step 1: Always try dill pickle first
+        self.logger.info("Attempting dill pickle serialization...")
+        try:
+            # Try to pickle the function directly with dill
+            func_pickle_path = os.path.join(self.project_path, "func.pkl")
+            with open(func_pickle_path, "wb") as f:
+                dill.dump(func, f)
 
-        # If versions are compatible, try dill pickle first
-        if prefer_dill_pickle:
-            try:
-                # Try to pickle the function directly with dill
-                test_pickle_path = os.path.join(self.project_path, "func_test.pkl")
-                with open(test_pickle_path, "wb") as f:
-                    dill.dump(func, f)
+            # If successful, use pickle
+            dill_pickle_used = True
+            serialization_method = "dill_pickle"
+            self.logger.info("✅ Successfully serialized function with dill pickle.")
 
-                # If successful, use pickle
-                dill_pickle_used = True
-                source_extracted = False  # Don't extract source
-                self.logger.info(
-                    "🔄 Successfully serialized function with dill pickle (versions compatible)"
+            # Clean up any stale source files since we're using dill pickle
+            source_path = os.path.join(self.project_path, "func_source.py")
+            name_path = os.path.join(self.project_path, "func_name.txt")
+            if os.path.exists(source_path):
+                os.remove(source_path)
+            if os.path.exists(name_path):
+                os.remove(name_path)
+
+        except Exception as e:
+            # Dill pickle failed - analyze why and fallback to source extraction
+            error_type = type(e).__name__
+            error_message = str(e)
+
+            # Determine likely reason for failure
+            reason_explanation = "Unknown error"
+            if "opcode" in error_message.lower() or "bytecode" in error_message.lower():
+                reason_explanation = (
+                    "Python version incompatibility (bytecode mismatch)"
                 )
+            elif "cannot pickle" in error_message.lower():
+                reason_explanation = (
+                    "Function not serializable by dill (built-in, C function, etc.)"
+                )
+            elif "recursion" in error_message.lower():
+                reason_explanation = "Recursion limit reached during serialization"
+            else:
+                reason_explanation = f"Serialization error: {error_type}"
 
-                # Clean up test file
-                if os.path.exists(test_pickle_path):
-                    os.remove(test_pickle_path)
+            self.logger.error(
+                f"❌ dill pickle serialization failed: {error_type}: {error_message}"
+            )
+            self.logger.warning(
+                f"⚠️ Falling back to source extraction. Reason: {reason_explanation}"
+            )
 
-            except Exception as e:
+            dill_pickle_used = False
+            serialization_method = "source_extraction"
+
+            # Continue with source extraction below
+
+        # Step 2: Try source extraction if dill pickle failed
+        if not dill_pickle_used:
+            self.logger.info("📝 Using source extraction fallback (dill pickle failed)")
+
+            # Only analyze dependencies if we need source extraction
+            extra_imports, extra_sources, is_safe = self._resolve_dependencies(func)
+
+            if is_safe:
+                # Method 1: Try inspect.getsource() (standard library, most common)
+                try:
+                    source = inspect.getsource(func)
+                    source_method = "inspect.getsource"
+
+                    # Combine parts
+                    # 1. Imports
+                    # 2. Dependency sources
+                    # 3. Main function source
+
+                    parts = []
+                    if extra_imports:
+                        parts.extend(extra_imports)
+                        parts.append("")  # newline
+
+                    if extra_sources:
+                        parts.extend(extra_sources)
+                        parts.append("")  # newline
+
+                    # Dedent main source
+                    source = self._dedent_source(source)
+                    parts.append(source)
+
+                    final_source = "\n".join(parts)
+
+                    source = final_source
+                    source_extracted = True
+
+                except (OSError, TypeError) as e:
+                    self.logger.debug(f"inspect.getsource() failed: {e}")
+                except Exception as e:
+                    self.logger.debug(f"inspect.getsource() unexpected error: {e}")
+
+                # Method 2: Try dill.source.getsource()
+                # Note: dill doesn't support our dependency injection easily,
+                # so if inspect fails, we might just fallback to pickle.
+                # But let's keep it as backup for simple functions.
+                if not source_extracted:
+                    # BUT we need to be careful. If we use dill source, we miss our injections.
+                    # So if imports/sources are needed, we probably shouldn't use raw dill source.
+                    # Since is_safe=True implies we resolved dependencies, we EXPECT them to be injected.
+                    # If inspect fails, we can't easily combine dill source with our injections reliably
+                    # (dill source might have different indentation/structure).
+                    # So let's skip dill fallback if we have dependencies.
+                    if not extra_imports and not extra_sources:
+                        try:
+                            if hasattr(dill, "source") and hasattr(
+                                dill.source, "getsource"
+                            ):
+                                source = dill.source.getsource(func)
+                                source_method = "dill.source.getsource"
+                                source_extracted = True
+                        except Exception as e:
+                            self.logger.debug(f"dill.source.getsource() failed: {e}")
+            else:
                 self.logger.warning(
-                    f"⚠️ dill pickle failed (fallback to source extraction): {e}"
+                    "⚠️ Function unsafe for source extraction (unresolvable globals/closures). Will use dill pickle anyway."
                 )
-                dill_pickle_used = False
-                # Continue with source extraction below
-
-        # Try source extraction if dill pickle wasn't used (or failed)
-        if not dill_pickle_used and is_safe:
-            # Method 1: Try inspect.getsource() (standard library, most common)
-            try:
-                source = inspect.getsource(func)
-                source_method = "inspect.getsource"
-
-                # Combine parts
-                # 1. Imports
-                # 2. Dependency sources
-                # 3. Main function source
-
-                parts = []
-                if extra_imports:
-                    parts.extend(extra_imports)
-                    parts.append("")  # newline
-
-                if extra_sources:
-                    parts.extend(extra_sources)
-                    parts.append("")  # newline
-
-                # Dedent main source
-                source = self._dedent_source(source)
-                parts.append(source)
-
-                final_source = "\n".join(parts)
-
-                source = final_source
-                source_extracted = True
-
-            except (OSError, TypeError) as e:
-                self.logger.debug(f"inspect.getsource() failed: {e}")
-            except Exception as e:
-                self.logger.debug(f"inspect.getsource() unexpected error: {e}")
-
-            # Method 2: Try dill.source.getsource()
-            # Note: dill doesn't support our dependency injection easily,
-            # so if inspect fails, we might just fallback to pickle.
-            # But let's keep it as backup for simple functions.
-            if not source_extracted:
-                # ... (existing dill logic) ...
-                # BUT we need to be careful. If we use dill source, we miss our injections.
-                # So if imports/sources are needed, we probably shouldn't use raw dill source.
-                # Since is_safe=True implies we resolved dependencies, we EXPECT them to be injected.
-                # If inspect fails, we can't easily combine dill source with our injections reliably
-                # (dill source might have different indentation/structure).
-                # So let's skip dill fallback if we have dependencies.
-                if not extra_imports and not extra_sources:
-                    try:
-                        if hasattr(dill, "source") and hasattr(
-                            dill.source, "getsource"
-                        ):
-                            source = dill.source.getsource(func)
-                            source_method = "dill.source.getsource"
-                            source_extracted = True
-                    except Exception as e:
-                        self.logger.debug(f"dill.source.getsource() failed: {e}")
 
         # Process and save source if extracted
         if source_extracted:
@@ -697,15 +703,18 @@ class RayLauncher:
                     f.write(func.__name__)
 
                 self.logger.info(
-                    f"Function source extracted successfully using {source_method} with dependencies."
+                    f"✅ Function source extracted successfully using {source_method}."
                 )
+                serialization_method = "source_extraction"
 
             except Exception as e:
                 self.logger.warning(f"Failed to process/save function source: {e}")
                 source_extracted = False
+                # Fallback to dill pickle if source extraction save failed
+                serialization_method = "dill_pickle"
 
         # If source extraction failed or was skipped, ensure no stale source files exist
-        if not source_extracted and not dill_pickle_used:
+        if not source_extracted:
             source_path = os.path.join(self.project_path, "func_source.py")
             name_path = os.path.join(self.project_path, "func_name.txt")
             if os.path.exists(source_path):
@@ -713,16 +722,41 @@ class RayLauncher:
             if os.path.exists(name_path):
                 os.remove(name_path)
 
-            if not is_safe:
+            # If source extraction was attempted but failed, log it
+            if not dill_pickle_used:
                 self.logger.warning(
-                    "⚠️ Function unsafe for source extraction (unresolvable globals/closures). Fallback to pickle."
+                    "⚠️ Source extraction failed. Using dill pickle as final fallback."
                 )
-            else:
-                self.logger.warning("⚠️ Source extraction failed. Fallback to pickle.")
+                # Ensure we still pickle the function even if source extraction failed
+                serialization_method = "dill_pickle"
 
         # Always pickle the function (used by dill pickle strategy or as fallback)
-        with open(os.path.join(self.project_path, "func.pkl"), "wb") as f:
-            dill.dump(func, f)
+        # Create func.pkl if not already created (we created it earlier if dill_pickle_used was True)
+        if not dill_pickle_used:
+            try:
+                func_pickle_path = os.path.join(self.project_path, "func.pkl")
+                with open(func_pickle_path, "wb") as f:
+                    dill.dump(func, f)
+                self.logger.debug(
+                    "Created func.pkl as fallback (dill pickle or source extraction fallback)"
+                )
+            except Exception as e:
+                # Only raise if we have no other option (both dill pickle and source extraction failed)
+                if not source_extracted:
+                    self.logger.error(
+                        f"❌ Critical: Failed to pickle function even as fallback: {e}"
+                    )
+                    raise
+                else:
+                    # If source extraction succeeded, warn but don't fail
+                    self.logger.warning(
+                        f"⚠️ Failed to create func.pkl fallback (source extraction will be used): {e}"
+                    )
+
+        # Save serialization method indicator
+        method_file = os.path.join(self.project_path, "serialization_method.txt")
+        with open(method_file, "w") as f:
+            f.write(f"{serialization_method}\n")
 
         # Pickle the arguments
         if args is None:
