@@ -48,6 +48,7 @@ class RayLauncher:
         log_file: str = "logs/RayLauncher.log",
         cluster: str = "slurm",  # 'slurm' (curnagl) or 'desi'
         force_reinstall_venv: bool = False,
+        retention_days: int = 7,
     ):
         """Initialize the launcher
 
@@ -67,6 +68,7 @@ class RayLauncher:
             log_file (str, optional): Path to the log file. Defaults to "logs/RayLauncher.log".
             cluster (str, optional): Type of cluster/backend to use: 'slurm' (default, e.g. Curnagl) or 'desi' (ISIPOL09/Desi server). Defaults to "slurm".
             force_reinstall_venv (bool, optional): Force complete removal and recreation of virtual environment on remote server/cluster. This will delete the existing venv and reinstall all packages from requirements.txt. Use this if the venv is corrupted or you need a clean installation. Defaults to False.
+            retention_days (int, optional): Number of days to retain files and venv on the cluster before automatic cleanup. Must be between 1 and 30 days. Defaults to 7.
         """
         # Load environment variables from .env file
         load_dotenv()
@@ -120,17 +122,24 @@ class RayLauncher:
         self.use_gpu = use_gpu
         self.memory = memory
         self.max_running_time = max_running_time
-        
+
+        # Validate and save retention_days
+        if retention_days < 1 or retention_days > 30:
+            raise ValueError(
+                f"retention_days must be between 1 and 30, got {retention_days}"
+            )
+        self.retention_days = retention_days
+
         # Set default runtime_env and add Ray warning suppression
         if runtime_env is None:
             runtime_env = {"env_vars": {}}
         elif "env_vars" not in runtime_env:
             runtime_env["env_vars"] = {}
-        
+
         # Suppress Ray FutureWarning about accelerator visible devices
         if "RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO" not in runtime_env["env_vars"]:
             runtime_env["env_vars"]["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
-        
+
         self.runtime_env = runtime_env
         self.server_run = server_run
         self.server_ssh = server_ssh
@@ -238,7 +247,7 @@ class RayLauncher:
 
     def _detect_local_python_version(self) -> str:
         """Detect local Python version from .python-version file or sys.version_info
-        
+
         Returns:
             str: Python version in format "X.Y.Z" (e.g., "3.12.1")
         """
@@ -249,20 +258,31 @@ class RayLauncher:
                 version_str = f.read().strip()
                 # Validate format (should be X.Y or X.Y.Z)
                 import re
-                if re.match(r'^\d+\.\d+(\.\d+)?$', version_str):
+
+                if re.match(r"^\d+\.\d+(\.\d+)?$", version_str):
                     # If only X.Y, add .0 for micro version
-                    if version_str.count('.') == 1:
+                    if version_str.count(".") == 1:
                         version_str = f"{version_str}.0"
-                    self.logger.info(f"Detected Python version from .python-version: {version_str}")
+                    self.logger.info(
+                        f"Detected Python version from .python-version: {version_str}"
+                    )
                     return version_str
-        
+
         # Fallback to sys.version_info
         version_str = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-        self.logger.info(f"Detected Python version from sys.version_info: {version_str}")
+        self.logger.info(
+            f"Detected Python version from sys.version_info: {version_str}"
+        )
         return version_str
 
     def _validate_arguments(self):
         """Validate arguments and warn about inconsistencies"""
+        # Validate project_name is not None (required for project-based organization on cluster)
+        if self.project_name is None:
+            raise ValueError(
+                "project_name cannot be None. A project name is required for cluster execution."
+            )
+
         if self.cluster_type == "desi":
             # Update default server_ssh if not provided or if it's the default Curnagl one
             if self.server_ssh == "curnagl.dcsr.unil.ch":
@@ -280,8 +300,14 @@ class RayLauncher:
             # Check if user provided modules beyond the default ones (gcc/python) or GPU modules (cuda/cudnn)
             # GPU modules are added automatically if use_gpu=True, so they don't count as user-provided
             user_provided_modules = [
-                m for m in self.modules 
-                if not (m.startswith("gcc") or m.startswith("python") or m.startswith("cuda") or m.startswith("cudnn"))
+                m
+                for m in self.modules
+                if not (
+                    m.startswith("gcc")
+                    or m.startswith("python")
+                    or m.startswith("cuda")
+                    or m.startswith("cudnn")
+                )
             ]
             if "modules" in self._explicit_params and user_provided_modules:
                 self.logger.warning(
@@ -516,7 +542,7 @@ class RayLauncher:
         - If Python versions are compatible (same major.minor) AND server_run=True:
           Privilégies dill pickle serialization for better performance
         - Otherwise: Uses source code extraction for better compatibility across versions
-        
+
         **Limitations of source-based serialization:**
         - Functions with closures: Only the function body is captured, not the captured
           variables. The function may fail at runtime if it depends on closure variables.
@@ -536,21 +562,28 @@ class RayLauncher:
 
         # Check if Python versions are compatible (for server_run mode)
         python_versions_compatible = False
-        if self.server_run and hasattr(self, 'backend'):
-            if hasattr(self.backend, 'python_version_compatible'):
+        if self.server_run and hasattr(self, "backend"):
+            if hasattr(self.backend, "python_version_compatible"):
                 python_versions_compatible = self.backend.python_version_compatible
-            elif hasattr(self.backend, 'pyenv_python_cmd') and self.backend.pyenv_python_cmd:
+            elif (
+                hasattr(self.backend, "pyenv_python_cmd")
+                and self.backend.pyenv_python_cmd
+            ):
                 # If pyenv is used, assume versions are compatible (same version installed)
                 python_versions_compatible = True
 
         # Determine serialization strategy
         prefer_dill_pickle = python_versions_compatible and self.server_run
-        
+
         if prefer_dill_pickle:
-            self.logger.info("🔄 Python versions are compatible: prioritizing dill pickle serialization for better performance")
+            self.logger.info(
+                "🔄 Python versions are compatible: prioritizing dill pickle serialization for better performance"
+            )
         else:
             if self.server_run:
-                self.logger.info("⚠️ Python versions may be incompatible: using source extraction for better compatibility")
+                self.logger.info(
+                    "⚠️ Python versions may be incompatible: using source extraction for better compatibility"
+                )
             else:
                 self.logger.info("Using source extraction (local execution mode)")
 
@@ -570,18 +603,22 @@ class RayLauncher:
                 test_pickle_path = os.path.join(self.project_path, "func_test.pkl")
                 with open(test_pickle_path, "wb") as f:
                     dill.dump(func, f)
-                
+
                 # If successful, use pickle
                 dill_pickle_used = True
                 source_extracted = False  # Don't extract source
-                self.logger.info("🔄 Successfully serialized function with dill pickle (versions compatible)")
-                
+                self.logger.info(
+                    "🔄 Successfully serialized function with dill pickle (versions compatible)"
+                )
+
                 # Clean up test file
                 if os.path.exists(test_pickle_path):
                     os.remove(test_pickle_path)
-                    
+
             except Exception as e:
-                self.logger.warning(f"⚠️ dill pickle failed (fallback to source extraction): {e}")
+                self.logger.warning(
+                    f"⚠️ dill pickle failed (fallback to source extraction): {e}"
+                )
                 dill_pickle_used = False
                 # Continue with source extraction below
 
@@ -669,19 +706,19 @@ class RayLauncher:
 
         # If source extraction failed or was skipped, ensure no stale source files exist
         if not source_extracted and not dill_pickle_used:
-                source_path = os.path.join(self.project_path, "func_source.py")
-                name_path = os.path.join(self.project_path, "func_name.txt")
-                if os.path.exists(source_path):
-                    os.remove(source_path)
-                if os.path.exists(name_path):
-                    os.remove(name_path)
+            source_path = os.path.join(self.project_path, "func_source.py")
+            name_path = os.path.join(self.project_path, "func_name.txt")
+            if os.path.exists(source_path):
+                os.remove(source_path)
+            if os.path.exists(name_path):
+                os.remove(name_path)
 
-                if not is_safe:
-                    self.logger.warning(
-                        "⚠️ Function unsafe for source extraction (unresolvable globals/closures). Fallback to pickle."
-                    )
-                else:
-                    self.logger.warning("⚠️ Source extraction failed. Fallback to pickle.")
+            if not is_safe:
+                self.logger.warning(
+                    "⚠️ Function unsafe for source extraction (unresolvable globals/closures). Fallback to pickle."
+                )
+            else:
+                self.logger.warning("⚠️ Source extraction failed. Fallback to pickle.")
 
         # Always pickle the function (used by dill pickle strategy or as fallback)
         with open(os.path.join(self.project_path, "func.pkl"), "wb") as f:
