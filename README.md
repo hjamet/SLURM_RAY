@@ -322,6 +322,15 @@ SlurmRay uses a **simplified serialization strategy** that prioritizes performan
 - **Test locally first**: Validate your function works correctly before submitting to the cluster
 - **Check logs**: Logs indicate which serialization method is used (🔄 for dill pickle, ⚠️ for source extraction)
 
+## Automatic File Synchronization
+
+SlurmRay automatically synchronizes your project files to the cluster. It uses an intelligent detection strategy to ensure all required code is available remotely:
+
+1.  **Project Files**: All files in your project directory are synchronized (respecting `.gitignore`).
+2.  **Editable Packages**: Packages installed in editable mode (`pip install -e .` or Poetry dev dependencies) are automatically detected and their source code is uploaded, even if located outside the project directory.
+3.  **Static Analysis**: Your code is scanned to detect local dependencies.
+4.  **Dynamic Import Warnings**: SlurmRay warns you if it detects dynamic imports (`importlib`, `__import__`) or file operations with relative paths that might be missing on the cluster. You should add these files manually using the `files=[...]` parameter.
+
 ## Tests
 
 The project includes simple "hello world" tests to quickly validate that SLURM_RAY works correctly after major modifications. These tests can be executed directly or via pytest.
