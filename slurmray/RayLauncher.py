@@ -263,13 +263,61 @@ class RayLauncher:
 
         # Auto-detect and add editable package source paths to files list
         if self.server_run:
-            editable_source_paths = self.backend._get_editable_package_source_paths()
-            for path in editable_source_paths:
-                if path not in self.files:
-                    self.files.append(path)
-                    self.logger.info(
-                        f"Auto-added editable package source to upload list: {path}"
-                    )
+            # 1. Editable packages (external to project or specific structure)
+            try:
+                editable_source_paths = self.backend._get_editable_package_source_paths()
+                for path in editable_source_paths:
+                    if path not in self.files:
+                        self.files.append(path)
+                        self.logger.info(
+                            f"Auto-added editable package source to upload list: {path}"
+                        )
+            except Exception as e:
+                self.logger.warning(f"Failed to detect editable packages: {e}")
+
+            # 2. Intelligent project scan (internal dependencies & warnings)
+            try:
+                from slurmray.scanner import ProjectScanner
+                
+                self.logger.info("Scanning project for local dependencies...")
+                scanner = ProjectScanner(self.pwd_path, self.logger)
+                detected_dependencies = scanner.auto_detect_dependencies()
+                
+                added_count = 0
+                for dep in detected_dependencies:
+                    # Check if dependency is already covered by existing files/dirs
+                    # E.g. if 'src' is in files, 'src/module.py' is covered
+                    is_covered = False
+                    for existing in self.files:
+                        if dep == existing or (dep.startswith(existing + os.sep)):
+                            is_covered = True
+                            break
+                    
+                    if not is_covered:
+                        self.files.append(dep)
+                        added_count += 1
+                
+                if added_count > 0:
+                    self.logger.info(f"Auto-added {added_count} local dependencies to upload list.")
+                    
+                # Display warnings for dynamic imports
+                if scanner.dynamic_imports_warnings:
+                    print("\n" + "="*60)
+                    print("⚠️  WARNING: Dynamic imports or file operations detected ⚠️")
+                    print("="*60)
+                    print("The following lines might require files that cannot be auto-detected.")
+                    print("Please verify if you need to add them manually to 'files=[...]':")
+                    for warning in scanner.dynamic_imports_warnings:
+                        print(f"  - {warning}")
+                    print("="*60 + "\n")
+                    
+                    # Also log them
+                    for warning in scanner.dynamic_imports_warnings:
+                        self.logger.warning(f"Dynamic import warning: {warning}")
+
+            except Exception as e:
+                self.logger.warning(f"Project scan failed: {e}")
+
 
     def __setup_logger(self):
         """Setup the logger"""

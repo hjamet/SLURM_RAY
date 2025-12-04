@@ -119,30 +119,88 @@ class ClusterBackend(ABC):
         editable_packages = self._get_editable_packages()
         source_paths = []
 
+        # Find site-packages directory
+        site_packages = None
+        for path in sys.path:
+            if path.endswith("site-packages"):
+                site_packages = path
+                break
+
+        if not site_packages and self.logger:
+            self.logger.warning("Could not find site-packages directory in sys.path")
+
         for pkg_name in editable_packages:
-            # Get package location using pip show
-            result = subprocess.run(
-                ["pip", "show", pkg_name], capture_output=True, text=True
-            )
-
-            if result.returncode != 0:
-                if self.logger:
-                    self.logger.warning(
-                        f"Could not get location for editable package {pkg_name}: {result.stderr}"
-                    )
-                continue
-
-            # Parse Location field from pip show output
             location = None
-            for line in result.stdout.split("\n"):
-                if line.startswith("Location:"):
-                    location = line.split(":", 1)[1].strip()
-                    break
+
+            # Method 1: Try .egg-link file (common for pip editable installs)
+            # Also handle name normalization (trail-rag -> trail_rag)
+            normalized_name = pkg_name.replace("-", "_")
+
+            if site_packages:
+                # Check for .egg-link
+                egg_link_path = os.path.join(
+                    site_packages, f"{normalized_name}.egg-link"
+                )
+                if not os.path.exists(egg_link_path):
+                    # Try with original name
+                    egg_link_path = os.path.join(site_packages, f"{pkg_name}.egg-link")
+
+                if os.path.exists(egg_link_path):
+                    try:
+                        with open(egg_link_path, "r") as f:
+                            # .egg-link contains path on first line
+                            content = f.readline().strip()
+                            if content:
+                                location = content
+                    except Exception as e:
+                        if self.logger:
+                            self.logger.debug(f"Error reading {egg_link_path}: {e}")
+
+                # Method 2: Try .pth file (used by some tools including Poetry sometimes)
+                if not location:
+                    pth_path = os.path.join(site_packages, f"{normalized_name}.pth")
+                    if not os.path.exists(pth_path):
+                        pth_path = os.path.join(site_packages, f"{pkg_name}.pth")
+
+                    if os.path.exists(pth_path):
+                        try:
+                            with open(pth_path, "r") as f:
+                                # .pth can contain comments or imports, we look for a valid path
+                                for line in f:
+                                    line = line.strip()
+                                    if (
+                                        line
+                                        and not line.startswith("#")
+                                        and not line.startswith("import")
+                                    ):
+                                        if os.path.exists(line):
+                                            location = line
+                                            break
+                        except Exception as e:
+                            if self.logger:
+                                self.logger.debug(f"Error reading {pth_path}: {e}")
+
+            # Method 3: Fallback to pip show
+            if not location:
+                result = subprocess.run(
+                    ["pip", "show", pkg_name], capture_output=True, text=True
+                )
+
+                if result.returncode == 0:
+                    # Parse Location field from pip show output
+                    for line in result.stdout.split("\n"):
+                        if line.startswith("Location:"):
+                            loc_candidate = line.split(":", 1)[1].strip()
+                            # If pip show returns site-packages, it's likely wrong for editable
+                            # (unless it's a flat layout installed there, which is rare for editable)
+                            if "site-packages" not in loc_candidate:
+                                location = loc_candidate
+                            break
 
             if not location:
                 if self.logger:
                     self.logger.warning(
-                        f"Could not find Location field for editable package {pkg_name}"
+                        f"Could not determine source location for editable package {pkg_name}"
                     )
                 continue
 
@@ -151,10 +209,17 @@ class ClusterBackend(ABC):
             pwd_abs = os.path.abspath(self.launcher.pwd_path)
 
             # Check if location is within current project
+            # Note: For monorepos or specific setups, an editable package MIGHT be outside pwd.
+            # But SlurmRay usually expects everything to be self-contained or uploaded explicitly.
+            # However, the user wants to support "uploading what's needed".
+            # If the editable package is INSIDE the project, we calculate relative path.
+            # If it's OUTSIDE, we might need to handle it (e.g. by copying it), but
+            # the current logic seems to enforce it being inside or at least relative-able.
+
             if not location_abs.startswith(pwd_abs):
                 if self.logger:
                     self.logger.warning(
-                        f"Editable package {pkg_name} location {location} is outside project {self.launcher.pwd_path}. Skipping."
+                        f"Editable package {pkg_name} location {location} is outside project {self.launcher.pwd_path}. Skipping auto-upload for now."
                     )
                 continue
 
