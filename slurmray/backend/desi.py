@@ -154,8 +154,24 @@ class DesiBackend(RemoteMixin):
             self.ssh_client, base_dir, self.launcher.retention_days
         )
 
+        # Filter valid files
+        valid_files = []
         for file in self.launcher.files:
-            self._push_file(file, sftp, base_dir)
+            # Skip invalid paths
+            if (
+                not file
+                or file == "."
+                or file == ".."
+                or file.startswith("./")
+                or file.startswith("../")
+            ):
+                self.logger.warning(f"Skipping invalid file path: {file}")
+                continue
+            valid_files.append(file)
+
+        # Use incremental sync for local files
+        if valid_files:
+            self._sync_local_files_incremental(sftp, base_dir, valid_files)
 
         # Create runner script (shell script to setup env and run python)
         runner_script = "run_desi.sh"

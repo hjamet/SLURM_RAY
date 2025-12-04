@@ -41,7 +41,8 @@ pip install --progress-bar off -r requirements.txt
 echo "✅ Dependencies installed"
 
 # Fix torch bug (https://github.com/pytorch/pytorch/issues/111469)
-export LD_LIBRARY_PATH=$HOME/slurmray-server/.venv/lib/python3.9/site-packages/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH
+PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+export LD_LIBRARY_PATH=$HOME/slurmray-server/.venv/lib/python$PYTHON_VERSION/site-packages/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH
 
 
 # Run server

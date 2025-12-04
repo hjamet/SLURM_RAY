@@ -598,9 +598,26 @@ class SlurmBackend(ClusterBackend):
             # Remove flag file if it exists
             ssh_client.exec_command(f"rm -f {project_dir}/.force_reinstall")
             self.logger.info("Preserving virtualenv (requirements unchanged)")
-        # Copy user files to the server
+        # Filter valid files
+        valid_files = []
         for file in self.launcher.files:
-            self._push_file(file, sftp, ssh_client)
+            # Skip invalid paths
+            if (
+                not file
+                or file == "."
+                or file == ".."
+                or file.startswith("./")
+                or file.startswith("../")
+            ):
+                self.logger.warning(f"Skipping invalid file path: {file}")
+                continue
+            valid_files.append(file)
+
+        # Use incremental sync for local files
+        if valid_files:
+            self._sync_local_files_incremental(
+                sftp, project_dir, valid_files, ssh_client
+            )
 
         # Copy the requirements.txt (optimized) to the server
         sftp.put(req_file_to_push, "requirements.txt")
@@ -949,7 +966,8 @@ fi
 echo "✅ Dependencies installed"
 
 # Fix torch bug (https://github.com/pytorch/pytorch/issues/111469)
-export LD_LIBRARY_PATH=$HOME/{project_dir}/.venv/lib/python3.9/site-packages/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH
+PYTHON_VERSION=$({python3_cmd} -c 'import sys; print(f"{{sys.version_info.major}}.{{sys.version_info.minor}}")')
+export LD_LIBRARY_PATH=$HOME/{project_dir}/.venv/lib/python$PYTHON_VERSION/site-packages/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH
 
 
 # Run server

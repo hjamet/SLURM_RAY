@@ -3,6 +3,9 @@ from typing import Any, Dict, List
 import os
 import subprocess
 import sys
+import importlib.metadata
+import site
+import json
 
 
 class ClusterBackend(ABC):
@@ -252,12 +255,20 @@ class ClusterBackend(ABC):
                     # Package is in a subdirectory, upload the parent
                     rel_path = parent_dir
 
-            if rel_path and rel_path not in source_paths:
-                source_paths.append(rel_path)
-                if self.logger:
-                    self.logger.info(
-                        f"Auto-detected editable package source: {rel_path} (from package {pkg_name})"
-                    )
+            # Validate rel_path before adding
+            if (
+                rel_path
+                and rel_path != "."
+                and rel_path != ".."
+                and not rel_path.startswith("./")
+                and not rel_path.startswith("../")
+            ):
+                if rel_path not in source_paths:
+                    source_paths.append(rel_path)
+                    if self.logger:
+                        self.logger.info(
+                            f"Auto-detected editable package source: {rel_path} (from package {pkg_name})"
+                        )
 
         return source_paths
 
@@ -375,8 +386,53 @@ class ClusterBackend(ABC):
                 name_part = name_part.split("[")[0]
             return name_part.lower()
 
-        # Detect editable packages once (used for filtering and hash computation)
-        editable_packages = self._get_editable_packages()
+        # Helper function to check if a package is local (not in site-packages)
+        def is_package_local(package_name):
+            """Check if a package is installed locally (editable or in project) vs site-packages."""
+            if not package_name: return False
+            try:
+                # Get distribution info
+                # Note: package name must be exact distribution name
+                dist = importlib.metadata.distribution(package_name)
+                
+                # Check for direct_url.json (PEP 610) - best for editable installs
+                try:
+                    direct_url_path = dist.locate_file("direct_url.json")
+                    if os.path.exists(direct_url_path):
+                        with open(direct_url_path, "r") as f:
+                            data = json.load(f)
+                            if data.get("url", "").startswith("file://"):
+                                # It's a local file URL, likely editable or local install
+                                return True
+                except Exception:
+                    pass
+                
+                # Fallback: check file locations
+                files = dist.files
+                if not files:
+                    return False
+                    
+                # Check location of the first file
+                # locate_file returns absolute path usually
+                first_file_path = str(dist.locate_file(files[0]))
+                file_abs = os.path.abspath(first_file_path)
+                
+                # Check if it is in any site-packages directory
+                site_packages_dirs = site.getsitepackages()
+                if hasattr(site, "getusersitepackages"):
+                    user_site = site.getusersitepackages()
+                    if user_site:
+                        site_packages_dirs = list(site_packages_dirs) + [user_site]
+                
+                for site_dir in site_packages_dirs:
+                    if file_abs.startswith(os.path.abspath(site_dir)):
+                        return False
+                
+                # If we are here, the file is NOT in site-packages → it's local
+                return True
+                
+            except Exception:
+                return False
 
         # Check if we should skip regeneration
         if not force_regenerate and os.path.exists(req_file):
@@ -384,13 +440,17 @@ class ClusterBackend(ABC):
             try:
                 pip_chill_output = self._run_pip_chill()
                 current_env_lines = pip_chill_output.strip().split("\n")
-                # Filter editable packages from hash computation for consistency
-                if editable_packages:
-                    current_env_lines = [
-                        line
-                        for line in current_env_lines
-                        if get_package_name(line) not in editable_packages
-                    ]
+                
+                # Filter local packages from hash computation for consistency
+                # We filter packages that are detected as local (editable or not in site-packages)
+                filtered_env_lines = []
+                for line in current_env_lines:
+                    pkg_name = get_package_name(line)
+                    if pkg_name and is_package_local(pkg_name):
+                        continue
+                    filtered_env_lines.append(line)
+                current_env_lines = filtered_env_lines
+
                 current_env_hash = dep_manager.compute_requirements_hash(
                     current_env_lines
                 )
@@ -448,13 +508,16 @@ class ClusterBackend(ABC):
                 if "slurmray" not in line and "ray" not in line and "dill" not in line
             ]
 
-            # Filter out editable packages (development installs)
-            if editable_packages:
-                lines = [
-                    line
-                    for line in lines
-                    if get_package_name(line) not in editable_packages
-                ]
+            # Filter out local packages (development installs) using robust detection
+            filtered_lines = []
+            for line in lines:
+                pkg_name = get_package_name(line)
+                if pkg_name and is_package_local(pkg_name):
+                    if self.logger:
+                        self.logger.info(f"Excluding local package from requirements: {pkg_name}")
+                    continue
+                filtered_lines.append(line)
+            lines = filtered_lines
 
             # Filter out ray dependencies that pip-chill picks up but should be managed by ray installation
             # This prevents version conflicts when moving between Python versions (e.g. 3.12 local -> 3.8 remote)
@@ -502,17 +565,20 @@ class ClusterBackend(ABC):
         with open(req_file, "w") as file:
             file.writelines(lines)
 
-        # Store hash of environment for future checks
+            # Store hash of environment for future checks
         try:
             pip_chill_output = self._run_pip_chill()
             env_lines = pip_chill_output.strip().split("\n")
-            # Filter editable packages from hash computation for consistency
-            if editable_packages:
-                env_lines = [
-                    line
-                    for line in env_lines
-                    if get_package_name(line) not in editable_packages
-                ]
+            
+            # Filter local packages from hash computation for consistency
+            filtered_env_lines = []
+            for line in env_lines:
+                pkg_name = get_package_name(line)
+                if pkg_name and is_package_local(pkg_name):
+                    continue
+                filtered_env_lines.append(line)
+            env_lines = filtered_env_lines
+            
             env_hash = dep_manager.compute_requirements_hash(env_lines)
             dep_manager.store_env_hash(env_hash)
         except RuntimeError as e:

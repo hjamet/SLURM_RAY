@@ -77,10 +77,10 @@ class RayLauncher:
 
         # Normalize cluster parameter
         cluster_lower = cluster.lower()
-        
+
         # Detect if cluster is a custom IP/hostname (not a known name)
         is_custom_ip = cluster_lower not in ["curnagl", "desi", "local"]
-        
+
         # Determine cluster type and backend type
         if cluster_lower == "local":
             self.cluster_type = "local"
@@ -166,11 +166,11 @@ class RayLauncher:
 
         self.runtime_env = runtime_env
         # Update server_run if cluster is "local"
-        if hasattr(self, '_force_local') and self._force_local:
+        if hasattr(self, "_force_local") and self._force_local:
             self.server_run = False
         else:
             self.server_run = server_run
-        
+
         # Auto-detect server_ssh from cluster parameter if not provided
         if self.server_run and server_ssh is None:
             if cluster_lower == "desi":
@@ -185,7 +185,7 @@ class RayLauncher:
                 self.server_ssh = "curnagl.dcsr.unil.ch"
         else:
             self.server_ssh = server_ssh or "curnagl.dcsr.unil.ch"
-        
+
         self.log_file = log_file
         self.force_reinstall_venv = force_reinstall_venv
 
@@ -262,62 +262,9 @@ class RayLauncher:
             self.backend = LocalBackend(self)
 
         # Auto-detect and add editable package source paths to files list
-        if self.server_run:
-            # 1. Editable packages (external to project or specific structure)
-            try:
-                editable_source_paths = self.backend._get_editable_package_source_paths()
-                for path in editable_source_paths:
-                    if path not in self.files:
-                        self.files.append(path)
-                        self.logger.info(
-                            f"Auto-added editable package source to upload list: {path}"
-                        )
-            except Exception as e:
-                self.logger.warning(f"Failed to detect editable packages: {e}")
-
-            # 2. Intelligent project scan (internal dependencies & warnings)
-            try:
-                from slurmray.scanner import ProjectScanner
-                
-                self.logger.info("Scanning project for local dependencies...")
-                scanner = ProjectScanner(self.pwd_path, self.logger)
-                detected_dependencies = scanner.auto_detect_dependencies()
-                
-                added_count = 0
-                for dep in detected_dependencies:
-                    # Check if dependency is already covered by existing files/dirs
-                    # E.g. if 'src' is in files, 'src/module.py' is covered
-                    is_covered = False
-                    for existing in self.files:
-                        if dep == existing or (dep.startswith(existing + os.sep)):
-                            is_covered = True
-                            break
-                    
-                    if not is_covered:
-                        self.files.append(dep)
-                        added_count += 1
-                
-                if added_count > 0:
-                    self.logger.info(f"Auto-added {added_count} local dependencies to upload list.")
-                    
-                # Display warnings for dynamic imports
-                if scanner.dynamic_imports_warnings:
-                    print("\n" + "="*60)
-                    print("⚠️  WARNING: Dynamic imports or file operations detected ⚠️")
-                    print("="*60)
-                    print("The following lines might require files that cannot be auto-detected.")
-                    print("Please verify if you need to add them manually to 'files=[...]':")
-                    for warning in scanner.dynamic_imports_warnings:
-                        print(f"  - {warning}")
-                    print("="*60 + "\n")
-                    
-                    # Also log them
-                    for warning in scanner.dynamic_imports_warnings:
-                        self.logger.warning(f"Dynamic import warning: {warning}")
-
-            except Exception as e:
-                self.logger.warning(f"Project scan failed: {e}")
-
+        # Note: Intelligent dependency detection is now done in __call__
+        # when we have the function to analyze. We don't auto-add editable packages
+        # blindly anymore to avoid adding unwanted files or breaking with complex setups.
 
     def __setup_logger(self):
         """Setup the logger"""
@@ -454,6 +401,74 @@ class RayLauncher:
         """
         if args is None:
             args = {}
+
+        # Intelligent dependency detection from function source file
+        if self.server_run:
+            try:
+                from slurmray.scanner import ProjectScanner
+
+                scanner = ProjectScanner(self.pwd_path, self.logger)
+                detected_dependencies = scanner.detect_dependencies_from_function(func)
+
+                added_count = 0
+                for dep in detected_dependencies:
+                    # Skip invalid paths (empty, current directory, etc.)
+                    if (
+                        not dep
+                        or dep == "."
+                        or dep == ".."
+                        or dep.startswith("./")
+                        or dep.startswith("../")
+                    ):
+                        continue
+
+                    # Skip paths that are outside project or in ignored directories
+                    dep_abs = os.path.abspath(os.path.join(self.pwd_path, dep))
+                    if not dep_abs.startswith(os.path.abspath(self.pwd_path)):
+                        continue
+
+                    # Check if it's a valid file or directory
+                    if not os.path.exists(dep_abs):
+                        continue
+
+                    # Check if dependency is already covered by existing files/dirs
+                    # E.g. if 'src' is in files, 'src/module.py' is covered
+                    is_covered = False
+                    for existing in self.files:
+                        if dep == existing or (dep.startswith(existing + os.sep)):
+                            is_covered = True
+                            break
+
+                    if not is_covered:
+                        self.files.append(dep)
+                        added_count += 1
+
+                if added_count > 0:
+                    self.logger.info(
+                        f"Auto-added {added_count} local dependencies to upload list (from function imports)."
+                    )
+
+                # Display warnings for dynamic imports
+                if scanner.dynamic_imports_warnings:
+                    print("\n" + "=" * 60)
+                    print("⚠️  WARNING: Dynamic imports or file operations detected ⚠️")
+                    print("=" * 60)
+                    print(
+                        "The following lines might require files that cannot be auto-detected."
+                    )
+                    print(
+                        "Please verify if you need to add them manually to 'files=[...]':"
+                    )
+                    for warning in scanner.dynamic_imports_warnings:
+                        print(f"  - {warning}")
+                    print("=" * 60 + "\n")
+
+                    # Also log them
+                    for warning in scanner.dynamic_imports_warnings:
+                        self.logger.warning(f"Dynamic import warning: {warning}")
+
+            except Exception as e:
+                self.logger.warning(f"Dependency detection from function failed: {e}")
 
         # Register signal handlers
         original_sigint = signal.getsignal(signal.SIGINT)
