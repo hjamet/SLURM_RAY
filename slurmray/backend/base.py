@@ -196,6 +196,88 @@ class ClusterBackend(ABC):
 
         return source_paths
 
+    def _ensure_pip_chill_installed(self):
+        """
+        Ensure pip-chill is installed in the current environment.
+        Raises RuntimeError if installation fails.
+        """
+        try:
+            import pip_chill
+
+            return
+        except ImportError:
+            if self.logger:
+                self.logger.info("pip-chill not found, installing...")
+
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "pip-chill"],
+                capture_output=True,
+                text=True,
+            )
+
+            if result.returncode != 0:
+                error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+                raise RuntimeError(
+                    f"Failed to install pip-chill: {error_msg}\n"
+                    f"Command: {sys.executable} -m pip install pip-chill"
+                )
+
+            if self.logger:
+                self.logger.info("pip-chill installed successfully")
+
+    def _run_pip_chill(self):
+        """
+        Run pip-chill and return its output.
+        Tries to use pip-chill directly as Python module first,
+        falls back to subprocess if needed.
+        Returns stdout on success, raises RuntimeError on failure.
+        """
+        # Ensure pip-chill is installed
+        self._ensure_pip_chill_installed()
+
+        # Try to use pip-chill directly as Python module
+        try:
+            from pip_chill import chill
+
+            # chill() returns a generator of groups of Distribution objects
+            # Each group contains Distribution objects with name and version attributes
+            dist_groups = list(chill())
+            requirements_lines = []
+            for group in dist_groups:
+                for dist in group:
+                    requirements_lines.append(f"{dist.name}=={dist.version}")
+
+            if self.logger:
+                self.logger.debug("✅ Using pip-chill directly as Python module")
+
+            return "\n".join(requirements_lines) + "\n"
+        except (ImportError, AttributeError, TypeError) as e:
+            # If direct import/execution fails, fall back to subprocess
+            if self.logger:
+                self.logger.warning(
+                    f"⚠️ Direct pip-chill import/execution failed: {e}. Falling back to subprocess."
+                )
+
+            # Use sys.executable to ensure we use the correct Python/venv
+            result = subprocess.run(
+                [sys.executable, "-m", "pip_chill"],
+                capture_output=True,
+                text=True,
+                cwd=self.launcher.project_path,
+            )
+
+            if result.returncode != 0:
+                error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+                raise RuntimeError(
+                    f"Failed to run pip-chill: {error_msg}\n"
+                    f"Command: {sys.executable} -m pip_chill"
+                )
+
+            if self.logger:
+                self.logger.info("🔄 Using subprocess fallback for pip-chill")
+
+            return result.stdout
+
     def _generate_requirements(self, force_regenerate=False):
         """
         Generate requirements.txt.
@@ -234,11 +316,9 @@ class ClusterBackend(ABC):
         # Check if we should skip regeneration
         if not force_regenerate and os.path.exists(req_file):
             # Get current environment packages hash
-            result = subprocess.run(
-                ["pip-chill"], capture_output=True, text=True, shell=True
-            )
-            if result.returncode == 0:
-                current_env_lines = result.stdout.strip().split("\n")
+            try:
+                pip_chill_output = self._run_pip_chill()
+                current_env_lines = pip_chill_output.strip().split("\n")
                 # Filter editable packages from hash computation for consistency
                 if editable_packages:
                     current_env_lines = [
@@ -259,22 +339,41 @@ class ClusterBackend(ABC):
                             "Environment unchanged, requirements.txt is up to date, skipping regeneration."
                         )
                     return
+            except RuntimeError as e:
+                # If pip-chill fails, we can't check hash, so regenerate
+                if self.logger:
+                    self.logger.warning(
+                        f"Could not check environment hash: {e}. Regenerating requirements.txt."
+                    )
 
         # Generate requirements.txt
         if self.logger:
             self.logger.info("Generating requirements.txt...")
 
-        # Use pip-chill with versions to allow smart comparison
-        subprocess.run(
-            [f"pip-chill > {self.launcher.project_path}/requirements.txt"],
-            shell=True,
-        )
+        # Use pip-chill to generate requirements
+        try:
+            requirements_content = self._run_pip_chill()
+            if self.logger:
+                self.logger.info("Generated requirements.txt using pip-chill")
+        except RuntimeError as e:
+            raise RuntimeError(
+                f"Failed to generate requirements.txt: {e}\n"
+                f"Please ensure pip-chill can be installed or is available in your environment."
+            )
+
+        # Write initial requirements to file
+        with open(req_file, "w") as file:
+            file.write(requirements_content)
+
+        # Verify file was created
+        if not os.path.exists(req_file):
+            raise FileNotFoundError(f"requirements.txt was not created at {req_file}")
 
         import dill
 
         dill_version = dill.__version__
 
-        with open(f"{self.launcher.project_path}/requirements.txt", "r") as file:
+        with open(req_file, "r") as file:
             lines = file.readlines()
 
             # Filter out slurmray, ray and dill
@@ -335,15 +434,13 @@ class ClusterBackend(ABC):
             if not any("torch" in line for line in lines):
                 lines.append("torch\n")
 
-        with open(f"{self.launcher.project_path}/requirements.txt", "w") as file:
+        with open(req_file, "w") as file:
             file.writelines(lines)
 
         # Store hash of environment for future checks
-        result = subprocess.run(
-            ["pip-chill"], capture_output=True, text=True, shell=True
-        )
-        if result.returncode == 0:
-            env_lines = result.stdout.strip().split("\n")
+        try:
+            pip_chill_output = self._run_pip_chill()
+            env_lines = pip_chill_output.strip().split("\n")
             # Filter editable packages from hash computation for consistency
             if editable_packages:
                 env_lines = [
@@ -353,6 +450,13 @@ class ClusterBackend(ABC):
                 ]
             env_hash = dep_manager.compute_requirements_hash(env_lines)
             dep_manager.store_env_hash(env_hash)
+        except RuntimeError as e:
+            # If pip-chill fails for hash computation, log warning but don't fail
+            # The requirements.txt was generated successfully, hash is just for optimization
+            if self.logger:
+                self.logger.warning(
+                    f"Could not compute environment hash: {e}. Requirements.txt was generated successfully."
+                )
 
     def _optimize_requirements(self, ssh_client, venv_command_prefix=""):
         """
