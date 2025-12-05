@@ -183,10 +183,10 @@ class ClusterBackend(ABC):
                             if self.logger:
                                 self.logger.debug(f"Error reading {pth_path}: {e}")
 
-            # Method 3: Fallback to pip show
+            # Method 3: Fallback to uv pip show
             if not location:
                 result = subprocess.run(
-                    ["pip", "show", pkg_name], capture_output=True, text=True
+                    ["uv", "pip", "show", pkg_name], capture_output=True, text=True
                 )
 
                 if result.returncode == 0:
@@ -635,7 +635,7 @@ class ClusterBackend(ABC):
                 )
             else:
                 self.logger.info("Scanning remote packages (no cache found)...")
-            cmd = f"{venv_command_prefix} pip list --format=freeze"
+            cmd = f"{venv_command_prefix} uv pip list --format=freeze"
             try:
                 stdin, stdout, stderr = ssh_client.exec_command(cmd)
                 exit_status = stdout.channel.recv_exit_status()

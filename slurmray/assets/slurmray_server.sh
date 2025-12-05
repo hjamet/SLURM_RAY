@@ -39,15 +39,15 @@ if [ -f requirements.txt ]; then
     # Check if requirements.txt is empty (only whitespace)
     if [ -s requirements.txt ]; then
         echo "📥 Installing dependencies from requirements.txt..."
-        # Install wheel first (required for some packages)
-        if ! pip install --quiet wheel >/dev/null 2>&1; then
-            echo "  ❌ wheel"
-            pip install wheel 2>&1 | grep -E "(error|Error|ERROR|failed|Failed|FAILED)" | head -3 | sed 's/^/      /' || true
-            exit 1
-        fi
         
+        # Get installed packages once (fast, single command) - create lookup file
+        uv pip list --format=freeze 2>/dev/null | sed 's/==/ /' | awk '{print $1" "$2}' > /tmp/installed_packages.txt || touch /tmp/installed_packages.txt
+        
+        # Process requirements: filter duplicates and check what needs installation
         INSTALL_ERRORS=0
         SKIPPED_COUNT=0
+        > /tmp/to_install.txt  # Clear file
+        
         while IFS= read -r line || [ -n "$line" ]; do
             # Skip empty lines and comments
             line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -55,46 +55,68 @@ if [ -f requirements.txt ]; then
                 continue
             fi
             
-            # Extract package name for display (remove version specifiers and extras)
-            pkg_name=$(echo "$line" | sed 's/[<>=!].*//' | sed 's/\[.*\]//' | sed 's/[[:space:]]*//')
+            # Extract package name (remove version specifiers and extras)
+            pkg_name=$(echo "$line" | sed 's/[<>=!].*//' | sed 's/\[.*\]//' | sed 's/[[:space:]]*//' | tr '[:upper:]' '[:lower:]')
             if [ -z "$pkg_name" ]; then
                 continue
             fi
             
-            # Check if package is already installed with correct version
-            # Extract version requirement if present
+            # Skip duplicates (check if we've already processed this package)
+            if grep -qi "^$pkg_name$" /tmp/seen_packages.txt 2>/dev/null; then
+                continue
+            fi
+            echo "$pkg_name" >> /tmp/seen_packages.txt
+            
+            # Extract required version if present
+            required_version=""
             if echo "$line" | grep -q "=="; then
                 required_version=$(echo "$line" | sed 's/.*==\([^;]*\).*/\1/' | sed 's/[[:space:]]*//')
-                installed_version=$(pip show "$pkg_name" 2>/dev/null | grep "^Version:" | sed 's/Version: //' | sed 's/[[:space:]]*//')
-                if [ -n "$installed_version" ] && [ "$installed_version" = "$required_version" ]; then
-                    echo "  ⏭️  $pkg_name==$installed_version (already installed)"
-                    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
-                    continue
-                fi
-            else
-                # No version specified, just check if package exists
-                if pip show "$pkg_name" >/dev/null 2>&1; then
-                    installed_version=$(pip show "$pkg_name" 2>/dev/null | grep "^Version:" | sed 's/Version: //' | sed 's/[[:space:]]*//')
+            fi
+            
+            # Check if package is already installed with correct version
+            installed_version=$(grep -i "^$pkg_name " /tmp/installed_packages.txt 2>/dev/null | awk '{print $2}' | head -1)
+            
+            if [ -n "$installed_version" ]; then
+                if [ -z "$required_version" ] || [ "$installed_version" = "$required_version" ]; then
                     echo "  ⏭️  $pkg_name==$installed_version (already installed)"
                     SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
                     continue
                 fi
             fi
             
-            # Package not installed or version mismatch, install it
-            if pip install --progress-bar off --quiet "$line" >/dev/null 2>&1; then
-                echo "  ✅ $pkg_name"
-            else
-                echo "  ❌ $pkg_name"
-                INSTALL_ERRORS=$((INSTALL_ERRORS + 1))
-                # Show error details
-                pip install --progress-bar off "$line" 2>&1 | grep -E "(error|Error|ERROR|failed|Failed|FAILED)" | head -3 | sed 's/^/      /' || true
-            fi
+            # Package not installed or version mismatch, add to install list
+            echo "$line" >> /tmp/to_install.txt
         done < requirements.txt
+        
+        # Install packages that need installation
+        if [ -s /tmp/to_install.txt ]; then
+            > /tmp/install_errors.txt  # Track errors
+            while IFS= read -r line; do
+                pkg_name=$(echo "$line" | sed 's/[<>=!].*//' | sed 's/\[.*\]//' | sed 's/[[:space:]]*//')
+                if uv pip install --quiet "$line" >/dev/null 2>&1; then
+                    echo "  ✅ $pkg_name"
+                else
+                    echo "  ❌ $pkg_name"
+                    echo "1" >> /tmp/install_errors.txt
+                    # Show error details
+                    uv pip install "$line" 2>&1 | grep -E "(error|Error|ERROR|failed|Failed|FAILED)" | head -3 | sed 's/^/      /' || true
+                fi
+            done < /tmp/to_install.txt
+            INSTALL_ERRORS=$(wc -l < /tmp/install_errors.txt 2>/dev/null | tr -d ' ' || echo "0")
+            rm -f /tmp/install_errors.txt
+        fi
+        
+        # Cleanup temp files
+        rm -f /tmp/installed_packages.txt /tmp/seen_packages.txt /tmp/to_install.txt
+        
+        NEWLY_INSTALLED=0
+        if [ -s /tmp/to_install.txt ]; then
+            NEWLY_INSTALLED=$(wc -l < /tmp/to_install.txt 2>/dev/null | tr -d ' ' || echo "0")
+        fi
         
         if [ $INSTALL_ERRORS -eq 0 ]; then
             if [ $SKIPPED_COUNT -gt 0 ]; then
-                echo "✅ All dependencies up to date ($SKIPPED_COUNT already installed, $((INSTALL_ERRORS + SKIPPED_COUNT - SKIPPED_COUNT)) newly installed)"
+                echo "✅ All dependencies up to date ($SKIPPED_COUNT already installed, $NEWLY_INSTALLED newly installed)"
             else
                 echo "✅ All dependencies installed successfully"
             fi
