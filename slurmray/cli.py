@@ -240,12 +240,30 @@ class DesiManager(ClusterManager):
     def _get_function_name_from_project(self, project_dir):
         """Try to read function name from func_name.txt in project directory"""
         try:
+            # Try direct path first
             func_name_path = f"{project_dir}/func_name.txt"
             stdout, stderr, exit_status = self.run_command(
                 f"test -f {func_name_path} && cat {func_name_path} || echo ''"
             )
             func_name = stdout.strip()
-            return func_name if func_name else None
+            if func_name:
+                return func_name
+            
+            # If not found, try to find func_name.txt in parent directories (up to 2 levels)
+            # Sometimes the process might be running from a subdirectory
+            for parent_level in [1, 2]:
+                parent_dir = "/".join(project_dir.split("/")[:-parent_level]) if parent_level > 0 else project_dir
+                if not parent_dir or parent_dir == "/":
+                    break
+                func_name_path = f"{parent_dir}/func_name.txt"
+                stdout, stderr, exit_status = self.run_command(
+                    f"test -f {func_name_path} && cat {func_name_path} || echo ''"
+                )
+                func_name = stdout.strip()
+                if func_name:
+                    return func_name
+            
+            return None
         except Exception:
             return None
     
@@ -315,17 +333,12 @@ class DesiManager(ClusterManager):
                         if project_dir:
                             func_name = self._get_function_name_from_project(project_dir)
                         
-                        # Determine job name (prefer function name over script name)
+                        # Determine job name: always use function name if available, otherwise "Unknown function"
                         if func_name:
                             job_name = func_name
                         else:
-                            cmd_line = " ".join(parts[10:]) if len(parts) > 10 else "slurmray"
-                            if "desi_wrapper" in cmd_line:
-                                job_name = "desi_wrapper.py"
-                            elif "spython" in cmd_line:
-                                job_name = "spython.py"
-                            else:
-                                job_name = "slurmray"
+                            # If we can't find the function name, show "Unknown function" instead of script names
+                            job_name = "Unknown function"
                         
                         jobs.append({
                             "id": f"desi-{pid}",
@@ -380,7 +393,8 @@ class DesiManager(ClusterManager):
                         if project_dir:
                             func_name = self._get_function_name_from_project(project_dir)
                         
-                        job_name = func_name if func_name else "desi_wrapper.py"
+                        # Always use function name if available, otherwise "Unknown function"
+                        job_name = func_name if func_name else "Unknown function"
                         
                         jobs.append({
                             "id": f"desi-{pid_from_lsof}",
