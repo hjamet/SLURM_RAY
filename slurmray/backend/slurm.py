@@ -964,6 +964,7 @@ if [ -f requirements.txt ]; then
         fi
         
         INSTALL_ERRORS=0
+        SKIPPED_COUNT=0
         while IFS= read -r line || [ -n "$line" ]; do
             # Skip empty lines and comments
             line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -971,13 +972,33 @@ if [ -f requirements.txt ]; then
                 continue
             fi
             
-            # Extract package name for display (remove version specifiers)
-            pkg_name=$(echo "$line" | sed 's/[<>=!].*//' | sed 's/[[:space:]]*//')
+            # Extract package name for display (remove version specifiers and extras)
+            pkg_name=$(echo "$line" | sed 's/[<>=!].*//' | sed 's/\\[.*\\]//' | sed 's/[[:space:]]*//')
             if [ -z "$pkg_name" ]; then
                 continue
             fi
             
-            # Install package and capture output
+            # Check if package is already installed with correct version
+            # Extract version requirement if present
+            if echo "$line" | grep -q "=="; then
+                required_version=$(echo "$line" | sed 's/.*==\\([^;]*\\).*/\\1/' | sed 's/[[:space:]]*//')
+                installed_version=$(pip show "$pkg_name" 2>/dev/null | grep "^Version:" | sed 's/Version: //' | sed 's/[[:space:]]*//')
+                if [ -n "$installed_version" ] && [ "$installed_version" = "$required_version" ]; then
+                    echo "  ⏭️  $pkg_name==$installed_version (already installed)"
+                    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+                    continue
+                fi
+            else
+                # No version specified, just check if package exists
+                if pip show "$pkg_name" >/dev/null 2>&1; then
+                    installed_version=$(pip show "$pkg_name" 2>/dev/null | grep "^Version:" | sed 's/Version: //' | sed 's/[[:space:]]*//')
+                    echo "  ⏭️  $pkg_name==$installed_version (already installed)"
+                    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+                    continue
+                fi
+            fi
+            
+            # Package not installed or version mismatch, install it
             if pip install --progress-bar off --quiet "$line" >/dev/null 2>&1; then
                 echo "  ✅ $pkg_name"
             else
@@ -989,7 +1010,11 @@ if [ -f requirements.txt ]; then
         done < requirements.txt
         
         if [ $INSTALL_ERRORS -eq 0 ]; then
-            echo "✅ All dependencies installed successfully"
+            if [ $SKIPPED_COUNT -gt 0 ]; then
+                echo "✅ All dependencies up to date ($SKIPPED_COUNT already installed, $((INSTALL_ERRORS + SKIPPED_COUNT - SKIPPED_COUNT)) newly installed)"
+            else
+                echo "✅ All dependencies installed successfully"
+            fi
         else
             echo "❌ Failed to install $INSTALL_ERRORS package(s)" >&2
             exit 1
