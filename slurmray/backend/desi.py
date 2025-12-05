@@ -510,20 +510,54 @@ if [ ! -d "venv" ]; then
 
         content += f"""else
     echo "✅ Using existing virtual environment"
+    VENV_EXISTED=true
 fi
 
 # Activate venv
 source venv/bin/activate
 
-# Install dependencies if requirements file exists
+# Install dependencies if requirements file exists and is not empty
 if [ -f requirements.txt ]; then
-    echo "📥 Installing dependencies from requirements.txt..."
-    if pip install --progress-bar off --quiet -r requirements.txt >/dev/null 2>&1; then
-        echo "✅ Dependencies installed"
+    # Check if requirements.txt is empty (only whitespace)
+    if [ -s requirements.txt ]; then
+        echo "📥 Installing dependencies from requirements.txt..."
+        INSTALL_ERRORS=0
+        while IFS= read -r line || [ -n "$line" ]; do
+            # Skip empty lines and comments
+            line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [ -z "$line" ] || [ "${{line#"#"}}" != "$line" ]; then
+                continue
+            fi
+            
+            # Extract package name for display (remove version specifiers)
+            pkg_name=$(echo "$line" | sed 's/[<>=!].*//' | sed 's/[[:space:]]*//')
+            if [ -z "$pkg_name" ]; then
+                continue
+            fi
+            
+            # Install package and capture output
+            if pip install --progress-bar off --quiet "$line" >/dev/null 2>&1; then
+                echo "  ✅ $pkg_name"
+            else
+                echo "  ❌ $pkg_name"
+                INSTALL_ERRORS=$((INSTALL_ERRORS + 1))
+                # Show error details
+                pip install --progress-bar off "$line" 2>&1 | grep -E "(error|Error|ERROR|failed|Failed|FAILED)" | head -3 | sed 's/^/      /' || true
+            fi
+        done < requirements.txt
+        
+        if [ $INSTALL_ERRORS -eq 0 ]; then
+            echo "✅ All dependencies installed successfully"
+        else
+            echo "❌ Failed to install $INSTALL_ERRORS package(s)" >&2
+            exit 1
+        fi
     else
-        echo "❌ Error installing dependencies" >&2
-        pip install --progress-bar off -r requirements.txt 2>&1 | grep -E "(error|Error|ERROR|failed|Failed|FAILED|WARNING)" >&2 || true
-        exit 1
+        if [ "$VENV_EXISTED" = "true" ]; then
+            echo "✅ All dependencies already installed (requirements.txt is empty)"
+        else
+            echo "⚠️  requirements.txt is empty, skipping dependency installation"
+        fi
     fi
 else
     echo "⚠️  No requirements.txt found, skipping dependency installation"

@@ -44,9 +44,9 @@ def my_func(x):
 # Initialize launcher
 launcher = RayLauncher(
     project_name="my_project",
-    cluster="curnagl",  # or 'desi', 'local', '192.168.1.10'
+    cluster="desi",  # or 'curnagl', 'local', '192.168.1.10'
     use_gpu=True,
-    memory=64
+    retention_days=1  # Retain files and venv for 1 day before cleanup (1-30 days)
 )
 
 # Execute function remotely

@@ -43,10 +43,13 @@ class FileHashManager:
 
     def compute_hashes(self, file_paths: List[str]) -> Dict[str, Dict[str, any]]:
         """
-        Compute hashes for multiple files.
+        Compute hashes for multiple files and directories.
+        For directories, recursively computes hashes for all files within.
         Returns dict: {rel_path: {"hash": "...", "mtime": ..., "size": ...}}
         """
         hashes = {}
+        files_to_process = set()  # Use set to avoid duplicates
+        
         for file_path in file_paths:
             # Convert to absolute path
             if not os.path.isabs(file_path):
@@ -67,15 +70,45 @@ class FileHashManager:
             if rel_path.startswith(".."):
                 continue
 
-            # Compute hash and metadata
-            file_hash = self.compute_file_hash(abs_path)
-            if file_hash:
-                stat = os.stat(abs_path)
-                hashes[rel_path] = {
-                    "hash": file_hash,
-                    "mtime": stat.st_mtime,
-                    "size": stat.st_size,
-                }
+            # If it's a directory, recursively collect all files
+            if os.path.isdir(abs_path):
+                for root, dirs, files in os.walk(abs_path):
+                    # Skip __pycache__ directories
+                    dirs[:] = [d for d in dirs if d != "__pycache__"]
+                    for file in files:
+                        file_abs_path = os.path.join(root, file)
+                        try:
+                            file_rel_path = os.path.relpath(file_abs_path, self.project_root)
+                            # Skip if outside project
+                            if not file_rel_path.startswith(".."):
+                                files_to_process.add(file_abs_path)
+                        except ValueError:
+                            continue
+            else:
+                # It's a file, add it directly
+                files_to_process.add(abs_path)
+
+        # Compute hashes for all collected files
+        for abs_path in files_to_process:
+            try:
+                rel_path = os.path.relpath(abs_path, self.project_root)
+                # Skip if outside project (double check)
+                if rel_path.startswith(".."):
+                    continue
+                
+                # Compute hash and metadata
+                file_hash = self.compute_file_hash(abs_path)
+                if file_hash:
+                    stat = os.stat(abs_path)
+                    hashes[rel_path] = {
+                        "hash": file_hash,
+                        "mtime": stat.st_mtime,
+                        "size": stat.st_size,
+                    }
+            except Exception as e:
+                if self.logger:
+                    self.logger.debug(f"Skipping file {abs_path}: {e}")
+                continue
 
         return hashes
 

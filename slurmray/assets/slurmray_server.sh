@@ -29,16 +29,64 @@ if [ ! -d ".venv" ]; then
     python3 -m venv .venv
 else
     echo "Using existing virtualenv (requirements unchanged)..."
+    VENV_EXISTED=true
 fi
 
 source .venv/bin/activate
 
-# Install requirements (pip will skip packages that are already installed)
-# Note: requirements.txt is already optimized by Python to only include missing packages
-echo "📥 Installing dependencies from requirements.txt..."
-pip install wheel
-pip install --progress-bar off -r requirements.txt
-echo "✅ Dependencies installed"
+# Install requirements if file exists and is not empty
+if [ -f requirements.txt ]; then
+    # Check if requirements.txt is empty (only whitespace)
+    if [ -s requirements.txt ]; then
+        echo "📥 Installing dependencies from requirements.txt..."
+        # Install wheel first (required for some packages)
+        if ! pip install --quiet wheel >/dev/null 2>&1; then
+            echo "  ❌ wheel"
+            pip install wheel 2>&1 | grep -E "(error|Error|ERROR|failed|Failed|FAILED)" | head -3 | sed 's/^/      /' || true
+            exit 1
+        fi
+        
+        INSTALL_ERRORS=0
+        while IFS= read -r line || [ -n "$line" ]; do
+            # Skip empty lines and comments
+            line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [ -z "$line" ] || [ "${line#\#}" != "$line" ]; then
+                continue
+            fi
+            
+            # Extract package name for display (remove version specifiers)
+            pkg_name=$(echo "$line" | sed 's/[<>=!].*//' | sed 's/[[:space:]]*//')
+            if [ -z "$pkg_name" ]; then
+                continue
+            fi
+            
+            # Install package and capture output
+            if pip install --progress-bar off --quiet "$line" >/dev/null 2>&1; then
+                echo "  ✅ $pkg_name"
+            else
+                echo "  ❌ $pkg_name"
+                INSTALL_ERRORS=$((INSTALL_ERRORS + 1))
+                # Show error details
+                pip install --progress-bar off "$line" 2>&1 | grep -E "(error|Error|ERROR|failed|Failed|FAILED)" | head -3 | sed 's/^/      /' || true
+            fi
+        done < requirements.txt
+        
+        if [ $INSTALL_ERRORS -eq 0 ]; then
+            echo "✅ All dependencies installed successfully"
+        else
+            echo "❌ Failed to install $INSTALL_ERRORS package(s)" >&2
+            exit 1
+        fi
+    else
+        if [ "$VENV_EXISTED" = "true" ]; then
+            echo "✅ All dependencies already installed (requirements.txt is empty)"
+        else
+            echo "⚠️  requirements.txt is empty, skipping dependency installation"
+        fi
+    fi
+else
+    echo "⚠️  No requirements.txt found, skipping dependency installation"
+fi
 
 # Fix torch bug (https://github.com/pytorch/pytorch/issues/111469)
 PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')

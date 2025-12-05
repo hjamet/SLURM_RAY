@@ -904,18 +904,15 @@ if __name__ == "__main__":
 
     cluster = RayLauncher(
         project_name="example",  # Name of the project (will create a directory with this name in the current directory)
-        files=(
-            ["documentation/RayLauncher.html"]
-            if os.path.exists("documentation/RayLauncher.html")
-            else []
-        ),  # List of files to push to the server
+        files=["documentation/RayLauncher.html"],  # List of files to push to the server
         use_gpu=True,  # If you need GPU, you can set it to True
         runtime_env={
             "env_vars": {"NCCL_SOCKET_IFNAME": "eno1"}
         },  # Example of environment variable
         server_run=True,  # To run the code on the server and not locally
         cluster="desi",  # Use Desi backend (credentials loaded from .env: DESI_USERNAME and DESI_PASSWORD)
-        force_reinstall_venv=True,  # Force reinstall venv to test with Python 3.12.1
+        force_reinstall_venv=False,  # Force reinstall venv to test with Python 3.12.1
+        retention_days=1,  # Retain files and venv for 1 day before cleanup
     )
 
     result = cluster(example_func, args={"x": 5})  # Execute function with arguments
