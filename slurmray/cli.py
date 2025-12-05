@@ -12,9 +12,11 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 from rich.live import Live
+from rich.layout import Layout
 from dotenv import load_dotenv
 import paramiko
 from getpass import getpass
+import inquirer
 
 # Try to import RayLauncher components
 try:
@@ -235,6 +237,49 @@ class DesiManager(ClusterManager):
         exit_status = stdout.channel.recv_exit_status()
         return stdout.read().decode("utf-8"), stderr.read().decode("utf-8"), exit_status
     
+    def _get_function_name_from_project(self, project_dir):
+        """Try to read function name from func_name.txt in project directory"""
+        try:
+            func_name_path = f"{project_dir}/func_name.txt"
+            stdout, stderr, exit_status = self.run_command(
+                f"test -f {func_name_path} && cat {func_name_path} || echo ''"
+            )
+            func_name = stdout.strip()
+            return func_name if func_name else None
+        except Exception:
+            return None
+    
+    def _get_project_dir_from_pid(self, pid):
+        """Try to get project directory from process working directory"""
+        try:
+            # Try multiple methods to get working directory
+            # Method 1: readlink /proc/{pid}/cwd (Linux)
+            stdout, stderr, exit_status = self.run_command(
+                f"readlink /proc/{pid}/cwd 2>/dev/null || echo ''"
+            )
+            cwd = stdout.strip()
+            
+            # Method 2: pwdx (if available)
+            if not cwd:
+                stdout, stderr, exit_status = self.run_command(
+                    f"pwdx {pid} 2>/dev/null | awk '{{print $2}}' || echo ''"
+                )
+                cwd = stdout.strip()
+            
+            # Method 3: ps -o cwd
+            if not cwd:
+                stdout, stderr, exit_status = self.run_command(
+                    f"ps -p {pid} -o cwd --no-headers 2>/dev/null || echo ''"
+                )
+                cwd = stdout.strip()
+            
+            if cwd and "slurmray-server" in cwd:
+                # Extract project directory (should be in /home/{user}/slurmray-server/{project_name})
+                return cwd
+            return None
+        except Exception:
+            return None
+    
     def get_jobs(self):
         """Retrieve jobs from Desi using Smart Lock and process detection"""
         try:
@@ -244,7 +289,7 @@ class DesiManager(ClusterManager):
             
             # Check for running Python processes related to slurmray
             stdout, stderr, exit_status = self.run_command(
-                f"ps aux | grep -E '(desi_wrapper|spython\.py)' | grep -v grep || echo ''"
+                f"ps aux | grep -E '(desi_wrapper|spython\\.py)' | grep -v grep || echo ''"
             )
             if stdout.strip():
                 for line in stdout.strip().split('\n'):
@@ -252,6 +297,7 @@ class DesiManager(ClusterManager):
                         continue
                     parts = line.split()
                     if len(parts) >= 11:
+                        user = parts[0]  # User is first column in ps aux
                         pid = parts[1]
                         if pid in seen_pids:
                             continue
@@ -263,18 +309,28 @@ class DesiManager(ClusterManager):
                         )
                         elapsed_time = stdout_etime.strip() or "N/A"
                         
-                        # Determine job name
-                        cmd_line = " ".join(parts[10:]) if len(parts) > 10 else "slurmray"
-                        if "desi_wrapper" in cmd_line:
-                            job_name = "desi_wrapper.py"
-                        elif "spython" in cmd_line:
-                            job_name = "spython.py"
+                        # Try to get project directory and function name
+                        project_dir = self._get_project_dir_from_pid(pid)
+                        func_name = None
+                        if project_dir:
+                            func_name = self._get_function_name_from_project(project_dir)
+                        
+                        # Determine job name (prefer function name over script name)
+                        if func_name:
+                            job_name = func_name
                         else:
-                            job_name = "slurmray"
+                            cmd_line = " ".join(parts[10:]) if len(parts) > 10 else "slurmray"
+                            if "desi_wrapper" in cmd_line:
+                                job_name = "desi_wrapper.py"
+                            elif "spython" in cmd_line:
+                                job_name = "spython.py"
+                            else:
+                                job_name = "slurmray"
                         
                         jobs.append({
                             "id": f"desi-{pid}",
                             "name": job_name,
+                            "user": user,
                             "state": "RUNNING",
                             "time": elapsed_time,
                             "nodes": "1",
@@ -302,19 +358,34 @@ class DesiManager(ClusterManager):
                 
                 if pid_from_lsof and pid_from_lsof not in seen_pids:
                     # Verify the process is still running and related to slurmray
-                    stdout, stderr, exit_status = self.run_command(
+                    stdout_cmd, stderr_cmd, exit_status_cmd = self.run_command(
                         f"ps -p {pid_from_lsof} -o cmd --no-headers 2>/dev/null || echo ''"
                     )
-                    if stdout.strip() and ("desi_wrapper" in stdout or "spython" in stdout or "slurmray" in stdout):
+                    if stdout_cmd.strip() and ("desi_wrapper" in stdout_cmd or "spython" in stdout_cmd or "slurmray" in stdout_cmd):
                         seen_pids.add(pid_from_lsof)
+                        # Get user separately for clarity
+                        stdout_user, stderr_user, exit_status_user = self.run_command(
+                            f"ps -p {pid_from_lsof} -o user --no-headers 2>/dev/null || echo 'N/A'"
+                        )
+                        user = stdout_user.strip() or "N/A"
+                        
                         stdout_etime, stderr_etime, exit_status_etime = self.run_command(
                             f"ps -p {pid_from_lsof} -o etime --no-headers 2>/dev/null || echo 'N/A'"
                         )
                         elapsed_time = stdout_etime.strip() or "N/A"
                         
+                        # Try to get project directory and function name
+                        project_dir = self._get_project_dir_from_pid(pid_from_lsof)
+                        func_name = None
+                        if project_dir:
+                            func_name = self._get_function_name_from_project(project_dir)
+                        
+                        job_name = func_name if func_name else "desi_wrapper.py"
+                        
                         jobs.append({
                             "id": f"desi-{pid_from_lsof}",
-                            "name": "desi_wrapper.py",
+                            "name": job_name,
+                            "user": user,
                             "state": "RUNNING",
                             "time": elapsed_time,
                             "nodes": "1",
@@ -382,6 +453,7 @@ def display_jobs_table(jobs, cluster_type="slurm"):
         table = Table(title=f"Desi Jobs ({len(jobs)})")
         table.add_column("ID", style="cyan", no_wrap=True)
         table.add_column("Name", style="magenta")
+        table.add_column("User", style="blue", no_wrap=True)
         table.add_column("State", style="green")
         table.add_column("Time", style="yellow")
         table.add_column("PID", style="blue", no_wrap=True)
@@ -390,6 +462,7 @@ def display_jobs_table(jobs, cluster_type="slurm"):
             table.add_row(
                 job["id"],
                 job.get("name", "N/A"),
+                job.get("user", "N/A"),
                 job["state"],
                 job.get("time", "N/A"),
                 job.get("pid", "N/A")
@@ -454,39 +527,273 @@ Examples:
         console.print("[red]Invalid cluster specified[/red]")
         return
     
-    # Main interactive loop
-    while True:
+    # Main interactive loop with auto-refresh
+    refresh_interval = 10  # seconds
+    jobs_data = {"jobs": [], "last_refresh": 0}
+    should_exit = threading.Event()
+    user_wants_menu = threading.Event()
+    
+    def auto_refresh_worker():
+        """Background thread to auto-refresh jobs every refresh_interval seconds"""
+        while not should_exit.is_set():
+            time.sleep(refresh_interval)
+            if not should_exit.is_set():
+                jobs_data["jobs"] = manager.get_jobs()
+                jobs_data["last_refresh"] = time.time()
+    
+    # Start auto-refresh thread
+    refresh_thread = threading.Thread(target=auto_refresh_worker, daemon=True)
+    refresh_thread.start()
+    
+    # Initial load
+    jobs_data["jobs"] = manager.get_jobs()
+    jobs_data["last_refresh"] = time.time()
+    
+    def render_display():
+        """Render the current display"""
+        jobs = jobs_data["jobs"]
+        last_refresh_time = time.strftime('%H:%M:%S', time.localtime(jobs_data["last_refresh"]))
+        
+        # Create layout
+        layout = Layout()
+        layout.split_column(
+            Layout(name="header", size=3),
+            Layout(name="table"),
+            Layout(name="footer", size=4)
+        )
+        
+        layout["header"].update(Panel(f"[bold blue]SlurmRay Manager - {cluster_name}[/bold blue]", style="bold"))
+        layout["table"].update(display_jobs_table(jobs, cluster_type))
+        
+        footer_text = f"[yellow]Auto-refreshing every {refresh_interval}s... Last refresh: {last_refresh_time}[/yellow]\n"
+        footer_text += "[dim]Press Enter to open menu (↑↓ to navigate, ←→ to select)[/dim]"
+        layout["footer"].update(Panel(footer_text))
+        
+        return layout
+    
+    # Main loop: alternate between Live display and menu
+    while not should_exit.is_set():
         try:
+            # Phase 1: Live auto-updating display
+            with Live(render_display(), refresh_per_second=2, screen=True) as live:
+                import sys
+                import select
+                import tty
+                import termios
+                
+                # Set terminal to cbreak mode (less disruptive than raw mode)
+                old_settings = termios.tcgetattr(sys.stdin)
+                try:
+                    tty.setcbreak(sys.stdin.fileno())
+                except Exception:
+                    # If terminal manipulation fails, use simple mode
+                    pass
+                
+                try:
+                    while not should_exit.is_set():
+                        # Update display with latest data (reads from jobs_data which is updated by thread)
+                        live.update(render_display())
+                        
+                        # Check if user pressed Enter (non-blocking)
+                        try:
+                            if select.select([sys.stdin], [], [], 0.1)[0]:
+                                char = sys.stdin.read(1)
+                                if char == '\n' or char == '\r':
+                                    # Exit Live to show menu
+                                    break
+                                elif char == '\x03':  # Ctrl+C
+                                    should_exit.set()
+                                    break
+                        except (OSError, ValueError):
+                            # Terminal might not support select, fall back to simple wait
+                            time.sleep(0.5)
+                            continue
+                        
+                        # Small sleep to avoid busy waiting
+                        time.sleep(0.1)
+                finally:
+                    # Restore terminal settings
+                    try:
+                        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+                    except Exception:
+                        pass
+            
+            if should_exit.is_set():
+                break
+            
+            # Phase 2: Show menu with inquirer (outside Live context)
+            # Refresh jobs before showing menu
+            jobs_data["jobs"] = manager.get_jobs()
+            jobs_data["last_refresh"] = time.time()
+            
             console.clear()
             console.rule(f"[bold blue]SlurmRay Manager - {cluster_name}[/bold blue]")
             
-            jobs = manager.get_jobs()
+            # Use latest jobs data
+            jobs = jobs_data["jobs"]
             console.print(display_jobs_table(jobs, cluster_type))
             
-            console.print("\n[bold]Options:[/bold]")
-            console.print("[r] Refresh")
-            console.print("[c] Cancel Job")
-            console.print("[d] Open Dashboard")
-            console.print("[q] Quit")
+            last_refresh_time = time.strftime('%H:%M:%S', time.localtime(jobs_data["last_refresh"]))
+            console.print(f"\n[yellow]Auto-refreshing every {refresh_interval}s... Last refresh: {last_refresh_time}[/yellow]")
+            console.print("[dim]Navigation: Use arrow keys (↑↓) to navigate, Enter to select[/dim]")
             
-            choice = Prompt.ask("\nSelect an option", choices=["r", "c", "d", "q"], default="r")
+            # Show menu with inquirer for arrow key navigation
+            questions = [
+                inquirer.List(
+                    'action',
+                    message="Select an option",
+                    choices=[
+                        ('Refresh Now', 'refresh'),
+                        ('Cancel Job', 'cancel'),
+                        ('Open Dashboard', 'dashboard'),
+                        ('Quit', 'quit')
+                    ],
+                    default='refresh'
+                )
+            ]
             
-            if choice == "q":
+            answers = inquirer.prompt(questions)
+            if not answers:
+                # User cancelled (Ctrl+C)
+                break
+            
+            user_input = answers['action']
+            
+            # Handle user input
+            if user_input == 'quit':
+                should_exit.set()
                 console.print("Bye!")
                 break
-            elif choice == "r":
+            elif user_input == 'refresh':
+                jobs_data["jobs"] = manager.get_jobs()
+                jobs_data["last_refresh"] = time.time()
+                # Return to Live display (continue loop)
                 continue
-            elif choice == "c":
-                job_id = Prompt.ask("Enter Job ID to cancel")
-                if Confirm.ask(f"Are you sure you want to cancel job {job_id}?"):
-                    manager.cancel_job(job_id)
-                    time.sleep(1.5) # Let user see result
-            elif choice == "d":
-                job_id = Prompt.ask("Enter Job ID to connect to")
-                manager.open_dashboard(job_id)
-                # Return to loop after tunnel close
+            elif user_input == 'cancel':
+                # Refresh jobs before showing cancel menu
+                jobs_data["jobs"] = manager.get_jobs()
+                jobs_data["last_refresh"] = time.time()
+                jobs = jobs_data["jobs"]
+                if jobs:
+                    job_choices = [f"{job['id']} - {job.get('name', 'N/A')}" for job in jobs]
+                    cancel_questions = [
+                        inquirer.List(
+                            'job_id',
+                            message="Select job to cancel",
+                            choices=job_choices
+                        )
+                    ]
+                    cancel_answers = inquirer.prompt(cancel_questions)
+                    if cancel_answers:
+                        selected_job = cancel_answers['job_id']
+                        job_id = selected_job.split(' - ')[0]
+                        if Confirm.ask(f"Are you sure you want to cancel job {job_id}?"):
+                            manager.cancel_job(job_id)
+                            console.print("[green]Job cancelled. Refreshing...[/green]")
+                            time.sleep(1.5)
+                            jobs_data["jobs"] = manager.get_jobs()
+                            jobs_data["last_refresh"] = time.time()
+                else:
+                    console.print("[yellow]No jobs to cancel[/yellow]")
+                    time.sleep(1)
+                # Return to Live display (continue loop)
+                continue
+            elif user_input == 'dashboard':
+                # Refresh jobs before showing dashboard menu
+                jobs_data["jobs"] = manager.get_jobs()
+                jobs_data["last_refresh"] = time.time()
+                jobs = jobs_data["jobs"]
+                if jobs:
+                    job_choices = [f"{job['id']} - {job.get('name', 'N/A')}" for job in jobs]
+                    dashboard_questions = [
+                        inquirer.List(
+                            'job_id',
+                            message="Select job to connect to",
+                            choices=job_choices
+                        )
+                    ]
+                    dashboard_answers = inquirer.prompt(dashboard_questions)
+                    if dashboard_answers:
+                        selected_job = dashboard_answers['job_id']
+                        job_id = selected_job.split(' - ')[0]
+                        manager.open_dashboard(job_id)
+                        # Refresh after tunnel close
+                        jobs_data["jobs"] = manager.get_jobs()
+                        jobs_data["last_refresh"] = time.time()
+                else:
+                    console.print("[yellow]No jobs available[/yellow]")
+                    time.sleep(1)
+                # Return to Live display (continue loop)
+                continue
+                    
         except (KeyboardInterrupt, EOFError):
+            should_exit.set()
             console.print("\nBye!")
+            break
+        except Exception as e:
+            # Fallback if terminal manipulation fails
+            console.print(f"[yellow]Warning: Auto-refresh unavailable ({e}). Using simple mode...[/yellow]")
+            should_exit.set()
+            # Simple fallback without auto-refresh
+            while True:
+                console.clear()
+                console.rule(f"[bold blue]SlurmRay Manager - {cluster_name}[/bold blue]")
+                jobs = manager.get_jobs()
+                console.print(display_jobs_table(jobs, cluster_type))
+                
+                questions = [
+                    inquirer.List(
+                        'action',
+                        message="Select an option",
+                        choices=[
+                            ('Refresh', 'refresh'),
+                            ('Cancel Job', 'cancel'),
+                            ('Open Dashboard', 'dashboard'),
+                            ('Quit', 'quit')
+                        ],
+                        default='refresh'
+                    )
+                ]
+                
+                answers = inquirer.prompt(questions)
+                if not answers or answers['action'] == 'quit':
+                    break
+                elif answers['action'] == 'refresh':
+                    continue
+                elif answers['action'] == 'cancel':
+                    jobs = manager.get_jobs()
+                    if jobs:
+                        job_choices = [f"{job['id']} - {job.get('name', 'N/A')}" for job in jobs]
+                        cancel_questions = [
+                            inquirer.List(
+                                'job_id',
+                                message="Select job to cancel",
+                                choices=job_choices
+                            )
+                        ]
+                        cancel_answers = inquirer.prompt(cancel_questions)
+                        if cancel_answers:
+                            selected_job = cancel_answers['job_id']
+                            job_id = selected_job.split(' - ')[0]
+                            if Confirm.ask(f"Are you sure you want to cancel job {job_id}?"):
+                                manager.cancel_job(job_id)
+                                time.sleep(1.5)
+                elif answers['action'] == 'dashboard':
+                    jobs = manager.get_jobs()
+                    if jobs:
+                        job_choices = [f"{job['id']} - {job.get('name', 'N/A')}" for job in jobs]
+                        dashboard_questions = [
+                            inquirer.List(
+                                'job_id',
+                                message="Select job to connect to",
+                                choices=job_choices
+                            )
+                        ]
+                        dashboard_answers = inquirer.prompt(dashboard_questions)
+                        if dashboard_answers:
+                            selected_job = dashboard_answers['job_id']
+                            job_id = selected_job.split(' - ')[0]
+                            manager.open_dashboard(job_id)
             break
 
 if __name__ == "__main__":
