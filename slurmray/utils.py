@@ -324,7 +324,7 @@ class SSHTunnel:
             forward_thread = threading.Thread(target=accept_handler, daemon=True)
             forward_thread.start()
 
-            msg = f"🎉 Dashboard forwarded and available here : http://{self.remote_host}:{self.remote_port}"
+            msg = f"🎉 Dashboard forwarded and available here : http://localhost:{self.local_port}"
             print(msg)
             if self.logger:
                 self.logger.info(msg)

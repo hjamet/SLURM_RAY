@@ -277,29 +277,33 @@ class ClusterBackend(ABC):
         Ensure pip-chill is installed in the current environment.
         Raises RuntimeError if installation fails.
         """
-        try:
-            import pip_chill
+        # Suppress pkg_resources deprecation warning from pip_chill
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning, module="pip_chill")
+            warnings.filterwarnings("ignore", message=".*pkg_resources.*", category=UserWarning)
+            try:
+                import pip_chill
+                return
+            except ImportError:
+                if self.logger:
+                    self.logger.info("pip-chill not found, installing...")
 
-            return
-        except ImportError:
-            if self.logger:
-                self.logger.info("pip-chill not found, installing...")
-
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "pip-chill"],
-                capture_output=True,
-                text=True,
-            )
-
-            if result.returncode != 0:
-                error_msg = result.stderr.strip() if result.stderr else "Unknown error"
-                raise RuntimeError(
-                    f"Failed to install pip-chill: {error_msg}\n"
-                    f"Command: {sys.executable} -m pip install pip-chill"
+                result = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "pip-chill"],
+                    capture_output=True,
+                    text=True,
                 )
 
-            if self.logger:
-                self.logger.info("pip-chill installed successfully")
+                if result.returncode != 0:
+                    error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+                    raise RuntimeError(
+                        f"Failed to install pip-chill: {error_msg}\n"
+                        f"Command: {sys.executable} -m pip install pip-chill"
+                    )
+
+                if self.logger:
+                    self.logger.info("pip-chill installed successfully")
 
     def _run_pip_chill(self):
         """
