@@ -24,9 +24,11 @@ class RayLauncher:
 
     Official tool from DESI @ HEC UNIL.
 
-    Supports two execution modes:
-    - **Slurm mode** (`cluster='slurm'`): For Slurm-based clusters like Curnagl. Uses sbatch/squeue for job management.
+    Supports multiple execution modes:
+    - **Curnagl mode** (`cluster='curnagl'`): For Slurm-based clusters like Curnagl. Uses sbatch/squeue for job management.
     - **Desi mode** (`cluster='desi'`): For standalone servers like ISIPOL09. Uses Smart Lock scheduling for resource management.
+    - **Local mode** (`cluster='local'`): For local execution without remote server/cluster.
+    - **Custom IP** (`cluster='<ip_or_hostname>'`): For custom Slurm clusters. Uses the provided IP/hostname.
 
     The launcher automatically selects the appropriate backend based on the `cluster` parameter and environment detection.
     """
@@ -42,12 +44,13 @@ class RayLauncher:
         max_running_time: int = 60,
         runtime_env: dict = {"env_vars": {}},
         server_run: bool = True,
-        server_ssh: str = "curnagl.dcsr.unil.ch",
+        server_ssh: str = None,  # Auto-detected from cluster parameter
         server_username: str = None,
         server_password: str = None,
         log_file: str = "logs/RayLauncher.log",
-        cluster: str = "slurm",  # 'slurm' (curnagl) or 'desi'
+        cluster: str = "curnagl",  # 'curnagl', 'desi', 'local', or custom IP/hostname
         force_reinstall_venv: bool = False,
+        retention_days: int = 7,
     ):
         """Initialize the launcher
 
@@ -61,25 +64,48 @@ class RayLauncher:
             max_running_time (int, optional): Maximum running time of the job in minutes. For Desi mode, this is not enforced by a scheduler. Defaults to 60.
             runtime_env (dict, optional): Environment variables to share between all the workers. Can be useful for issues like https://github.com/ray-project/ray/issues/418. Default to empty.
             server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster/server ressources. Defaults to True.
-            server_ssh (str, optional): If `server_run` is set to true, the address of the server to use. Defaults to "curnagl.dcsr.unil.ch" for Slurm mode, or "130.223.73.209" for Desi mode (auto-detected if cluster='desi').
-            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect. Credentials are automatically loaded from a `.env` file (CURNAGL_USERNAME for Slurm, DESI_USERNAME for Desi) if available. Priority: environment variables → explicit parameter → default ("hjamet" for Slurm, "henri" for Desi).
-            server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. Credentials are automatically loaded from a `.env` file (CURNAGL_PASSWORD for Slurm, DESI_PASSWORD for Desi) if available. Priority: explicit parameter → environment variables → interactive prompt. CAUTION: never write your password in the code. Defaults to None.
+            server_ssh (str, optional): If `server_run` is set to true, the address of the server to use. Auto-detected from `cluster` parameter if not provided. Defaults to None (auto-detected).
+            server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect. Credentials are automatically loaded from a `.env` file (CURNAGL_USERNAME for Curnagl/custom IP, DESI_USERNAME for Desi) if available. Priority: environment variables → explicit parameter → default ("hjamet" for Curnagl/custom IP, "henri" for Desi).
+            server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. Credentials are automatically loaded from a `.env` file (CURNAGL_PASSWORD for Curnagl/custom IP, DESI_PASSWORD for Desi) if available. Priority: explicit parameter → environment variables → interactive prompt. CAUTION: never write your password in the code. Defaults to None.
             log_file (str, optional): Path to the log file. Defaults to "logs/RayLauncher.log".
-            cluster (str, optional): Type of cluster/backend to use: 'slurm' (default, e.g. Curnagl) or 'desi' (ISIPOL09/Desi server). Defaults to "slurm".
+            cluster (str, optional): Cluster/server to use: 'curnagl' (default, Slurm cluster), 'desi' (ISIPOL09/Desi server), 'local' (local execution), or a custom IP/hostname (for custom Slurm clusters). Defaults to "curnagl".
             force_reinstall_venv (bool, optional): Force complete removal and recreation of virtual environment on remote server/cluster. This will delete the existing venv and reinstall all packages from requirements.txt. Use this if the venv is corrupted or you need a clean installation. Defaults to False.
+            retention_days (int, optional): Number of days to retain files and venv on the cluster before automatic cleanup. Must be between 1 and 30 days. Defaults to 7.
         """
         # Load environment variables from .env file
         load_dotenv()
 
-        # Determine cluster type first (needed for credential loading)
-        self.cluster_type = cluster.lower()  # 'slurm' or 'desi'
+        # Normalize cluster parameter
+        cluster_lower = cluster.lower()
+
+        # Detect if cluster is a custom IP/hostname (not a known name)
+        is_custom_ip = cluster_lower not in ["curnagl", "desi", "local"]
+
+        # Determine cluster type and backend type
+        if cluster_lower == "local":
+            self.cluster_type = "local"
+            self.backend_type = "local"
+            # Force local execution
+            self._force_local = True
+        else:
+            self._force_local = False
+            if cluster_lower == "desi":
+                self.cluster_type = "desi"
+                self.backend_type = "desi"
+            elif cluster_lower == "curnagl" or is_custom_ip:
+                self.cluster_type = "curnagl"  # Use "curnagl" for credential loading
+                self.backend_type = "slurm"  # Use SlurmBackend
+            else:
+                raise ValueError(
+                    f"Invalid cluster value: '{cluster}'. Use 'curnagl', 'desi', 'local', or a custom IP/hostname."
+                )
 
         # Determine environment variable names based on cluster type
         if self.cluster_type == "desi":
             env_username_key = "DESI_USERNAME"
             env_password_key = "DESI_PASSWORD"
             default_username = "henri"
-        else:  # slurm
+        else:  # curnagl or custom IP (both use CURNAGL credentials)
             env_username_key = "CURNAGL_USERNAME"
             env_password_key = "CURNAGL_PASSWORD"
             default_username = "hjamet"
@@ -120,20 +146,46 @@ class RayLauncher:
         self.use_gpu = use_gpu
         self.memory = memory
         self.max_running_time = max_running_time
-        
+
+        # Validate and save retention_days
+        if retention_days < 1 or retention_days > 30:
+            raise ValueError(
+                f"retention_days must be between 1 and 30, got {retention_days}"
+            )
+        self.retention_days = retention_days
+
         # Set default runtime_env and add Ray warning suppression
         if runtime_env is None:
             runtime_env = {"env_vars": {}}
         elif "env_vars" not in runtime_env:
             runtime_env["env_vars"] = {}
-        
+
         # Suppress Ray FutureWarning about accelerator visible devices
         if "RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO" not in runtime_env["env_vars"]:
             runtime_env["env_vars"]["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
-        
+
         self.runtime_env = runtime_env
-        self.server_run = server_run
-        self.server_ssh = server_ssh
+        # Update server_run if cluster is "local"
+        if hasattr(self, "_force_local") and self._force_local:
+            self.server_run = False
+        else:
+            self.server_run = server_run
+
+        # Auto-detect server_ssh from cluster parameter if not provided
+        if self.server_run and server_ssh is None:
+            if cluster_lower == "desi":
+                self.server_ssh = "130.223.73.209"
+            elif cluster_lower == "curnagl":
+                self.server_ssh = "curnagl.dcsr.unil.ch"
+            elif is_custom_ip:
+                # Use the provided IP/hostname directly
+                self.server_ssh = cluster
+            else:
+                # Fallback (should not happen)
+                self.server_ssh = "curnagl.dcsr.unil.ch"
+        else:
+            self.server_ssh = server_ssh or "curnagl.dcsr.unil.ch"
+
         self.log_file = log_file
         self.force_reinstall_venv = force_reinstall_venv
 
@@ -193,19 +245,26 @@ class RayLauncher:
         self.cluster = os.path.exists("/usr/bin/sbatch")
 
         # Initialize Backend
-        if self.server_run:
-            if self.cluster_type == "desi":
+        if self.backend_type == "local":
+            self.backend = LocalBackend(self)
+        elif self.server_run:
+            if self.backend_type == "desi":
                 self.backend = DesiBackend(self)
-            elif self.cluster_type == "slurm":
+            elif self.backend_type == "slurm":
                 self.backend = SlurmBackend(self)
             else:
                 raise ValueError(
-                    f"Unknown cluster type: {self.cluster_type}. Use 'slurm' or 'desi'."
+                    f"Unknown backend type: {self.backend_type}. This should not happen."
                 )
         elif self.cluster:  # Running ON a cluster (Slurm)
             self.backend = SlurmBackend(self)
         else:
             self.backend = LocalBackend(self)
+
+        # Auto-detect and add editable package source paths to files list
+        # Note: Intelligent dependency detection is now done in __call__
+        # when we have the function to analyze. We don't auto-add editable packages
+        # blindly anymore to avoid adding unwanted files or breaking with complex setups.
 
     def __setup_logger(self):
         """Setup the logger"""
@@ -238,7 +297,7 @@ class RayLauncher:
 
     def _detect_local_python_version(self) -> str:
         """Detect local Python version from .python-version file or sys.version_info
-        
+
         Returns:
             str: Python version in format "X.Y.Z" (e.g., "3.12.1")
         """
@@ -249,27 +308,34 @@ class RayLauncher:
                 version_str = f.read().strip()
                 # Validate format (should be X.Y or X.Y.Z)
                 import re
-                if re.match(r'^\d+\.\d+(\.\d+)?$', version_str):
+
+                if re.match(r"^\d+\.\d+(\.\d+)?$", version_str):
                     # If only X.Y, add .0 for micro version
-                    if version_str.count('.') == 1:
+                    if version_str.count(".") == 1:
                         version_str = f"{version_str}.0"
-                    self.logger.info(f"Detected Python version from .python-version: {version_str}")
+                    self.logger.info(
+                        f"Detected Python version from .python-version: {version_str}"
+                    )
                     return version_str
-        
+
         # Fallback to sys.version_info
         version_str = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-        self.logger.info(f"Detected Python version from sys.version_info: {version_str}")
+        self.logger.info(
+            f"Detected Python version from sys.version_info: {version_str}"
+        )
         return version_str
 
     def _validate_arguments(self):
         """Validate arguments and warn about inconsistencies"""
+        # Validate project_name is not None (required for project-based organization on cluster)
+        if self.project_name is None:
+            raise ValueError(
+                "project_name cannot be None. A project name is required for cluster execution."
+            )
+
         if self.cluster_type == "desi":
-            # Update default server_ssh if not provided or if it's the default Curnagl one
-            if self.server_ssh == "curnagl.dcsr.unil.ch":
-                self.logger.info(
-                    "Switching default server_ssh to Desi IP (130.223.73.209)"
-                )
-                self.server_ssh = "130.223.73.209"
+            # server_ssh is already set correctly in __init__
+            pass
 
             if self.node_nbr > 1:
                 self.logger.warning(
@@ -280,8 +346,14 @@ class RayLauncher:
             # Check if user provided modules beyond the default ones (gcc/python) or GPU modules (cuda/cudnn)
             # GPU modules are added automatically if use_gpu=True, so they don't count as user-provided
             user_provided_modules = [
-                m for m in self.modules 
-                if not (m.startswith("gcc") or m.startswith("python") or m.startswith("cuda") or m.startswith("cudnn"))
+                m
+                for m in self.modules
+                if not (
+                    m.startswith("gcc")
+                    or m.startswith("python")
+                    or m.startswith("cuda")
+                    or m.startswith("cudnn")
+                )
             ]
             if "modules" in self._explicit_params and user_provided_modules:
                 self.logger.warning(
@@ -329,6 +401,74 @@ class RayLauncher:
         """
         if args is None:
             args = {}
+
+        # Intelligent dependency detection from function source file
+        if self.server_run:
+            try:
+                from slurmray.scanner import ProjectScanner
+
+                scanner = ProjectScanner(self.pwd_path, self.logger)
+                detected_dependencies = scanner.detect_dependencies_from_function(func)
+
+                added_count = 0
+                for dep in detected_dependencies:
+                    # Skip invalid paths (empty, current directory, etc.)
+                    if (
+                        not dep
+                        or dep == "."
+                        or dep == ".."
+                        or dep.startswith("./")
+                        or dep.startswith("../")
+                    ):
+                        continue
+
+                    # Skip paths that are outside project or in ignored directories
+                    dep_abs = os.path.abspath(os.path.join(self.pwd_path, dep))
+                    if not dep_abs.startswith(os.path.abspath(self.pwd_path)):
+                        continue
+
+                    # Check if it's a valid file or directory
+                    if not os.path.exists(dep_abs):
+                        continue
+
+                    # Check if dependency is already covered by existing files/dirs
+                    # E.g. if 'src' is in files, 'src/module.py' is covered
+                    is_covered = False
+                    for existing in self.files:
+                        if dep == existing or (dep.startswith(existing + os.sep)):
+                            is_covered = True
+                            break
+
+                    if not is_covered:
+                        self.files.append(dep)
+                        added_count += 1
+
+                if added_count > 0:
+                    self.logger.info(
+                        f"Auto-added {added_count} local dependencies to upload list (from function imports)."
+                    )
+
+                # Display warnings for dynamic imports
+                if scanner.dynamic_imports_warnings:
+                    print("\n" + "=" * 60)
+                    print("⚠️  WARNING: Dynamic imports or file operations detected ⚠️")
+                    print("=" * 60)
+                    print(
+                        "The following lines might require files that cannot be auto-detected."
+                    )
+                    print(
+                        "Please verify if you need to add them manually to 'files=[...]':"
+                    )
+                    for warning in scanner.dynamic_imports_warnings:
+                        print(f"  - {warning}")
+                    print("=" * 60 + "\n")
+
+                    # Also log them
+                    for warning in scanner.dynamic_imports_warnings:
+                        self.logger.warning(f"Dynamic import warning: {warning}")
+
+            except Exception as e:
+                self.logger.warning(f"Dependency detection from function failed: {e}")
 
         # Register signal handlers
         original_sigint = signal.getsignal(signal.SIGINT)
@@ -512,11 +652,16 @@ class RayLauncher:
     def __serialize_func_and_args(self, func: Callable = None, args: list = None):
         """Serialize the function and the arguments
 
-        This method uses different serialization strategies based on Python version compatibility:
-        - If Python versions are compatible (same major.minor) AND server_run=True:
-          Privilégies dill pickle serialization for better performance
-        - Otherwise: Uses source code extraction for better compatibility across versions
-        
+        This method uses a simplified serialization strategy:
+        - **Always tries dill pickle first** (better performance, handles closures, complex objects)
+        - **Falls back to source extraction** only if dill pickle fails
+        - With pyenv, Python versions are identical, so dill pickle should always work
+
+        **Fallback to source extraction happens when:**
+        - Python versions are incompatible (rare with pyenv)
+        - Function is not serializable by dill (built-ins, C functions, etc.)
+        - Other serialization errors occur
+
         **Limitations of source-based serialization:**
         - Functions with closures: Only the function body is captured, not the captured
           variables. The function may fail at runtime if it depends on closure variables.
@@ -524,124 +669,136 @@ class RayLauncher:
           have accessible source.
         - Lambda functions defined inline may have limited source information.
 
-        **Fallback behavior:**
-        - If dill pickle fails (incompatible versions), falls back to source extraction
-        - If source extraction fails, dill bytecode serialization is used as fallback.
-
         Args:
             func (Callable, optional): Function to serialize. Defaults to None.
             args (list, optional): Arguments of the function. Defaults to None.
         """
         self.logger.info("Serializing function and arguments...")
 
-        # Check if Python versions are compatible (for server_run mode)
-        python_versions_compatible = False
-        if self.server_run and hasattr(self, 'backend'):
-            if hasattr(self.backend, 'python_version_compatible'):
-                python_versions_compatible = self.backend.python_version_compatible
-            elif hasattr(self.backend, 'pyenv_python_cmd') and self.backend.pyenv_python_cmd:
-                # If pyenv is used, assume versions are compatible (same version installed)
-                python_versions_compatible = True
-
-        # Determine serialization strategy
-        prefer_dill_pickle = python_versions_compatible and self.server_run
-        
-        if prefer_dill_pickle:
-            self.logger.info("🔄 Python versions are compatible: prioritizing dill pickle serialization for better performance")
-        else:
-            if self.server_run:
-                self.logger.info("⚠️ Python versions may be incompatible: using source extraction for better compatibility")
-            else:
-                self.logger.info("Using source extraction (local execution mode)")
-
-        # Try to get source code for the function (more robust across versions)
         source_extracted = False
         source_method = None
         dill_pickle_used = False
+        serialization_method = "dill_pickle"  # Default method
 
-        # Analyze dependencies
-        # (imports_list, sources_list, is_safe)
-        extra_imports, extra_sources, is_safe = self._resolve_dependencies(func)
+        # Step 1: Always try dill pickle first
+        self.logger.info("Attempting dill pickle serialization...")
+        try:
+            # Try to pickle the function directly with dill
+            func_pickle_path = os.path.join(self.project_path, "func.pkl")
+            with open(func_pickle_path, "wb") as f:
+                dill.dump(func, f)
 
-        # If versions are compatible, try dill pickle first
-        if prefer_dill_pickle:
-            try:
-                # Try to pickle the function directly with dill
-                test_pickle_path = os.path.join(self.project_path, "func_test.pkl")
-                with open(test_pickle_path, "wb") as f:
-                    dill.dump(func, f)
-                
-                # If successful, use pickle
-                dill_pickle_used = True
-                source_extracted = False  # Don't extract source
-                self.logger.info("🔄 Successfully serialized function with dill pickle (versions compatible)")
-                
-                # Clean up test file
-                if os.path.exists(test_pickle_path):
-                    os.remove(test_pickle_path)
-                    
-            except Exception as e:
-                self.logger.warning(f"⚠️ dill pickle failed (fallback to source extraction): {e}")
-                dill_pickle_used = False
-                # Continue with source extraction below
+            # If successful, use pickle
+            dill_pickle_used = True
+            serialization_method = "dill_pickle"
+            self.logger.info("✅ Successfully serialized function with dill pickle.")
 
-        # Try source extraction if dill pickle wasn't used (or failed)
-        if not dill_pickle_used and is_safe:
-            # Method 1: Try inspect.getsource() (standard library, most common)
-            try:
-                source = inspect.getsource(func)
-                source_method = "inspect.getsource"
+            # Clean up any stale source files since we're using dill pickle
+            source_path = os.path.join(self.project_path, "func_source.py")
+            name_path = os.path.join(self.project_path, "func_name.txt")
+            if os.path.exists(source_path):
+                os.remove(source_path)
+            if os.path.exists(name_path):
+                os.remove(name_path)
 
-                # Combine parts
-                # 1. Imports
-                # 2. Dependency sources
-                # 3. Main function source
+        except Exception as e:
+            # Dill pickle failed - analyze why and fallback to source extraction
+            error_type = type(e).__name__
+            error_message = str(e)
 
-                parts = []
-                if extra_imports:
-                    parts.extend(extra_imports)
-                    parts.append("")  # newline
+            # Determine likely reason for failure
+            reason_explanation = "Unknown error"
+            if "opcode" in error_message.lower() or "bytecode" in error_message.lower():
+                reason_explanation = (
+                    "Python version incompatibility (bytecode mismatch)"
+                )
+            elif "cannot pickle" in error_message.lower():
+                reason_explanation = (
+                    "Function not serializable by dill (built-in, C function, etc.)"
+                )
+            elif "recursion" in error_message.lower():
+                reason_explanation = "Recursion limit reached during serialization"
+            else:
+                reason_explanation = f"Serialization error: {error_type}"
 
-                if extra_sources:
-                    parts.extend(extra_sources)
-                    parts.append("")  # newline
+            self.logger.error(
+                f"❌ dill pickle serialization failed: {error_type}: {error_message}"
+            )
+            self.logger.warning(
+                f"⚠️ Falling back to source extraction. Reason: {reason_explanation}"
+            )
 
-                # Dedent main source
-                source = self._dedent_source(source)
-                parts.append(source)
+            dill_pickle_used = False
+            serialization_method = "source_extraction"
 
-                final_source = "\n".join(parts)
+            # Continue with source extraction below
 
-                source = final_source
-                source_extracted = True
+        # Step 2: Try source extraction if dill pickle failed
+        if not dill_pickle_used:
+            self.logger.info("📝 Using source extraction fallback (dill pickle failed)")
 
-            except (OSError, TypeError) as e:
-                self.logger.debug(f"inspect.getsource() failed: {e}")
-            except Exception as e:
-                self.logger.debug(f"inspect.getsource() unexpected error: {e}")
+            # Only analyze dependencies if we need source extraction
+            extra_imports, extra_sources, is_safe = self._resolve_dependencies(func)
 
-            # Method 2: Try dill.source.getsource()
-            # Note: dill doesn't support our dependency injection easily,
-            # so if inspect fails, we might just fallback to pickle.
-            # But let's keep it as backup for simple functions.
-            if not source_extracted:
-                # ... (existing dill logic) ...
-                # BUT we need to be careful. If we use dill source, we miss our injections.
-                # So if imports/sources are needed, we probably shouldn't use raw dill source.
-                # Since is_safe=True implies we resolved dependencies, we EXPECT them to be injected.
-                # If inspect fails, we can't easily combine dill source with our injections reliably
-                # (dill source might have different indentation/structure).
-                # So let's skip dill fallback if we have dependencies.
-                if not extra_imports and not extra_sources:
-                    try:
-                        if hasattr(dill, "source") and hasattr(
-                            dill.source, "getsource"
-                        ):
-                            source = dill.source.getsource(func)
-                            source_method = "dill.source.getsource"
-                            source_extracted = True
-                    except Exception as e:
-                        self.logger.debug(f"dill.source.getsource() failed: {e}")
+            if is_safe:
+                # Method 1: Try inspect.getsource() (standard library, most common)
+                try:
+                    source = inspect.getsource(func)
+                    source_method = "inspect.getsource"
+
+                    # Combine parts
+                    # 1. Imports
+                    # 2. Dependency sources
+                    # 3. Main function source
+
+                    parts = []
+                    if extra_imports:
+                        parts.extend(extra_imports)
+                        parts.append("")  # newline
+
+                    if extra_sources:
+                        parts.extend(extra_sources)
+                        parts.append("")  # newline
+
+                    # Dedent main source
+                    source = self._dedent_source(source)
+                    parts.append(source)
+
+                    final_source = "\n".join(parts)
+
+                    source = final_source
+                    source_extracted = True
+
+                except (OSError, TypeError) as e:
+                    self.logger.debug(f"inspect.getsource() failed: {e}")
+                except Exception as e:
+                    self.logger.debug(f"inspect.getsource() unexpected error: {e}")
+
+                # Method 2: Try dill.source.getsource()
+                # Note: dill doesn't support our dependency injection easily,
+                # so if inspect fails, we might just fallback to pickle.
+                # But let's keep it as backup for simple functions.
+                if not source_extracted:
+                    # BUT we need to be careful. If we use dill source, we miss our injections.
+                    # So if imports/sources are needed, we probably shouldn't use raw dill source.
+                    # Since is_safe=True implies we resolved dependencies, we EXPECT them to be injected.
+                    # If inspect fails, we can't easily combine dill source with our injections reliably
+                    # (dill source might have different indentation/structure).
+                    # So let's skip dill fallback if we have dependencies.
+                    if not extra_imports and not extra_sources:
+                        try:
+                            if hasattr(dill, "source") and hasattr(
+                                dill.source, "getsource"
+                            ):
+                                source = dill.source.getsource(func)
+                                source_method = "dill.source.getsource"
+                                source_extracted = True
+                        except Exception as e:
+                            self.logger.debug(f"dill.source.getsource() failed: {e}")
+            else:
+                self.logger.warning(
+                    "⚠️ Function unsafe for source extraction (unresolvable globals/closures). Will use dill pickle anyway."
+                )
 
         # Process and save source if extracted
         if source_extracted:
@@ -660,32 +817,60 @@ class RayLauncher:
                     f.write(func.__name__)
 
                 self.logger.info(
-                    f"Function source extracted successfully using {source_method} with dependencies."
+                    f"✅ Function source extracted successfully using {source_method}."
                 )
+                serialization_method = "source_extraction"
 
             except Exception as e:
                 self.logger.warning(f"Failed to process/save function source: {e}")
                 source_extracted = False
+                # Fallback to dill pickle if source extraction save failed
+                serialization_method = "dill_pickle"
 
         # If source extraction failed or was skipped, ensure no stale source files exist
-        if not source_extracted and not dill_pickle_used:
-                source_path = os.path.join(self.project_path, "func_source.py")
-                name_path = os.path.join(self.project_path, "func_name.txt")
-                if os.path.exists(source_path):
-                    os.remove(source_path)
-                if os.path.exists(name_path):
-                    os.remove(name_path)
+        if not source_extracted:
+            source_path = os.path.join(self.project_path, "func_source.py")
+            name_path = os.path.join(self.project_path, "func_name.txt")
+            if os.path.exists(source_path):
+                os.remove(source_path)
+            if os.path.exists(name_path):
+                os.remove(name_path)
 
-                if not is_safe:
-                    self.logger.warning(
-                        "⚠️ Function unsafe for source extraction (unresolvable globals/closures). Fallback to pickle."
-                    )
-                else:
-                    self.logger.warning("⚠️ Source extraction failed. Fallback to pickle.")
+            # If source extraction was attempted but failed, log it
+            if not dill_pickle_used:
+                self.logger.warning(
+                    "⚠️ Source extraction failed. Using dill pickle as final fallback."
+                )
+                # Ensure we still pickle the function even if source extraction failed
+                serialization_method = "dill_pickle"
 
         # Always pickle the function (used by dill pickle strategy or as fallback)
-        with open(os.path.join(self.project_path, "func.pkl"), "wb") as f:
-            dill.dump(func, f)
+        # Create func.pkl if not already created (we created it earlier if dill_pickle_used was True)
+        if not dill_pickle_used:
+            try:
+                func_pickle_path = os.path.join(self.project_path, "func.pkl")
+                with open(func_pickle_path, "wb") as f:
+                    dill.dump(func, f)
+                self.logger.debug(
+                    "Created func.pkl as fallback (dill pickle or source extraction fallback)"
+                )
+            except Exception as e:
+                # Only raise if we have no other option (both dill pickle and source extraction failed)
+                if not source_extracted:
+                    self.logger.error(
+                        f"❌ Critical: Failed to pickle function even as fallback: {e}"
+                    )
+                    raise
+                else:
+                    # If source extraction succeeded, warn but don't fail
+                    self.logger.warning(
+                        f"⚠️ Failed to create func.pkl fallback (source extraction will be used): {e}"
+                    )
+
+        # Save serialization method indicator
+        method_file = os.path.join(self.project_path, "serialization_method.txt")
+        with open(method_file, "w") as f:
+            f.write(f"{serialization_method}\n")
 
         # Pickle the arguments
         if args is None:
