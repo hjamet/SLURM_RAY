@@ -123,12 +123,34 @@ class DesiBackend(RemoteMixin):
             if (f.endswith(".py") or f.endswith(".pkl") or f.endswith(".txt"))
             and f != "requirements.txt"
         ]
+        
+        # Fail-fast: ensure func_name.txt is present and will be uploaded
+        func_name_txt = "func_name.txt"
+        func_name_path = os.path.join(self.launcher.project_path, func_name_txt)
+        if not os.path.exists(func_name_path):
+            error_msg = f"❌ ERROR: func_name.txt not found locally at {func_name_path}. Cannot proceed without function name."
+            self.logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
+        
+        if func_name_txt not in files_to_push:
+            files_to_push.append(func_name_txt)
+        
         if files_to_push:
             self.logger.info(f"📤 Uploading {len(files_to_push)} file(s) to server...")
             for file in files_to_push:
                 sftp.put(
                     os.path.join(self.launcher.project_path, file), f"{base_dir}/{file}"
                 )
+        
+        # Verify func_name.txt was uploaded successfully (fail-fast)
+        stdin, stdout, stderr = self.ssh_client.exec_command(
+            f"test -f {base_dir}/{func_name_txt} && echo 'exists' || echo 'missing'"
+        )
+        stdout.channel.recv_exit_status()
+        if "missing" in stdout.read().decode("utf-8").strip():
+            error_msg = f"❌ ERROR: func_name.txt upload failed. File not found on server at {base_dir}/{func_name_txt}"
+            self.logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
 
         # Push optimized requirements as requirements.txt
         if os.path.exists(req_file_to_push):
@@ -639,17 +661,90 @@ echo "🔒 Acquiring Smart Lock and starting job..."
             f.write(content)
 
     def _write_desi_wrapper(self, filename):
-        """Write python wrapper for Smart Lock"""
+        """Write python wrapper for Smart Lock with queue management"""
         content = f"""
 import os
 import sys
 import time
 import fcntl
 import subprocess
+import json
 
 LOCK_FILE = "/tmp/slurmray_desi.lock"
+QUEUE_FILE = "/tmp/slurmray_desi.queue"
 MAX_RETRIES = 1000
 RETRY_DELAY = 30 # seconds
+
+def read_queue():
+    '''Read queue file (read-only, no lock needed)'''
+    if not os.path.exists(QUEUE_FILE):
+        return []
+    try:
+        with open(QUEUE_FILE, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return []
+
+def write_queue(queue_data):
+    '''Write queue file with exclusive lock'''
+    max_retries = 10
+    retry_delay = 0.1
+    for attempt in range(max_retries):
+        try:
+            queue_fd = open(QUEUE_FILE, 'w')
+            try:
+                fcntl.lockf(queue_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                json.dump(queue_data, queue_fd, indent=2)
+                queue_fd.flush()
+                os.fsync(queue_fd.fileno())
+                fcntl.lockf(queue_fd, fcntl.LOCK_UN)
+                queue_fd.close()
+                return True
+            except IOError:
+                queue_fd.close()
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+                return False
+        except IOError:
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                continue
+            return False
+    return False
+
+def add_to_queue(pid, user, func_name, project_dir, status):
+    '''Add or update entry in queue'''
+    queue = read_queue()
+    # Remove existing entry with same PID if present
+    queue = [entry for entry in queue if entry.get("pid") != str(pid)]
+    # Add new entry
+    entry = {{
+        "pid": str(pid),
+        "user": user,
+        "func_name": func_name,
+        "status": status,
+        "timestamp": int(time.time()),
+        "project_dir": project_dir
+    }}
+    queue.append(entry)
+    write_queue(queue)
+
+def remove_from_queue(pid):
+    '''Remove entry from queue'''
+    queue = read_queue()
+    queue = [entry for entry in queue if entry.get("pid") != str(pid)]
+    write_queue(queue)
+
+def update_queue_status(pid, status):
+    '''Update status of an entry in queue'''
+    queue = read_queue()
+    for entry in queue:
+        if entry.get("pid") == str(pid):
+            entry["status"] = status
+            write_queue(queue)
+            return True
+    return False
 
 def acquire_lock():
     lock_fd = open(LOCK_FILE, 'w')
@@ -664,6 +759,29 @@ def acquire_lock():
 def main():
     lock_fd = None
     retries = 0
+    pid = os.getpid()
+    user = os.getenv('USER', 'unknown')
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Read function name from func_name.txt (fail-fast if missing or empty)
+    func_name_path = os.path.join(project_dir, "func_name.txt")
+    if not os.path.exists(func_name_path):
+        print("❌ ERROR: func_name.txt not found at " + func_name_path)
+        sys.exit(1)
+    
+    try:
+        with open(func_name_path, 'r') as f:
+            func_name = f.read().strip()
+    except IOError as e:
+        print("❌ ERROR: Failed to read func_name.txt: " + str(e))
+        sys.exit(1)
+    
+    if not func_name:
+        print("❌ ERROR: func_name.txt is empty at " + func_name_path)
+        sys.exit(1)
+    
+    # Add to queue as waiting at startup
+    add_to_queue(pid, user, func_name, project_dir, "waiting")
     
     print("🔒 Attempting to acquire Smart Lock...")
     while lock_fd is None:
@@ -677,7 +795,16 @@ def main():
             retries += 1
             if retries > MAX_RETRIES:
                 print(f"❌ Timeout: Could not acquire lock after {{MAX_RETRIES}} attempts ({{MAX_RETRIES * RETRY_DELAY / 60:.1f}} minutes)")
+                # Remove from queue before exiting
+                remove_from_queue(pid)
                 sys.exit(1)
+    
+    # Update queue status to running and write function name to lock file
+    update_queue_status(pid, "running")
+    lock_fd.seek(0)
+    lock_fd.truncate()
+    lock_fd.write(str(pid) + "\\n" + user + "\\n" + func_name + "\\n" + project_dir + "\\n")
+    lock_fd.flush()
     
     print("✅ Lock acquired! Starting job execution...")
     # Lock acquired, run payload
@@ -690,6 +817,8 @@ def main():
     try:
         subprocess.check_call([python_cmd, "spython.py"])
     finally:
+        # Remove from queue before releasing lock
+        remove_from_queue(pid)
         # Release lock
         print("🔓 Releasing Smart Lock...")
         fcntl.lockf(lock_fd, fcntl.LOCK_UN)

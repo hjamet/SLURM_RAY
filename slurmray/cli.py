@@ -6,6 +6,7 @@ import sys
 import webbrowser
 import argparse
 import threading
+import json
 from abc import ABC, abstractmethod
 from rich.console import Console
 from rich.table import Table
@@ -201,6 +202,7 @@ class DesiManager(ClusterManager):
     """Manager for Desi server (ISIPOL09) using Smart Lock"""
     
     LOCK_FILE = "/tmp/slurmray_desi.lock"
+    QUEUE_FILE = "/tmp/slurmray_desi.queue"
     
     def __init__(self, username: str = None, password: str = None, ssh_host: str = None):
         super().__init__(username, password, ssh_host)
@@ -236,6 +238,105 @@ class DesiManager(ClusterManager):
         stdin, stdout, stderr = self.ssh_client.exec_command(command)
         exit_status = stdout.channel.recv_exit_status()
         return stdout.read().decode("utf-8"), stderr.read().decode("utf-8"), exit_status
+    
+    def _read_queue(self):
+        """Read queue file from remote server (read-only, no lock needed)"""
+        try:
+            stdout, stderr, exit_status = self.run_command(
+                f"test -f {self.QUEUE_FILE} && cat {self.QUEUE_FILE} || echo '[]'"
+            )
+            if exit_status != 0:
+                return []
+            import json
+            queue_data = json.loads(stdout.strip() or "[]")
+            return queue_data if isinstance(queue_data, list) else []
+        except (json.JSONDecodeError, ValueError, Exception):
+            return []
+    
+    def _write_queue(self, queue_data):
+        """Write queue file to remote server with lock management"""
+        import json
+        import tempfile
+        import base64
+        
+        # Create temporary file with queue data
+        queue_json = json.dumps(queue_data, indent=2)
+        queue_b64 = base64.b64encode(queue_json.encode('utf-8')).decode('utf-8')
+        
+        # Write using Python on remote with lock
+        python_script = f"""
+import json
+import fcntl
+import base64
+import sys
+
+QUEUE_FILE = "{self.QUEUE_FILE}"
+queue_b64 = "{queue_b64}"
+
+max_retries = 10
+retry_delay = 0.1
+success = False
+
+for attempt in range(max_retries):
+    try:
+        queue_fd = open(QUEUE_FILE, 'w')
+        try:
+            fcntl.lockf(queue_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            queue_json = base64.b64decode(queue_b64).decode('utf-8')
+            queue_data = json.loads(queue_json)
+            json.dump(queue_data, queue_fd, indent=2)
+            queue_fd.flush()
+            import os
+            os.fsync(queue_fd.fileno())
+            fcntl.lockf(queue_fd, fcntl.LOCK_UN)
+            queue_fd.close()
+            success = True
+            break
+        except IOError:
+            queue_fd.close()
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(retry_delay)
+                continue
+    except IOError:
+        if attempt < max_retries - 1:
+            import time
+            time.sleep(retry_delay)
+            continue
+
+sys.exit(0 if success else 1)
+"""
+        # Write script to temp file and execute
+        stdout, stderr, exit_status = self.run_command(
+            f"python3 -c {repr(python_script)}"
+        )
+        return exit_status == 0
+    
+    def _clean_dead_processes_from_queue(self):
+        """Remove entries for processes that no longer exist"""
+        queue = self._read_queue()
+        if not queue:
+            return
+        
+        cleaned_queue = []
+        pids_to_check = [entry.get("pid") for entry in queue if entry.get("pid")]
+        
+        if not pids_to_check:
+            return
+        
+        # Check all PIDs at once
+        pids_str = " ".join(pids_to_check)
+        stdout, stderr, exit_status = self.run_command(
+            f"for pid in {pids_str}; do ps -p $pid >/dev/null 2>&1 && echo $pid; done"
+        )
+        alive_pids = set(stdout.strip().split())
+        
+        # Keep only entries with alive processes
+        cleaned_queue = [entry for entry in queue if entry.get("pid") in alive_pids]
+        
+        # If queue changed, write it back
+        if len(cleaned_queue) != len(queue):
+            self._write_queue(cleaned_queue)
     
     def _get_function_name_from_project(self, project_dir):
         """Try to read function name from func_name.txt in project directory"""
@@ -299,113 +400,84 @@ class DesiManager(ClusterManager):
             return None
     
     def get_jobs(self):
-        """Retrieve jobs from Desi using Smart Lock and process detection"""
+        """Retrieve jobs from Desi using queue file"""
         try:
             self._connect()
             jobs = []
-            seen_pids = set()
             
-            # Check for running Python processes related to slurmray
-            stdout, stderr, exit_status = self.run_command(
-                f"ps aux | grep -E '(desi_wrapper|spython\\.py)' | grep -v grep || echo ''"
-            )
-            if stdout.strip():
-                for line in stdout.strip().split('\n'):
-                    if not line.strip():
-                        continue
-                    parts = line.split()
-                    if len(parts) >= 11:
-                        user = parts[0]  # User is first column in ps aux
-                        pid = parts[1]
-                        if pid in seen_pids:
-                            continue
-                        seen_pids.add(pid)
-                        
-                        # Try to get elapsed time
-                        stdout_etime, stderr_etime, exit_status_etime = self.run_command(
-                            f"ps -p {pid} -o etime --no-headers 2>/dev/null || echo 'N/A'"
-                        )
-                        elapsed_time = stdout_etime.strip() or "N/A"
-                        
-                        # Try to get project directory and function name
-                        project_dir = self._get_project_dir_from_pid(pid)
-                        func_name = None
-                        if project_dir:
-                            func_name = self._get_function_name_from_project(project_dir)
-                        
-                        # Determine job name: always use function name if available, otherwise "Unknown function"
-                        if func_name:
-                            job_name = func_name
-                        else:
-                            # If we can't find the function name, show "Unknown function" instead of script names
-                            job_name = "Unknown function"
-                        
-                        jobs.append({
-                            "id": f"desi-{pid}",
-                            "name": job_name,
-                            "user": user,
-                            "state": "RUNNING",
-                            "time": elapsed_time,
-                            "nodes": "1",
-                            "nodelist": "localhost",
-                            "pid": pid
-                        })
+            # Clean dead processes from queue first
+            self._clean_dead_processes_from_queue()
             
-            # Also check if lock file exists and try to find process holding it
-            # This helps detect jobs even if ps doesn't show them clearly
-            stdout, stderr, exit_status = self.run_command(f"test -f {self.LOCK_FILE} && echo 'exists' || echo 'not_exists'")
-            if "exists" in stdout.strip():
-                # Try to find process using the lock file (multiple methods for compatibility)
-                # Method 1: lsof (if available)
+            # Read queue file
+            queue = self._read_queue()
+            if not queue:
+                return []
+            
+            # Separate running and waiting jobs, sort waiting by timestamp
+            running_jobs = []
+            waiting_jobs = []
+            
+            for entry in queue:
+                pid = entry.get("pid")
+                if not pid:
+                    continue
+                
+                # Verify process exists
                 stdout, stderr, exit_status = self.run_command(
-                    f"lsof {self.LOCK_FILE} 2>/dev/null | tail -n +2 | awk '{{print $2}}' | head -1"
+                    f"ps -p {pid} >/dev/null 2>&1 && echo 'alive' || echo 'dead'"
                 )
-                pid_from_lsof = stdout.strip()
+                if "dead" in stdout.strip():
+                    # Process is dead, skip (will be cleaned next time)
+                    continue
                 
-                # Method 2: fuser (if available)
-                if not pid_from_lsof:
-                    stdout, stderr, exit_status = self.run_command(
-                        f"fuser {self.LOCK_FILE} 2>/dev/null | awk '{{print $1}}' | head -1"
-                    )
-                    pid_from_lsof = stdout.strip()
+                # Get elapsed time from ps (more accurate than calculating from timestamp)
+                stdout_etime, stderr_etime, exit_status_etime = self.run_command(
+                    f"ps -p {pid} -o etime --no-headers 2>/dev/null || echo 'N/A'"
+                )
+                elapsed_time = stdout_etime.strip() or "N/A"
                 
-                if pid_from_lsof and pid_from_lsof not in seen_pids:
-                    # Verify the process is still running and related to slurmray
-                    stdout_cmd, stderr_cmd, exit_status_cmd = self.run_command(
-                        f"ps -p {pid_from_lsof} -o cmd --no-headers 2>/dev/null || echo ''"
-                    )
-                    if stdout_cmd.strip() and ("desi_wrapper" in stdout_cmd or "spython" in stdout_cmd or "slurmray" in stdout_cmd):
-                        seen_pids.add(pid_from_lsof)
-                        # Get user separately for clarity
-                        stdout_user, stderr_user, exit_status_user = self.run_command(
-                            f"ps -p {pid_from_lsof} -o user --no-headers 2>/dev/null || echo 'N/A'"
-                        )
-                        user = stdout_user.strip() or "N/A"
-                        
-                        stdout_etime, stderr_etime, exit_status_etime = self.run_command(
-                            f"ps -p {pid_from_lsof} -o etime --no-headers 2>/dev/null || echo 'N/A'"
-                        )
-                        elapsed_time = stdout_etime.strip() or "N/A"
-                        
-                        # Try to get project directory and function name
-                        project_dir = self._get_project_dir_from_pid(pid_from_lsof)
-                        func_name = None
-                        if project_dir:
-                            func_name = self._get_function_name_from_project(project_dir)
-                        
-                        # Always use function name if available, otherwise "Unknown function"
-                        job_name = func_name if func_name else "Unknown function"
-                        
-                        jobs.append({
-                            "id": f"desi-{pid_from_lsof}",
-                            "name": job_name,
-                            "user": user,
-                            "state": "RUNNING",
-                            "time": elapsed_time,
-                            "nodes": "1",
-                            "nodelist": "localhost",
-                            "pid": pid_from_lsof
-                        })
+                # Extract job information
+                func_name = entry.get("func_name")
+                user = entry.get("user", "unknown")
+                status = entry.get("status", "unknown")
+                
+                # If func_name is missing or "Unknown function", try to read it from project_dir
+                if not func_name or func_name == "Unknown function":
+                    project_dir = entry.get("project_dir")
+                    if project_dir:
+                        func_name = self._get_function_name_from_project(project_dir)
+                    if not func_name or func_name == "Unknown function":
+                        # Fail-fast: if we can't get the function name, it's an error
+                        console.print(f"[yellow]Warning: Job {pid} has no function name in queue and func_name.txt not found[/yellow]")
+                        func_name = "ERROR: func_name missing"
+                
+                job = {
+                    "id": f"desi-{pid}",
+                    "name": func_name,
+                    "user": user,
+                    "state": "RUNNING" if status == "running" else "WAITING",
+                    "time": elapsed_time,
+                    "nodes": "1",
+                    "nodelist": "localhost",
+                    "pid": pid,
+                    "timestamp": entry.get("timestamp", 0),
+                    "queue_position": None
+                }
+                
+                if status == "running":
+                    running_jobs.append(job)
+                elif status == "waiting":
+                    waiting_jobs.append(job)
+            
+            # Sort waiting jobs by timestamp (oldest first)
+            waiting_jobs.sort(key=lambda x: x.get("timestamp", 0))
+            
+            # Calculate queue positions for waiting jobs
+            for idx, job in enumerate(waiting_jobs):
+                job["queue_position"] = idx + 1
+            
+            # Combine: running jobs first, then waiting jobs
+            jobs = running_jobs + waiting_jobs
             
             return jobs
         except Exception as e:
@@ -469,15 +541,33 @@ def display_jobs_table(jobs, cluster_type="slurm"):
         table.add_column("Name", style="magenta")
         table.add_column("User", style="blue", no_wrap=True)
         table.add_column("State", style="green")
+        table.add_column("Queue", style="yellow", justify="center")
         table.add_column("Time", style="yellow")
         table.add_column("PID", style="blue", no_wrap=True)
 
         for job in jobs:
+            # Format state display
+            state_display = job["state"]
+            if job["state"] == "WAITING":
+                queue_pos = job.get("queue_position")
+                if queue_pos:
+                    state_display = f"WAITING (#{queue_pos})"
+            
+            # Format queue column
+            queue_display = "-"
+            if job["state"] == "WAITING":
+                queue_pos = job.get("queue_position")
+                if queue_pos:
+                    queue_display = f"#{queue_pos}"
+            elif job["state"] == "RUNNING":
+                queue_display = "RUNNING"
+            
             table.add_row(
                 job["id"],
                 job.get("name", "N/A"),
                 job.get("user", "N/A"),
-                job["state"],
+                state_display,
+                queue_display,
                 job.get("time", "N/A"),
                 job.get("pid", "N/A")
             )

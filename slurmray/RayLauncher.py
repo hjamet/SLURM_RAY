@@ -830,11 +830,19 @@ class RayLauncher:
         # If source extraction failed or was skipped, ensure no stale source files exist
         if not source_extracted:
             source_path = os.path.join(self.project_path, "func_source.py")
-            name_path = os.path.join(self.project_path, "func_name.txt")
             if os.path.exists(source_path):
                 os.remove(source_path)
-            if os.path.exists(name_path):
-                os.remove(name_path)
+            
+            # Always create func_name.txt even if source extraction failed
+            # This is needed for Desi backend queue management
+            func_name_path = os.path.join(self.project_path, "func_name.txt")
+            if not os.path.exists(func_name_path):
+                try:
+                    with open(func_name_path, "w") as f:
+                        f.write(func.__name__)
+                    self.logger.debug(f"Created func_name.txt with function name: {func.__name__}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to create func_name.txt: {e}")
 
             # If source extraction was attempted but failed, log it
             if not dill_pickle_used:
