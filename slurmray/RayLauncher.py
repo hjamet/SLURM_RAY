@@ -894,6 +894,10 @@ if __name__ == "__main__":
         return "DocNotFound"
 
     def example_func(x):
+        import time # Encapsulated imports works too !
+        print("Waiting for 60 seconds so that you can check the dashboard...")
+        time.sleep(60)
+        print("Done waiting !")
         result = (
             ray.cluster_resources(),
             f"GPU is available : {torch.cuda.is_available()}",
@@ -911,7 +915,7 @@ if __name__ == "__main__":
         },  # Example of environment variable
         server_run=True,  # To run the code on the server and not locally
         cluster="desi",  # Use Desi backend (credentials loaded from .env: DESI_USERNAME and DESI_PASSWORD)
-        force_reinstall_venv=True,  # Force reinstall venv to test with Python 3.12.1
+        force_reinstall_venv=False,  # Force reinstall venv to test with Python 3.12.1
         retention_days=1,  # Retain files and venv for 1 day before cleanup
     )
 

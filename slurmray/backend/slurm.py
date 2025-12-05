@@ -1028,13 +1028,14 @@ if [ -f requirements.txt ]; then
             rm -f /tmp/install_errors.txt
         fi
         
-        # Cleanup temp files
-        rm -f /tmp/installed_packages.txt /tmp/seen_packages.txt /tmp/to_install.txt
-        
+        # Count newly installed packages before cleanup
         NEWLY_INSTALLED=0
         if [ -s /tmp/to_install.txt ]; then
             NEWLY_INSTALLED=$(wc -l < /tmp/to_install.txt 2>/dev/null | tr -d ' ' || echo "0")
         fi
+        
+        # Cleanup temp files
+        rm -f /tmp/installed_packages.txt /tmp/seen_packages.txt /tmp/to_install.txt
         
         if [ $INSTALL_ERRORS -eq 0 ]; then
             if [ $SKIPPED_COUNT -gt 0 ]; then

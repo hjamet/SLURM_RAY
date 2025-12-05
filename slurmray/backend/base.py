@@ -311,48 +311,59 @@ class ClusterBackend(ABC):
         # Ensure pip-chill is installed
         self._ensure_pip_chill_installed()
 
-        # Try to use pip-chill directly as Python module
-        try:
-            from pip_chill import chill
+        # Suppress pkg_resources deprecation warning from pip_chill
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning, module="pip_chill")
+            warnings.filterwarnings("ignore", message=".*pkg_resources.*", category=UserWarning)
 
-            # chill() returns a generator of groups of Distribution objects
-            # Each group contains Distribution objects with name and version attributes
-            dist_groups = list(chill())
-            requirements_lines = []
-            for group in dist_groups:
-                for dist in group:
-                    requirements_lines.append(f"{dist.name}=={dist.version}")
+            # Try to use pip-chill directly as Python module
+            try:
+                from pip_chill import chill
 
-            if self.logger:
-                self.logger.debug("✅ Using pip-chill directly as Python module")
+                # chill() returns a generator of groups of Distribution objects
+                # Each group contains Distribution objects with name and version attributes
+                dist_groups = list(chill())
+                requirements_lines = []
+                for group in dist_groups:
+                    for dist in group:
+                        requirements_lines.append(f"{dist.name}=={dist.version}")
 
-            return "\n".join(requirements_lines) + "\n"
-        except (ImportError, AttributeError, TypeError) as e:
-            # If direct import/execution fails, fall back to subprocess
-            if self.logger:
-                self.logger.warning(
-                    f"⚠️ Direct pip-chill import/execution failed: {e}. Falling back to subprocess."
+                if self.logger:
+                    self.logger.debug("✅ Using pip-chill directly as Python module")
+
+                return "\n".join(requirements_lines) + "\n"
+            except (ImportError, AttributeError, TypeError) as e:
+                # If direct import/execution fails, fall back to subprocess
+                if self.logger:
+                    self.logger.warning(
+                        f"⚠️ Direct pip-chill import/execution failed: {e}. Falling back to subprocess."
+                    )
+
+                # Use sys.executable to ensure we use the correct Python/venv
+                # Also suppress warnings in subprocess by setting PYTHONWARNINGS
+                import os
+                env = os.environ.copy()
+                env["PYTHONWARNINGS"] = "ignore::UserWarning"
+                result = subprocess.run(
+                    [sys.executable, "-m", "pip_chill"],
+                    capture_output=True,
+                    text=True,
+                    cwd=self.launcher.project_path,
+                    env=env,
                 )
 
-            # Use sys.executable to ensure we use the correct Python/venv
-            result = subprocess.run(
-                [sys.executable, "-m", "pip_chill"],
-                capture_output=True,
-                text=True,
-                cwd=self.launcher.project_path,
-            )
+                if result.returncode != 0:
+                    error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+                    raise RuntimeError(
+                        f"Failed to run pip-chill: {error_msg}\n"
+                        f"Command: {sys.executable} -m pip_chill"
+                    )
 
-            if result.returncode != 0:
-                error_msg = result.stderr.strip() if result.stderr else "Unknown error"
-                raise RuntimeError(
-                    f"Failed to run pip-chill: {error_msg}\n"
-                    f"Command: {sys.executable} -m pip_chill"
-                )
+                if self.logger:
+                    self.logger.info("🔄 Using subprocess fallback for pip-chill")
 
-            if self.logger:
-                self.logger.info("🔄 Using subprocess fallback for pip-chill")
-
-            return result.stdout
+                return result.stdout
 
     def _generate_requirements(self, force_regenerate=False):
         """
