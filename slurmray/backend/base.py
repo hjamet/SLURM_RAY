@@ -613,14 +613,34 @@ class ClusterBackend(ABC):
                 if "slurmray" not in line and "ray" not in line and "dill" not in line
             ]
 
+            # Get editable packages list (source of truth)
+            try:
+                editable_packages_set = self._get_editable_packages()
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"Failed to get editable packages for filtering: {e}")
+                editable_packages_set = set()
+
             # Filter out local packages (development installs) using robust detection
             filtered_lines = []
             for line in lines:
                 pkg_name = get_package_name(line)
-                if pkg_name and is_package_local(pkg_name):
-                    if self.logger:
-                        self.logger.info(f"Excluding local package from requirements: {pkg_name}")
-                    continue
+                if pkg_name:
+                    # Check against pip list -e (handles trail-rag even if static check fails)
+                    # Handle dash/underscore normalization: pkg_name is lowercased by get_package_name
+                    # editable_packages_set contains lowercased names
+                    normalized_name = pkg_name.replace("_", "-")
+                    
+                    is_editable = (
+                        pkg_name in editable_packages_set 
+                        or normalized_name in editable_packages_set
+                        or pkg_name.replace("-", "_") in editable_packages_set
+                    )
+
+                    if is_editable or self._is_package_local(pkg_name):
+                        if self.logger:
+                            self.logger.info(f"Excluding local package from requirements: {pkg_name}")
+                        continue
                 filtered_lines.append(line)
             lines = filtered_lines
 

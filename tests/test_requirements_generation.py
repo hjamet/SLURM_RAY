@@ -11,6 +11,12 @@ if project_root not in sys.path:
 
 from slurmray.backend.base import ClusterBackend
 
+# Concrete implementation for testing
+class ConcreteBackend(ClusterBackend):
+    def run(self, cancel_old_jobs: bool = True): pass
+    def cancel(self, job_id: str): pass
+
+
 class TestRequirementsGeneration(unittest.TestCase):
     def setUp(self):
         self.site_packages = "/usr/lib/python3.10/site-packages"
@@ -59,5 +65,44 @@ class TestRequirementsGeneration(unittest.TestCase):
             
             self.assertFalse(is_local, "Should be False because all files are in site-packages")
 
+    @patch('subprocess.run')
+    @patch('importlib.metadata.distribution')
+    def test_trail_rag_editable_detection_empty_files(self, mock_distribution, mock_subprocess):
+        """
+        Reproduce 'trail-rag' failure:
+        - importlib.metadata.files() is None or empty (common in some editable installs or when RECORD is missing).
+        - is_package_local returns False (current bug).
+        - BUT 'pip list -e' detection works.
+        """
+        # Mock distribution finding the package but having NO files
+        dist = MagicMock()
+        mock_distribution.return_value = dist
+        dist.files = None  # Simulating missing RECORD or empty files
+        dist.locate_file.side_effect = Exception("Should not be called if files is None")
+
+        # Verify current static method FAILS in this case
+        is_local_static = ClusterBackend._is_package_local("trail-rag")
+        
+        # This assertions confirms the CURRENT BUG/LIMITATION:
+        # We expect it to be False currently because _is_package_local relies on files.
+        self.assertFalse(is_local_static, "Static check fails when files is None (Expected failure of component)")
+
+        # Now verify full method (once we fix it) uses pip list -e
+        # We need to mock _get_editable_packages logic or subprocess
+        
+        # Mock subprocess to return trail-rag in pip list -e --format=json
+        mock_subprocess.return_value.returncode = 0
+        mock_subprocess.return_value.stdout = '[{"name": "trail-rag", "version": "0.1.0", "editable_project_location": "/path/to/trail-rag"}]'
+        
+        # We need an instance of ClusterBackend to test _generate_requirements behavior (or rather, we test the logic we plan to insert)
+        # However, _generate_requirements is complex to test fully (file IO etc).
+        # We will assume we will modify _generate_requirements to use _get_editable_packages.
+        
+        # Let's test _get_editable_packages behavior first to ensure it parses this JSON
+        launcher_mock = MagicMock()
+        backend = ConcreteBackend(launcher_mock)
+        editable_pkgs = backend._get_editable_packages()
+        
+        self.assertIn("trail-rag", editable_pkgs, "pip list -e should detect trail-rag")
 if __name__ == '__main__':
     unittest.main()
