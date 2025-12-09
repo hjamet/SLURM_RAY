@@ -1,6 +1,7 @@
 ---
-alwaysApply: true
-description: Règle de communication — réponses claires, structurées et agréables à lire
+trigger: always_on
+glob: "**/*"
+description: "Règle de communication — réponses claires, structurées et agréables à lire"
 ---
 
 # Communication Protocol

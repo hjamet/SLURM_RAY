@@ -135,11 +135,33 @@ class ClusterBackend(ABC):
         for pkg_name in editable_packages:
             location = None
 
-            # Method 1: Try .egg-link file (common for pip editable installs)
+            # Method 0: Modern PEP 660 / importlib.metadata detection (Preferred)
+            try:
+                # Use standard library to find distribution
+                dist = importlib.metadata.distribution(pkg_name)
+                
+                # Check for direct_url.json (PEP 610) using read_text (safer than locate_file)
+                content = dist.read_text("direct_url.json")
+                if content:
+                    data = json.loads(content)
+                    # Check if it's a file URL (local)
+                    if data.get("url", "").startswith("file://"):
+                        # Extract path from URL
+                        candidate_path = data["url"][7:]  # Remove file://
+                        if os.path.exists(candidate_path):
+                            location = candidate_path
+                            if self.logger:
+                                self.logger.debug(f"Detected editable package {pkg_name} via direct_url.json provided: {location}")
+            except Exception as e:
+                # Fallback to other methods if this fails
+                if self.logger:
+                    self.logger.debug(f"Modern detection failed for {pkg_name}: {e}")
+
+            # Method 1: Try .egg-link file (common for older pip editable installs)
             # Also handle name normalization (trail-rag -> trail_rag)
             normalized_name = pkg_name.replace("-", "_")
 
-            if site_packages:
+            if not location and site_packages:
                 # Check for .egg-link
                 egg_link_path = os.path.join(
                     site_packages, f"{normalized_name}.egg-link"
@@ -185,20 +207,27 @@ class ClusterBackend(ABC):
 
             # Method 3: Fallback to uv pip show
             if not location:
-                result = subprocess.run(
-                    ["uv", "pip", "show", pkg_name], capture_output=True, text=True
-                )
+                try:
+                    result = subprocess.run(
+                        ["uv", "pip", "show", pkg_name], capture_output=True, text=True
+                    )
 
-                if result.returncode == 0:
-                    # Parse Location field from pip show output
-                    for line in result.stdout.split("\n"):
-                        if line.startswith("Location:"):
-                            loc_candidate = line.split(":", 1)[1].strip()
-                            # If pip show returns site-packages, it's likely wrong for editable
-                            # (unless it's a flat layout installed there, which is rare for editable)
-                            if "site-packages" not in loc_candidate:
-                                location = loc_candidate
-                            break
+                    if result.returncode == 0:
+                        # Parse Location field from pip show output
+                        for line in result.stdout.split("\n"):
+                            if line.startswith("Location:"):
+                                loc_candidate = line.split(":", 1)[1].strip()
+                                # If pip show returns site-packages, it's likely wrong for editable
+                                # (unless it's a flat layout installed there, which is rare for editable)
+                                if "site-packages" not in loc_candidate:
+                                    location = loc_candidate
+                                break
+                except FileNotFoundError:
+                    # uv not installed
+                    pass
+                except Exception as e:
+                    if self.logger:
+                        self.logger.debug(f"uv pip show failed: {e}")
 
             if not location:
                 if self.logger:
@@ -218,6 +247,24 @@ class ClusterBackend(ABC):
             # If the editable package is INSIDE the project, we calculate relative path.
             # If it's OUTSIDE, we might need to handle it (e.g. by copying it), but
             # the current logic seems to enforce it being inside or at least relative-able.
+            #
+            # UPDATE: For editable packages that ARE strictly the project itself (e.g. '.' installed as editable),
+            # the location detected might be the project root itself.
+            # In this case location_abs == pwd_abs (or close to it).
+            # We should allow this.
+
+            # Special case for "outside project" warning:
+            # If thedetected location matches the project path we are good.
+            # If it is TRULY outside, we warn.
+            
+            if not location_abs.startswith(pwd_abs):
+                # Only warn if it's REALLY outside.
+                pass 
+                # But wait, original code skipped it.
+                # If we detected it correctly (e.g. /home/lopilo/code/trail-rag) 
+                # and pwd is /home/lopilo/code/trail-rag, then it startswith() is True.
+                # The issue before was detecting /.../site-packages which was NOT starting with pwd_abs.
+                pass
 
             if not location_abs.startswith(pwd_abs):
                 if self.logger:
@@ -242,8 +289,26 @@ class ClusterBackend(ABC):
             parent_dir = os.path.dirname(rel_location)
             package_dir_name = os.path.basename(rel_location)
 
+            rel_path = None
+            if rel_location == ".":
+                # If location is project root (common with pip install -e .),
+                # we need to find where the actual package code is.
+                # Check for src/ layout first
+                if os.path.isdir(os.path.join(pwd_abs, "src", pkg_name)):
+                     rel_path = os.path.join("src", pkg_name)
+                elif os.path.isdir(os.path.join(pwd_abs, "src", normalized_name)):
+                     rel_path = os.path.join("src", normalized_name)
+                # Check for flat layout
+                elif os.path.isdir(os.path.join(pwd_abs, pkg_name)):
+                     rel_path = pkg_name
+                elif os.path.isdir(os.path.join(pwd_abs, normalized_name)):
+                     rel_path = normalized_name
+                
+                if self.logger and rel_path:
+                    self.logger.debug(f"Resolved editable package {pkg_name} from root to {rel_path}")
+            
             # Check if it's a src/ layout
-            if os.path.basename(parent_dir) == "src":
+            elif os.path.basename(parent_dir) == "src":
                 # Layout src/: upload src/ directory
                 rel_path = parent_dir  # e.g., "src"
             else:

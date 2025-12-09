@@ -1,5 +1,7 @@
 ---
-alwaysApply: true
+trigger: always_on
+glob: "**/*"
+description: "README"
 ---
 
 # README Sync Rule
