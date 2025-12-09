@@ -434,6 +434,75 @@ class ClusterBackend(ABC):
 
                 return result.stdout
 
+    @staticmethod
+    def _is_package_local(package_name):
+        """Check if a package is installed locally (editable or in project) vs site-packages."""
+        if not package_name: return False
+        try:
+            # Get distribution info
+            # Note: package name must be exact distribution name
+            dist = importlib.metadata.distribution(package_name)
+            
+            # Check for direct_url.json (PEP 610) - best for editable installs
+            try:
+                direct_url_path = dist.locate_file("direct_url.json")
+                if os.path.exists(direct_url_path):
+                    with open(direct_url_path, "r") as f:
+                        data = json.load(f)
+                        if data.get("url", "").startswith("file://"):
+                            # It's a local file URL, likely editable or local install
+                            return True
+            except Exception:
+                pass
+            
+            # Get site-packages directories for comparison
+            site_packages_dirs = site.getsitepackages()
+            if hasattr(site, "getusersitepackages"):
+                user_site = site.getusersitepackages()
+                if user_site:
+                    site_packages_dirs = list(site_packages_dirs) + [user_site]
+            
+            # Normalize site-packages paths
+            site_packages_dirs = [os.path.abspath(p) for p in site_packages_dirs]
+
+            # Fallback: check file locations
+            files = dist.files
+            if not files:
+                return False
+                
+            # Iterate over files to find where the source is located
+            # Editable installs will have source files outside site-packages
+            # while dist-info might be inside site-packages.
+            for file_path in files:
+                try:
+                    # locate_file returns absolute path usually, but ensure it
+                    abs_path = os.path.abspath(str(dist.locate_file(file_path)))
+                    
+                    # Optimization: Skip files that are clearly within the dist-info directory used for metadata
+                    # (which we know is likely in site-packages if we are here)
+                    if ".dist-info" in abs_path or ".egg-info" in abs_path:
+                        continue
+                        
+                    # Check if this file is in any site-packages directory
+                    is_in_site = False
+                    for site_dir in site_packages_dirs:
+                        if abs_path.startswith(site_dir):
+                            is_in_site = True
+                            break
+                    
+                    # If we found a file (likely source code) OUTSIDE site-packages, it's local/editable
+                    if not is_in_site:
+                        return True
+                        
+                except Exception:
+                    continue
+            
+            # If we iterated all interesting files and they were all in site-packages, it's NOT local
+            return False
+            
+        except Exception:
+            return False
+
     def _generate_requirements(self, force_regenerate=False):
         """
         Generate requirements.txt.
@@ -467,52 +536,8 @@ class ClusterBackend(ABC):
             return name_part.lower()
 
         # Helper function to check if a package is local (not in site-packages)
-        def is_package_local(package_name):
-            """Check if a package is installed locally (editable or in project) vs site-packages."""
-            if not package_name: return False
-            try:
-                # Get distribution info
-                # Note: package name must be exact distribution name
-                dist = importlib.metadata.distribution(package_name)
-                
-                # Check for direct_url.json (PEP 610) - best for editable installs
-                try:
-                    direct_url_path = dist.locate_file("direct_url.json")
-                    if os.path.exists(direct_url_path):
-                        with open(direct_url_path, "r") as f:
-                            data = json.load(f)
-                            if data.get("url", "").startswith("file://"):
-                                # It's a local file URL, likely editable or local install
-                                return True
-                except Exception:
-                    pass
-                
-                # Fallback: check file locations
-                files = dist.files
-                if not files:
-                    return False
-                    
-                # Check location of the first file
-                # locate_file returns absolute path usually
-                first_file_path = str(dist.locate_file(files[0]))
-                file_abs = os.path.abspath(first_file_path)
-                
-                # Check if it is in any site-packages directory
-                site_packages_dirs = site.getsitepackages()
-                if hasattr(site, "getusersitepackages"):
-                    user_site = site.getusersitepackages()
-                    if user_site:
-                        site_packages_dirs = list(site_packages_dirs) + [user_site]
-                
-                for site_dir in site_packages_dirs:
-                    if file_abs.startswith(os.path.abspath(site_dir)):
-                        return False
-                
-                # If we are here, the file is NOT in site-packages → it's local
-                return True
-                
-            except Exception:
-                return False
+        # Refactored to static method for testing
+        is_package_local = self._is_package_local
 
         # Check if we should skip regeneration
         if not force_regenerate and os.path.exists(req_file):
