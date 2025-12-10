@@ -9,10 +9,11 @@ from getpass import getpass
 from typing import Any
 
 from slurmray.backend.base import ClusterBackend
+from slurmray.backend.remote import RemoteMixin
 from slurmray.utils import SSHTunnel, DependencyManager
 
 
-class SlurmBackend(ClusterBackend):
+class SlurmBackend(RemoteMixin):
     """Backend for Slurm cluster execution (local or remote via SSH)"""
 
     def __init__(self, launcher):
@@ -20,7 +21,7 @@ class SlurmBackend(ClusterBackend):
         self.ssh_client = None
         self.job_id = None
 
-    def run(self, cancel_old_jobs: bool = True) -> Any:
+    def run(self, cancel_old_jobs: bool = True, wait: bool = True) -> Any:
         """Run the job on Slurm (locally or remotely)"""
 
         # Generate the Python script (spython.py) - needed for both modes
@@ -58,9 +59,12 @@ class SlurmBackend(ClusterBackend):
                 self.script_file, self.job_name = self._write_slurm_script()
 
             self._launch_job(self.script_file, self.job_name)
+            
+            if not wait:
+                return self.job_id
 
         elif self.launcher.server_run:
-            self._launch_server(cancel_old_jobs)
+            return self._launch_server(cancel_old_jobs, wait=wait)
 
         # Load the result
         # Note: In server_run mode, _launch_server downloads result.pkl
@@ -478,7 +482,7 @@ class SlurmBackend(ClusterBackend):
             self.logger.warning(f"Failed to get head node from job ID {job_id}: {e}")
             return None
 
-    def _launch_server(self, cancel_old_jobs: bool = True):
+    def _launch_server(self, cancel_old_jobs: bool = True, wait: bool = True):
         """Launch the server on the cluster and run the function using the ressources."""
         connected = False
         self.logger.info("Connecting to the cluster...")
@@ -722,6 +726,18 @@ class SlurmBackend(ClusterBackend):
                         self.job_id = job_id
                         self.logger.info(f"Found job ID via squeue: {job_id}")
                         break
+
+        # If job ID found and we are not waiting, return it and stop
+        if job_id and not wait:
+            self.logger.info("Async mode: Job submitted with ID {}. Disconnecting...".format(job_id))
+            return job_id
+        
+        # If no job ID found and not waiting? We should probably warn or return None
+        if not job_id and not wait:
+             self.logger.warning("Async mode: Could not detect job ID. Returning None.")
+             return None
+
+        # Loop for monitoring (only if wait=True)
 
         # If job ID found, wait for job to be running and set up tunnel
         if job_id:
@@ -1109,5 +1125,110 @@ export LD_LIBRARY_PATH=$HOME/{project_dir}/.venv/lib/python$PYTHON_VERSION/site-
             self.logger.debug(line.strip())
         time.sleep(1)  # Wait for the directory to be created
 
-        # Copy the file to the server
         sftp.put(file_path, cluster_path)
+
+    def get_result(self, job_id: str) -> Any:
+        """Get result for a specific job ID"""
+        # Load local result if available (cluster mode or already downloaded)
+        local_path = os.path.join(self.launcher.project_path, "result.pkl")
+        if os.path.exists(local_path):
+             with open(local_path, "rb") as f:
+                   return dill.load(f)
+
+        # If clustered/server run, try to fetch it
+        if self.launcher.cluster:
+             # Already checked local path, so it's missing
+             return None
+             
+        if self.launcher.server_run:
+             self._connect()
+             try:
+                 project_dir = f"slurmray-server/{self.launcher.project_name}"
+                 remote_path = f"{project_dir}/.slogs/server/result.pkl"
+                 self.ssh_client.open_sftp().get(remote_path, local_path)
+                 with open(local_path, "rb") as f:
+                      return dill.load(f)
+             except Exception:
+                 return None
+        
+        return None
+
+    def get_logs(self, job_id: str) -> Any:
+        """Get logs for a specific job ID"""
+        if not job_id:
+            yield "No Job ID provided."
+            return
+
+        # Attempt to get job info to find log file
+        cmd = f"scontrol show job {job_id}"
+        
+        output = ""
+        if self.launcher.cluster:
+            try:
+                res = subprocess.run(cmd.split(), capture_output=True, text=True)
+                output = res.stdout
+            except Exception as e:
+                yield f"Error querying local scontrol: {e}"
+        elif self.launcher.server_run:
+            self._connect()
+            try:
+                stdin, stdout, stderr = self.ssh_client.exec_command(cmd)
+                output = stdout.read().decode("utf-8")
+            except Exception as e:
+                yield f"Error querying remote job info: {e}"
+                return
+        else:
+            yield "Not running on cluster."
+            return
+
+        # Extract JobName
+        # JobName=example_1012-14h22
+        import re
+        match = re.search(r"JobName=([^\s]+)", output)
+        if match:
+             job_name = match.group(1)
+             log_filename = f"{job_name}.log"
+        else:
+             yield "Could not determine log filename via scontrol (Job might be finished). Checking standard path..."
+             # If scontrol failed (job finished), we might just look for ANY log file or standard naming
+             # BUT standard naming includes timestamp. We can't guess it easily without listing.
+             # We can list files matching project name and take newest.
+             log_filename = None
+             
+             # Attempt to find log file by listing
+             find_cmd = f"ls -t {self.launcher.project_name}*.log | head -n 1"
+             if self.launcher.cluster:
+                 if os.path.exists(self.launcher.project_path):
+                     import glob
+                     files = glob.glob(os.path.join(self.launcher.project_path, f"{self.launcher.project_name}*.log"))
+                     if files:
+                         log_filename = os.path.basename(max(files, key=os.path.getmtime))
+             elif self.launcher.server_run:
+                 project_dir = f"slurmray-server/{self.launcher.project_name}"
+                 stdin, stdout, stderr = self.ssh_client.exec_command(f"cd {project_dir} && ls -t {self.launcher.project_name}*.log | head -n 1")
+                 possible_log = stdout.read().decode("utf-8").strip()
+                 if possible_log:
+                     log_filename = possible_log
+
+        if not log_filename:
+             yield "Log file could not be found."
+             return
+
+        # Read log file
+        if self.launcher.cluster:
+             log_path = os.path.join(self.launcher.project_path, log_filename)
+             if os.path.exists(log_path):
+                 with open(log_path, "r") as f:
+                     yield from f
+             else:
+                 yield f"Log file {log_path} not found."
+        elif self.launcher.server_run:
+             project_dir = f"slurmray-server/{self.launcher.project_name}"
+             remote_log = f"{project_dir}/{log_filename}"
+             try:
+                 stdin, stdout, stderr = self.ssh_client.exec_command(f"cat {remote_log}")
+                 # Stream output? stdout is a channel.
+                 for line in stdout:
+                     yield line
+             except Exception as e:
+                 yield f"Error reading remote log: {e}"

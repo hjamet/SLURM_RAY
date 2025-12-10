@@ -22,7 +22,7 @@ class DesiBackend(RemoteMixin):
         super().__init__(launcher)
         self.tunnel = None
 
-    def run(self, cancel_old_jobs: bool = True) -> Any:
+    def run(self, cancel_old_jobs: bool = True, wait: bool = True) -> Any:
         """Run the job on Desi"""
         self.logger.info("🔌 Connecting to Desi server...")
         self._connect()
@@ -218,196 +218,180 @@ class DesiBackend(RemoteMixin):
             os.path.join(self.launcher.project_path, desi_wrapper_script),
             f"{base_dir}/{desi_wrapper_script}",
         )
+        
+        # Determine command based on wait mode
+        if wait:
+            cmd = f"cd {base_dir} && ./run_desi.sh"
+            stdin, stdout, stderr = self.ssh_client.exec_command(cmd, get_pty=True)
+            
+            # Stream output
+            ray_started = False
 
-        # Execute
-        cmd = f"cd {base_dir} && ./run_desi.sh"
-        stdin, stdout, stderr = self.ssh_client.exec_command(cmd, get_pty=True)
+            # Read output line by line
+            while True:
+                line = stdout.readline()
+                if not line:
+                    break
 
-        # Stream output
-        ray_started = False
+                # Filter out noisy messages and format nicely
+                line_stripped = line.strip()
+                if not line_stripped:
+                    continue
 
-        # Read output line by line
-        while True:
-            line = stdout.readline()
-            if not line:
-                break
+                # Skip pkill errors (already handled silently)
+                if "pkill:" in line_stripped:
+                    continue
 
-            # Filter out noisy messages and format nicely
-            line_stripped = line.strip()
-            if not line_stripped:
-                continue
-
-            # Skip pkill errors (already handled silently)
-            if "pkill:" in line_stripped:
-                continue
-
-            # Detect Ray startup
-            if (
-                "Started a local Ray instance" in line_stripped
-                or "View the dashboard at" in line_stripped
-            ) and not ray_started:
-                ray_started = True
-                # Extract dashboard URL if present
-                if "http://" in line_stripped:
-                    # Extract URL from line
-                    import re
-
-                    url_match = re.search(r"http://[^\s]+", line_stripped)
-                    if url_match:
-                        dashboard_url = url_match.group(0)
-                        self.logger.info(f"📊 Ray dashboard started at {dashboard_url}")
-
-                # Start SSH Tunnel
-                if not self.tunnel:
-                    try:
-                        self.tunnel = SSHTunnel(
-                            ssh_host=self.launcher.server_ssh,
-                            ssh_username=self.launcher.server_username,
-                            ssh_password=self.launcher.server_password,
-                            remote_host="127.0.0.1",
-                            local_port=8888,
-                            remote_port=8265,
-                            logger=self.logger,
-                        )
-                        self.tunnel.__enter__()
-                        self.logger.info(
-                            "🌐 Dashboard accessible locally at http://localhost:8888"
-                        )
-                    except Exception as e:
-                        self.logger.warning(f"⚠️  Could not establish SSH tunnel: {e}")
-                        self.tunnel = None
-                continue
-
-            # Print all output (user's print statements and important messages)
-            # Filter out only very noisy system messages
-            if not any(noise in line_stripped for noise in ["pkill:", "WARNING:"]):
-                # Always print user output
-                print(line, end="", flush=True)
-
-                # Log important system messages with emojis
+                # Detect Ray startup
                 if (
-                    "Error" in line_stripped
-                    or "Traceback" in line_stripped
-                    or "Exception" in line_stripped
-                ):
-                    self.logger.error(f"❌ {line_stripped}")
-                elif "Lock acquired" in line_stripped:
-                    self.logger.info(f"🔒 {line_stripped}")
-                elif "Starting Payload" in line_stripped:
-                    self.logger.info(f"🚀 {line_stripped}")
-                elif "Loaded function" in line_stripped:
-                    self.logger.info(f"📦 {line_stripped}")
-                elif "Job started" in line_stripped or "Sleeping" in line_stripped:
-                    self.logger.info(f"▶️  {line_stripped}")
-                elif "Result written" in line_stripped:
-                    self.logger.info(f"💾 {line_stripped}")
-                elif (
-                    "Releasing lock" in line_stripped
-                    or "Lock released" in line_stripped
-                ):
-                    self.logger.info(f"🔓 {line_stripped}")
+                    "Started a local Ray instance" in line_stripped
+                    or "View the dashboard at" in line_stripped
+                ) and not ray_started:
+                    ray_started = True
+                    # Extract dashboard URL if present
+                    if "http://" in line_stripped:
+                        # Extract URL from line
+                        import re
 
-        # Read any remaining stderr
-        stderr_output = stderr.read().decode("utf-8")
-        if stderr_output.strip():
-            self.logger.error(f"Script errors:\n{stderr_output}")
-            print(stderr_output, end="")
+                        url_match = re.search(r"http://[^\s]+", line_stripped)
+                        if url_match:
+                            dashboard_url = url_match.group(0)
+                            self.logger.info(f"📊 Ray dashboard started at {dashboard_url}")
 
-        exit_status = stdout.channel.recv_exit_status()
+                    # Start SSH Tunnel
+                    if not self.tunnel:
+                        try:
+                            self.tunnel = SSHTunnel(
+                                ssh_host=self.launcher.server_ssh,
+                                ssh_username=self.launcher.server_username,
+                                ssh_password=self.launcher.server_password,
+                                remote_host="127.0.0.1",
+                                local_port=8888,
+                                remote_port=8265,
+                                logger=self.logger,
+                            )
+                            self.tunnel.__enter__()
+                            self.logger.info(
+                                "🌐 Dashboard accessible locally at http://localhost:8888"
+                            )
+                        except Exception as e:
+                            self.logger.warning(f"⚠️  Could not establish SSH tunnel: {e}")
+                            self.tunnel = None
+                    continue
 
-        # Check if script failed - fail-fast immediately
-        if exit_status != 0:
-            # Collect error information
-            error_msg = f"Job script exited with non-zero status: {exit_status}"
+                # Print all output (user's print statements and important messages)
+                # Filter out only very noisy system messages
+                if not any(noise in line_stripped for noise in ["pkill:", "WARNING:"]):
+                    # Always print user output
+                    print(line, end="", flush=True)
+
+                    # Log important system messages with emojis
+                    if (
+                        "Error" in line_stripped
+                        or "Traceback" in line_stripped
+                        or "Exception" in line_stripped
+                    ):
+                        self.logger.error(f"❌ {line_stripped}")
+                    elif "Lock acquired" in line_stripped:
+                        self.logger.info(f"🔒 {line_stripped}")
+                    elif "Starting Payload" in line_stripped:
+                        self.logger.info(f"🚀 {line_stripped}")
+                    elif "Loaded function" in line_stripped:
+                        self.logger.info(f"📦 {line_stripped}")
+                    elif "Job started" in line_stripped or "Sleeping" in line_stripped:
+                        self.logger.info(f"▶️  {line_stripped}")
+                    elif "Result written" in line_stripped:
+                        self.logger.info(f"💾 {line_stripped}")
+                    elif (
+                        "Releasing lock" in line_stripped
+                        or "Lock released" in line_stripped
+                    ):
+                        self.logger.info(f"🔓 {line_stripped}")
+
+            # Read any remaining stderr
+            stderr_output = stderr.read().decode("utf-8")
             if stderr_output.strip():
-                error_msg += f"\nScript errors:\n{stderr_output}"
+                self.logger.error(f"Script errors:\n{stderr_output}")
+                print(stderr_output, end="")
 
-            # Log the error
-            self.logger.error(error_msg)
+            exit_status = stdout.channel.recv_exit_status()
 
-            # Close tunnel if open
-            if self.tunnel:
+            # Check if script failed - fail-fast immediately
+            if exit_status != 0:
+                # Collect error information
+                error_msg = f"Job script exited with non-zero status: {exit_status}"
+                if stderr_output.strip():
+                    error_msg += f"\nScript errors:\n{stderr_output}"
+
+                # Log the error
+                self.logger.error(error_msg)
+
+                # Close tunnel if open
+                if self.tunnel:
+                    try:
+                        self.tunnel.__exit__(None, None, None)
+                    except Exception:
+                        pass
+                    self.tunnel = None
+
+                # Raise exception immediately (fail-fast)
+                raise RuntimeError(error_msg)
+
+            # Wait a bit for file system to sync
+            # Keep tunnel open during job execution - it will be closed at the end of run()
+            time.sleep(2)
+
+            # Wait for result file to be created on remote (with timeout)
+            self.logger.info("⏳ Waiting for job completion...")
+            max_wait = 300  # 5 minutes max
+            wait_start = time.time()
+            result_available = False
+
+            while time.time() - wait_start < max_wait:
                 try:
-                    self.tunnel.__exit__(None, None, None)
-                except Exception:
-                    pass
+                    # Check if result.pkl exists on remote
+                    stdin, stdout, stderr = self.ssh_client.exec_command(
+                        f"test -f {base_dir}/result.pkl && echo exists || echo missing"
+                    )
+                    stdout.channel.recv_exit_status()  # Wait for command to complete
+                    output = stdout.read().decode("utf-8").strip()
+                    if output == "exists":
+                        result_available = True
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Error checking for result file: {e}")
+                
+                time.sleep(5)
+
+            if not result_available:
+                self.logger.error("❌ Timeout waiting for result file.")
+                raise TimeoutError("Timeout waiting for result file on Desi.")
+
+            # Download result
+            self.logger.info("📥 Downloading result...")
+            local_result_path = os.path.join(self.launcher.project_path, "result.pkl")
+            sftp.get(f"{base_dir}/result.pkl", local_result_path)
+
+            # Load result
+            with open(local_result_path, "rb") as f:
+                result = dill.load(f)
+
+            self.logger.info("✅ Result received!")
+
+            # Close tunnel now that job is complete
+            if self.tunnel:
+                self.tunnel.__exit__(None, None, None)
                 self.tunnel = None
 
-            # Raise exception immediately (fail-fast)
-            raise RuntimeError(error_msg)
-
-        # Wait a bit for file system to sync
-        # Keep tunnel open during job execution - it will be closed at the end of run()
-        time.sleep(2)
-
-        # Wait for result file to be created on remote (with timeout)
-        self.logger.info("⏳ Waiting for job completion...")
-        max_wait = 300  # 5 minutes max
-        wait_start = time.time()
-        result_available = False
-
-        while time.time() - wait_start < max_wait:
-            try:
-                # Check if result.pkl exists on remote
-                stdin, stdout, stderr = self.ssh_client.exec_command(
-                    f"test -f {base_dir}/result.pkl && echo exists || echo missing"
-                )
-                stdout.channel.recv_exit_status()  # Wait for command to complete
-                output = stdout.read().decode("utf-8").strip()
-                if output == "exists":
-                    result_available = True
-                    break
-            except Exception as e:
-                self.logger.debug(f"Error checking for result file: {e}")
-            time.sleep(1)
-
-        if not result_available:
-            # Debug: list files on remote
-            try:
-                stdin, stdout, stderr = self.ssh_client.exec_command(
-                    f"ls -la {base_dir}/"
-                )
-                stdout.channel.recv_exit_status()
-                files = stdout.read().decode("utf-8")
-                self.logger.error(
-                    f"Result file not found. Remote directory contents:\n{files}"
-                )
-            except Exception:
-                pass
-            raise FileNotFoundError(f"Job did not complete within {max_wait}s timeout")
-
-        # Download result
-        self.logger.info("📥 Retrieving results...")
-        result_path = os.path.join(self.launcher.project_path, "result.pkl")
-        try:
-            sftp.get(f"{base_dir}/result.pkl", result_path)
-            self.logger.info("✅ Results retrieved successfully")
-        except Exception as e:
-            self.logger.error(f"Failed to download result file: {e}")
-            raise
-
-        # Load result BEFORE cleanup (cleanup removes result.pkl)
-        with open(result_path, "rb") as f:
-            result = dill.load(f)
-
-        # Close tunnel now that job is complete
-        if self.tunnel:
-            self.tunnel.__exit__(None, None, None)
-            self.tunnel = None
-
-        # Clean up remote temporary files (preserve venv and cache)
-        self.ssh_client.exec_command(
-            f"cd {base_dir} && "
-            f"find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.pkl' -o -name '*.sh' -o -name '*.txt' \\) "
-            f"! -name 'requirements.txt' -delete && "
-            f"rm -rf .slogs/server 2>/dev/null || true"
-        )
-
-        # Clean up local temporary files after successful download
-        # Note: result.pkl is included in cleanup but we've already loaded it
-        self._cleanup_local_temp_files()
-
-        return result
+        else:
+             # Async mode: Run with nohup and redirect to log file
+             log_file = "desi.log"
+             cmd = f"cd {base_dir} && nohup ./run_desi.sh > {log_file} 2>&1 & echo $!"
+             stdin, stdout, stderr = self.ssh_client.exec_command(cmd)
+             pid = stdout.read().decode("utf-8").strip()
+             self.logger.info(f"Async mode: Job started with PID {pid}. Log file: {base_dir}/{log_file}")
+             
+             return pid
 
     def _cleanup_local_temp_files(self):
         """Clean up local temporary files after successful execution"""
@@ -431,8 +415,48 @@ class DesiBackend(RemoteMixin):
 
     def cancel(self, job_id: str):
         """Cancel job on Desi"""
-        # Need to know PID or have a kill file
-        pass
+        self.logger.info(f"Canceling Desi job {job_id}...")
+        self._connect()
+        try:
+             # Try to kill the process and process group
+             # job_id is PID from nohup
+             # Use negative PID to kill process group
+             self.ssh_client.exec_command(f"kill -TERM -{job_id}")
+             self.logger.info(f"Sent kill signal to process group {job_id}")
+             
+             # Also kill the specific PID just in case
+             self.ssh_client.exec_command(f"kill -9 {job_id}")
+        except Exception as e:
+             self.logger.warning(f"Failed to cancel Desi job: {e}")
+
+    def get_result(self, job_id: str) -> Any:
+        """Get result for Desi execution"""
+        self._connect()
+        base_dir = f"/home/{self.launcher.server_username}/slurmray_desi/{self.launcher.project_name}"
+        local_path = os.path.join(self.launcher.project_path, "result.pkl")
+        
+        try:
+            sftp = self.ssh_client.open_sftp()
+            sftp.stat(f"{base_dir}/result.pkl")
+            sftp.get(f"{base_dir}/result.pkl", local_path)
+            with open(local_path, "rb") as f:
+                return dill.load(f)
+        except Exception:
+            return None
+
+    def get_logs(self, job_id: str) -> Any:
+        """Get logs for Desi execution"""
+        self._connect()
+        base_dir = f"/home/{self.launcher.server_username}/slurmray_desi/{self.launcher.project_name}"
+        log_file = "desi.log" # Assumed from async execution
+        remote_log = f"{base_dir}/{log_file}"
+        
+        try:
+             stdin, stdout, stderr = self.ssh_client.exec_command(f"cat {remote_log}")
+             for line in stdout:
+                 yield line
+        except Exception as e:
+             yield f"Error reading remote log: {e}"
 
     def _write_python_script(self, base_dir):
         """Write the python script (spython.py) that will be executed by the job"""

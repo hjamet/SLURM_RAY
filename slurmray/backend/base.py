@@ -22,17 +22,32 @@ class ClusterBackend(ABC):
         self.logger = launcher.logger
 
     @abstractmethod
-    def run(self, cancel_old_jobs: bool = True) -> Any:
+    def run(self, cancel_old_jobs: bool = True, wait: bool = True) -> Any:
         """
         Run the job on the backend.
 
         Args:
             cancel_old_jobs (bool): Whether to cancel old jobs before running
+            wait (bool): Whether to wait for the job to finish. If False, returns job_id immediately.
 
         Returns:
-            Any: The result of the execution
+            Any: The result of the execution if wait=True, else job ID.
         """
         pass
+
+    def get_result(self, job_id: str) -> Any:
+        """
+        Get result for a specific job ID if available.
+        Returns None if not finished.
+        """
+        return None
+
+    def get_logs(self, job_id: str) -> Any:
+        """
+        Get logs for a specific job ID.
+        Returns generator or string.
+        """
+        return []
 
     @abstractmethod
     def cancel(self, job_id: str):

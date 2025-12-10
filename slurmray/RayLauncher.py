@@ -7,8 +7,10 @@ import signal
 import dis
 import builtins
 import inspect
-from typing import Any, Callable, List, Tuple, Set
+from typing import Any, Callable, List, Tuple, Set, Generator
 from getpass import getpass
+import time
+
 
 from dotenv import load_dotenv
 
@@ -33,6 +35,57 @@ class RayLauncher:
     The launcher automatically selects the appropriate backend based on the `cluster` parameter and environment detection.
     """
 
+    class FunctionReturn:
+        """Object returned when running in asynchronous mode.
+        Allows monitoring logs and retrieving the result later.
+        """
+        def __init__(self, launcher, job_id=None):
+            self.launcher = launcher
+            self.job_id = job_id
+            self._cached_result = None
+
+        @property
+        def result(self):
+            """Get the result of the function execution.
+            Returns "Compute still in progress" if not finished.
+            """
+            if self._cached_result is not None:
+                return self._cached_result
+
+            # Attempt to fetch result from backend
+            # We use a new method on backend to check/fetch result without blocking
+            if hasattr(self.launcher.backend, "get_result"):
+                res = self.launcher.backend.get_result(self.job_id)
+                if res is not None:
+                    self._cached_result = res
+                    return res
+            
+            return "Compute still in progress"
+
+        @property
+        def logs(self) -> Generator[str, None, None]:
+            """Get the logs of the function execution as a stream (generator)."""
+            if hasattr(self.launcher.backend, "get_logs"):
+                yield from self.launcher.backend.get_logs(self.job_id)
+            else:
+                yield "Logs not available for this backend."
+
+        def cancel(self):
+            """Cancel the running job."""
+            if hasattr(self.launcher.backend, "cancel"):
+                self.launcher.backend.cancel(self.job_id)
+
+        def __getstate__(self):
+            """Custom serialization to ensure picklability"""
+            state = self.__dict__.copy()
+            # Ensure launcher is picklable. The launcher itself might have non-picklable attributes (like ssh_client).
+            # We rely on RayLauncher and Backend handling their own serialization safety.
+            return state
+
+        def __setstate__(self, state):
+            self.__dict__.update(state)
+
+
     def __init__(
         self,
         project_name: str = None,
@@ -51,6 +104,7 @@ class RayLauncher:
         cluster: str = "curnagl",  # 'curnagl', 'desi', 'local', or custom IP/hostname
         force_reinstall_venv: bool = False,
         retention_days: int = 7,
+        asynchronous: bool = False,
     ):
         """Initialize the launcher
 
@@ -71,6 +125,7 @@ class RayLauncher:
             cluster (str, optional): Cluster/server to use: 'curnagl' (default, Slurm cluster), 'desi' (ISIPOL09/Desi server), 'local' (local execution), or a custom IP/hostname (for custom Slurm clusters). Defaults to "curnagl".
             force_reinstall_venv (bool, optional): Force complete removal and recreation of virtual environment on remote server/cluster. This will delete the existing venv and reinstall all packages from requirements.txt. Use this if the venv is corrupted or you need a clean installation. Defaults to False.
             retention_days (int, optional): Number of days to retain files and venv on the cluster before automatic cleanup. Must be between 1 and 30 days. Defaults to 7.
+            asynchronous (bool, optional): If True, the call to the function returns immediately with a FunctionReturn object. Defaults to False.
         """
         # Load environment variables from .env file
         load_dotenv()
@@ -188,6 +243,7 @@ class RayLauncher:
 
         self.log_file = log_file
         self.force_reinstall_venv = force_reinstall_venv
+        self.asynchronous = asynchronous
 
         # Track which parameters were explicitly passed (for warnings)
         import inspect
@@ -370,16 +426,41 @@ class RayLauncher:
         sig_name = signal.Signals(signum).name
         self.logger.warning(f"Signal {sig_name} received. Cleaning up resources...")
         print(f"\nInterruption received ({sig_name}). Canceling job and cleaning up...")
-
-        if hasattr(self, "backend"):
-            if hasattr(self.backend, "job_id") and self.backend.job_id:
-                self.backend.cancel(self.backend.job_id)
-            elif (
-                hasattr(self, "job_id") and self.job_id
-            ):  # Fallback if we stored it on launcher
-                self.backend.cancel(self.job_id)
-
+        
+        self.cancel()
         sys.exit(1)
+
+    def cancel(self, target: Any = None):
+        """
+        Cancel a running job.
+        
+        Args:
+            target (Any, optional): The job to cancel. Can be:
+                - None: Cancels the last job run by this launcher instance.
+                - str: A specific job ID.
+                - FunctionReturn: A specific FunctionReturn object.
+        """
+        if hasattr(self, "backend"):
+            job_id = None
+            
+            # Determine job_id based on target
+            if target is None:
+                # Fallback to last job
+                if hasattr(self.backend, "job_id") and self.backend.job_id:
+                    job_id = self.backend.job_id
+                elif hasattr(self, "job_id") and self.job_id:
+                    job_id = self.job_id
+            elif isinstance(target, str):
+                job_id = target
+            elif isinstance(target, self.FunctionReturn):
+                job_id = target.job_id
+            
+            if job_id:
+                self.backend.cancel(job_id)
+            else:
+                self.logger.warning("No job ID found to cancel.")
+        else:
+            self.logger.warning("No backend initialized, cannot cancel.")
 
     def __call__(
         self,
@@ -481,9 +562,16 @@ class RayLauncher:
             if serialize:
                 self.__serialize_func_and_args(func, args)
 
-            return self.backend.run(cancel_old_jobs=cancel_old_jobs)
+            # Execute
+            if self.asynchronous:
+                job_id = self.backend.run(cancel_old_jobs=cancel_old_jobs, wait=False)
+                return self.FunctionReturn(self, job_id)
+            else:
+                return self.backend.run(cancel_old_jobs=cancel_old_jobs, wait=True)
         finally:
             # Restore original signal handlers
+            # In asynchronous mode, we might not want to restore if we return immediately
+            # but usually we do because the launcher __call__ returns.
             signal.signal(signal.SIGINT, original_sigint)
             signal.signal(signal.SIGTERM, original_sigterm)
 
