@@ -440,7 +440,7 @@ class DesiBackend(RemoteMixin):
     def get_result(self, job_id: str) -> Any:
         """Get result for Desi execution"""
         self._connect()
-        base_dir = f"/home/{self.launcher.server_username}/slurmray_desi/{self.launcher.project_name}"
+        base_dir = f"/home/{self.launcher.server_username}/slurmray-server/{self.launcher.project_name}"
         local_path = os.path.join(self.launcher.project_path, "result.pkl")
         
         try:
@@ -455,9 +455,10 @@ class DesiBackend(RemoteMixin):
     def get_logs(self, job_id: str) -> Any:
         """Get logs for Desi execution"""
         self._connect()
-        base_dir = f"/home/{self.launcher.server_username}/slurmray_desi/{self.launcher.project_name}"
+        base_dir = f"/home/{self.launcher.server_username}/slurmray-server/{self.launcher.project_name}"
         log_file = "desi.log" # Assumed from async execution
         remote_log = f"{base_dir}/{log_file}"
+        # print(f"DEBUG: Trying to access log at {remote_log}")
         
         try:
             sftp = self.get_sftp()
