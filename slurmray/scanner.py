@@ -163,12 +163,7 @@ class ProjectScanner:
                             dependencies.add(path)
 
                 elif isinstance(node, ast.ImportFrom):
-                    if node.module:
-                        # from module import ...
-                        is_local, path = self.is_local_file(node.module)
-                        if is_local:
-                            dependencies.add(path)
-                    elif node.level > 0:
+                    if node.level > 0:
                         # Relative import (from . import ... or from .. import ...)
                         # Resolve relative import based on current file location
                         if node.module:
@@ -182,32 +177,37 @@ class ProjectScanner:
                             # Go up 'level' directories
                             if node.level > len(parts):
                                 # Import from outside project, skip
-                                continue
+                                pass
+                            else:
+                                parent_parts = parts[: len(parts) - (node.level - 1)]
+                                module_parts = node.module.split(".")
+                                full_parts = parent_parts + module_parts
 
-                            parent_parts = parts[: len(parts) - (node.level - 1)]
-                            module_parts = node.module.split(".")
-                            full_parts = parent_parts + module_parts
-
-                            # Check if this resolves to a local file
-                            rel_path = os.path.join(*full_parts) if full_parts else ""
-                            if rel_path:
-                                # Try as file
-                                abs_path = os.path.join(
-                                    self.project_root, rel_path + ".py"
-                                )
-                                if os.path.exists(abs_path):
-                                    dependencies.add(rel_path + ".py")
-                                else:
-                                    # Try as package
+                                # Check if this resolves to a local file
+                                rel_path = os.path.join(*full_parts) if full_parts else ""
+                                if rel_path:
+                                    # Try as file
                                     abs_path = os.path.join(
-                                        self.project_root, rel_path, "__init__.py"
+                                        self.project_root, rel_path + ".py"
                                     )
                                     if os.path.exists(abs_path):
-                                        dependencies.add(rel_path)
+                                        dependencies.add(rel_path + ".py")
+                                    else:
+                                        # Try as package
+                                        abs_path = os.path.join(
+                                            self.project_root, rel_path, "__init__.py"
+                                        )
+                                        if os.path.exists(abs_path):
+                                            dependencies.add(rel_path)
                         else:
                             # from . import ... (no module name, just current package)
                             # The current directory is already covered
                             pass
+                    elif node.module:
+                        # from module import ... (absolute import)
+                        is_local, path = self.is_local_file(node.module)
+                        if is_local:
+                            dependencies.add(path)
 
                 # 2. Dynamic Imports & File Operations Warnings
                 elif isinstance(node, ast.Call):
