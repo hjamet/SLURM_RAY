@@ -1,6 +1,13 @@
-# SlurmRay
+# SlurmRay v6.0.5 - Autonomous Distributed Ray on Slurm
 
-**SlurmRay** is a powerful tool designed to simplify the execution of Python code on remote clusters (Slurm) and standalone servers. It automates the complex process of dependency management, environment setup, and job submission.
+SlurmRay acts as a bridge between your local development environment and high-performance computing clusters (DESI/Curnagl). It handles environment synchronization, local package detection, and task distribution automatically.
+
+---
+
+### [NEW] Fixes in v6.0.5
+- **Local Package Detection**: Fixed a bug where packages with binaries in `bin/` (like `accelerate`, `gdown`) were incorrectly marked as local and excluded from `requirements.txt`.
+- **Torch Injection**: Resolved a substring match bug where `fast-pytorch-kmeans` prevented the automatic injection of `torch`.
+- **Project Structure**: Improved `RayLauncher` to proactively include editable packages (like `trail-rag`) in the upload set, resolving `ModuleNotFoundError`.
 
 ## Project Overview
 - **Goal**: Effortslessly distribute Python tasks on Slurm clusters or standalone servers using the Ray library.

@@ -318,6 +318,16 @@ class RayLauncher:
             self.backend = LocalBackend(self)
 
         # Auto-detect and add editable package source paths to files list
+        if self.server_run and hasattr(self.backend, "_get_editable_package_source_paths"):
+            try:
+                editable_sources = self.backend._get_editable_package_source_paths()
+                for src in editable_sources:
+                    if src not in self.files:
+                        self.files.append(src)
+                        self.logger.info(f"Auto-added editable package source to upload: {src}")
+            except Exception as e:
+                self.logger.warning(f"Failed to auto-detect editable packages: {e}")
+
         # Note: Intelligent dependency detection is now done in __call__
         # when we have the function to analyze. We don't auto-add editable packages
         # blindly anymore to avoid adding unwanted files or breaking with complex setups.

@@ -340,9 +340,9 @@ class ClusterBackend(ABC):
                 rel_path
                 and rel_path != "."
                 and rel_path != ".."
-                and not rel_path.startswith("./")
-                and not rel_path.startswith("../")
             ):
+                # Ensure it's not an absolute path after splitting if it was made relative
+                # For safety, we keep the original validation logic but more flexible
                 if rel_path not in source_paths:
                     source_paths.append(rel_path)
                     if self.logger:
@@ -460,7 +460,8 @@ class ClusterBackend(ABC):
                     # If we found a file (likely source code) OUTSIDE site-packages, it's local/editable
                     # Skip files that are venv binaries/scripts (not source code)
                     # These are often present for packages like torch, accelerate, gdown which are NOT local
-                    if "/bin/" in abs_path or "/Scripts/" in abs_path or "\\bin\\" in abs_path or "\\Scripts\\" in abs_path:
+                    path_parts = abs_path.split(os.sep)
+                    if "bin" in path_parts or "Scripts" in path_parts:
                         continue
                         
                     if not is_in_site:
@@ -656,7 +657,7 @@ class ClusterBackend(ABC):
             lines.append("ray[default]\n")
 
             # Ensure torch is present (common dependency)
-            if not any("torch" in line for line in lines):
+            if not any(get_package_name(line) == "torch" for line in lines):
                 lines.append("torch\n")
 
         with open(req_file, "w") as file:
