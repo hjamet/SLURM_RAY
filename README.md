@@ -4,7 +4,7 @@
 
 ## Project Overview
 - **Goal**: Effortslessly distribute Python tasks on Slurm clusters or standalone servers using the Ray library.
-- **Status**: Stable (v6.0.3). Migration vers `uv` pour une meilleure gestion des dépendances transitives.
+- **Status**: Stable (v6.0.4). Correction de la détection erronée des packages locaux (binaires venv).
 - **Features**: Utilisation de `uv` pour la génération des requirements, suppression des contraintes de version pour compatibilité multi-Python.
 
 ## Main Entry Scripts

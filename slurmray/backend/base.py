@@ -458,6 +458,11 @@ class ClusterBackend(ABC):
                             break
                     
                     # If we found a file (likely source code) OUTSIDE site-packages, it's local/editable
+                    # Skip files that are venv binaries/scripts (not source code)
+                    # These are often present for packages like torch, accelerate, gdown which are NOT local
+                    if "/bin/" in abs_path or "/Scripts/" in abs_path or "\\bin\\" in abs_path or "\\Scripts\\" in abs_path:
+                        continue
+                        
                     if not is_in_site:
                         return True
                         
