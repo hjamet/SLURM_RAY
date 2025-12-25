@@ -52,7 +52,7 @@ def main():
     
     # Scan
     scanner = ProjectScanner(base_dir, logger)
-    detected = scanner.auto_detect_dependencies()
+    detected = scanner._follow_imports_recursive(os.path.join(base_dir, "main.py"))
     
     print(f"Detected dependencies: {detected}")
     print(f"Warnings: {scanner.dynamic_imports_warnings}")
