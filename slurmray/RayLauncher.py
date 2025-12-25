@@ -1021,7 +1021,7 @@ if __name__ == "__main__":
         },  # Example of environment variable
         server_run=True,  # To run the code on the server and not locally
         cluster="desi",  # Use Desi backend (credentials loaded from .env: DESI_USERNAME and DESI_PASSWORD)
-        force_reinstall_venv=False,  # Force reinstall venv to test with Python 3.12.1
+        force_reinstall_venv=True,  # Force reinstall venv to test with Python 3.12.1
         retention_days=1,  # Retain files and venv for 1 day before cleanup
     )
 

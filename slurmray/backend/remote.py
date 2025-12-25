@@ -17,6 +17,7 @@ class RemoteMixin(ClusterBackend):
         super().__init__(launcher)
         self.ssh_client = None
         self.job_id = None
+        self._sftp_client = None
 
     def _connect(self):
         """Establish SSH connection"""
@@ -31,6 +32,7 @@ class RemoteMixin(ClusterBackend):
         self.logger.info("Connecting to the remote server...")
         self.ssh_client = paramiko.SSHClient()
         self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self._sftp_client = None  # Reset SFTP client on new connection
 
         while not connected:
             try:
@@ -62,6 +64,26 @@ class RemoteMixin(ClusterBackend):
                 # Only retry interactively if we failed
                 if not sys.stdin.isatty():
                     raise  # Fail fast if non-interactive
+
+    def get_sftp(self):
+        """Get or create cached SFTP client"""
+        if self._sftp_client is None:
+            self._connect()
+            self._sftp_client = self.ssh_client.open_sftp()
+        else:
+            # Check if connection is still active
+            try:
+                self._sftp_client.listdir(".")
+            except (OSError, EOFError):
+                 # Reconnect
+                 if self._sftp_client:
+                     try:
+                         self._sftp_client.close()
+                     except:
+                         pass
+                 self._connect()
+                 self._sftp_client = self.ssh_client.open_sftp()
+        return self._sftp_client
 
     def _push_file(
         self, file_path: str, sftp: paramiko.SFTPClient, remote_base_dir: str

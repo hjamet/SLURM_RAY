@@ -19,6 +19,8 @@ class SlurmBackend(RemoteMixin):
     def __init__(self, launcher):
         super().__init__(launcher)
         self.ssh_client = None
+        self._sftp_client = None
+        self.ssh_client = None
         self.job_id = None
 
     def run(self, cancel_old_jobs: bool = True, wait: bool = True) -> Any:
@@ -502,7 +504,13 @@ class SlurmBackend(RemoteMixin):
                     username=self.launcher.server_username,
                     password=self.launcher.server_password,
                 )
-                sftp = ssh_client.open_sftp()
+                ssh_client.connect(
+                    hostname=self.launcher.server_ssh,
+                    username=self.launcher.server_username,
+                    password=self.launcher.server_password,
+                )
+                self._sftp_client = None # Reset SFTP
+                sftp = self.get_sftp()
                 connected = True
             except paramiko.ssh_exception.AuthenticationException:
                 self.launcher.server_password = None
@@ -1145,7 +1153,7 @@ export LD_LIBRARY_PATH=$HOME/{project_dir}/.venv/lib/python$PYTHON_VERSION/site-
              try:
                  project_dir = f"slurmray-server/{self.launcher.project_name}"
                  remote_path = f"{project_dir}/.slogs/server/result.pkl"
-                 self.ssh_client.open_sftp().get(remote_path, local_path)
+                 self.get_sftp().get(remote_path, local_path)
                  with open(local_path, "rb") as f:
                       return dill.load(f)
              except Exception:

@@ -628,7 +628,6 @@ class ClusterBackend(ABC):
                 "uvicorn",
                 "uvloop",
                 "watchfiles",
-                "grpcio",
                 "tensorboardX",
                 "gpustat",
                 "prometheus-client",

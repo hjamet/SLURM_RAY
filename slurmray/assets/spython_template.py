@@ -1,7 +1,13 @@
-import ray
-import dill
 import os
 import sys
+
+# Suppress Ray FutureWarning about accelerator visible devices
+os.environ.setdefault("RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO", "0")
+# Disable uvloop to prevent SIGSEGV in Ray backend (stability fix)
+os.environ["RAY_DISABLE_UVLOOP"] = "1"
+
+import ray
+import dill
 
 PROJECT_PATH = {{PROJECT_PATH}}
 
@@ -17,8 +23,8 @@ if os.path.exists(src_path) and os.path.isdir(src_path):
     if src_path not in sys.path:
         sys.path.insert(0, src_path)  # Insert at beginning for priority
 
-# Suppress Ray FutureWarning about accelerator visible devices
-os.environ.setdefault("RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO", "0")
+# Set GRPC poll strategy to avoid SIGSEGV in some environments
+os.environ.setdefault("GRPC_POLL_STRATEGY", "poll")
 
 # Start the ray cluster
 ray.init({{LOCAL_MODE}})

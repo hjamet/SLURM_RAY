@@ -21,6 +21,7 @@ class DesiBackend(RemoteMixin):
     def __init__(self, launcher):
         super().__init__(launcher)
         self.tunnel = None
+        self._log_cursors = {}  # Store cursor position for each job_id
 
     def run(self, cancel_old_jobs: bool = True, wait: bool = True) -> Any:
         """Run the job on Desi"""
@@ -41,7 +42,7 @@ class DesiBackend(RemoteMixin):
         )
         self.python_version_compatible = is_compatible
 
-        sftp = self.ssh_client.open_sftp()
+        sftp = self.get_sftp()
 
         # Base directory on server (organized by project name)
         base_dir = f"/home/{self.launcher.server_username}/slurmray-server/{self.launcher.project_name}"
@@ -436,7 +437,7 @@ class DesiBackend(RemoteMixin):
         local_path = os.path.join(self.launcher.project_path, "result.pkl")
         
         try:
-            sftp = self.ssh_client.open_sftp()
+            sftp = self.get_sftp()
             sftp.stat(f"{base_dir}/result.pkl")
             sftp.get(f"{base_dir}/result.pkl", local_path)
             with open(local_path, "rb") as f:
@@ -452,9 +453,37 @@ class DesiBackend(RemoteMixin):
         remote_log = f"{base_dir}/{log_file}"
         
         try:
-             stdin, stdout, stderr = self.ssh_client.exec_command(f"cat {remote_log}")
-             for line in stdout:
-                 yield line
+            sftp = self.get_sftp()
+            
+            # Use seek if we have a cursor
+            cursor = self._log_cursors.get(job_id, 0)
+            
+            try:
+                with sftp.file(remote_log, 'r') as f:
+                    # Move to last position
+                    f.seek(cursor)
+                    
+                    # Read new content
+                    new_content = f.read()
+                    
+                    if new_content:
+                        # Update cursor
+                        self._log_cursors[job_id] = f.tell()
+                        
+                        # Yield lines
+                        if isinstance(new_content, bytes):
+                            new_content = new_content.decode('utf-8')
+                            
+                        # Split by lines, but careful with partial lines?
+                        # For simplicity, we just yield the chunk or split lines.
+                        # RayLauncher expects lines.
+                        for line in new_content.splitlines(keepends=True):
+                            yield line
+            except FileNotFoundError:
+                 yield "Log file not found (yet)."
+            except IOError:
+                 pass
+                 
         except Exception as e:
              yield f"Error reading remote log: {e}"
 
