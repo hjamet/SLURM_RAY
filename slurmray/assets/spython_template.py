@@ -12,7 +12,7 @@ import dill
 PROJECT_PATH = {{PROJECT_PATH}}
 
 # Add the project path to the python path
-sys.path.append(PROJECT_PATH)
+sys.path.insert(0, PROJECT_PATH)
 
 # Add editable package source directories to sys.path
 # This handles packages uploaded from editable installs (e.g., Poetry projects)
@@ -23,8 +23,12 @@ if os.path.exists(src_path) and os.path.isdir(src_path):
     if src_path not in sys.path:
         sys.path.insert(0, src_path)  # Insert at beginning for priority
 
+# Pre-import the root package to help dill find the module
+{{PRE_IMPORT}}
+
 # Set GRPC poll strategy to avoid SIGSEGV in some environments
 os.environ.setdefault("GRPC_POLL_STRATEGY", "poll")
+
 
 # Start the ray cluster
 ray.init({{LOCAL_MODE}})

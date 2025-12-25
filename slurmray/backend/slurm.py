@@ -152,10 +152,22 @@ class SlurmBackend(RemoteMixin):
                 runtime_env["env_vars"]["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
 
             local_mode = f"\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8265,\nruntime_env = {runtime_env},\n"
+            local_mode = f"\n\taddress='auto',\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8265,\nruntime_env = {runtime_env},\n"
         text = text.replace(
             "{{LOCAL_MODE}}",
             local_mode,
         )
+        
+        # Pre-import logic for dill compatibility
+        pre_import = ""
+        if hasattr(self.launcher, "func") and self.launcher.func:
+            func_module = self.launcher.func.__module__
+            if func_module and func_module != "__main__":
+                root_pkg = func_module.split(".")[0]
+                pre_import = f"try:\n    import {root_pkg}\n    print(f'Imported {root_pkg} for dill compatibility')\nexcept ImportError:\n    pass"
+        
+        text = text.replace("{{PRE_IMPORT}}", pre_import)
+        
         with open(os.path.join(self.launcher.project_path, "spython.py"), "w") as f:
             f.write(text)
 

@@ -98,9 +98,14 @@ class DesiBackend(RemoteMixin):
                 self.ssh_client.exec_command(f"touch {base_dir}/.force_reinstall")
         else:
             # Clean up everything except venv and cache
+            # Clean up everything except venv and cache
             self.ssh_client.exec_command(
                 f"mkdir -p {base_dir} && find {base_dir} -mindepth 1 ! -name 'venv' ! -path '{base_dir}/venv/*' ! -name '.slogs' ! -path '{base_dir}/.slogs/*' -delete"
             )
+            # CRITICAL: Since we wiped the files, we must also invalid file sync cache
+            # ensuring files are re-uploaded. We preserve venv hash (venv_hash.txt).
+            self.ssh_client.exec_command(f"rm -f {base_dir}/.slogs/.remote_file_hashes.json")
+            
             # Remove flag file if it exists
             self.ssh_client.exec_command(f"rm -f {base_dir}/.force_reinstall")
 
@@ -384,6 +389,8 @@ class DesiBackend(RemoteMixin):
                 self.tunnel.__exit__(None, None, None)
                 self.tunnel = None
 
+            return result
+
         else:
              # Async mode: Run with nohup and redirect to log file
              log_file = "desi.log"
@@ -526,6 +533,19 @@ class DesiBackend(RemoteMixin):
             "{{LOCAL_MODE}}",
             local_mode,
         )
+
+        # Pre-import logic for dill compatibility
+        pre_import = ""
+        if hasattr(self.launcher, "func") and self.launcher.func:
+            func_module = self.launcher.func.__module__
+            self.logger.info(f"DEBUG: Detected func_module: {func_module}")
+            if func_module and func_module != "__main__":
+                root_pkg = func_module.split(".")[0]
+                self.logger.info(f"DEBUG: injecting pre-import for {root_pkg}")
+                pre_import = f"try:\n    import {root_pkg}\n    print(f'Imported {root_pkg} for dill compatibility')\nexcept ImportError as e:\n    print(f'Pre-import of {root_pkg} failed: {{e}}')\n"
+        
+        text = text.replace("{{PRE_IMPORT}}", pre_import)
+
         with open(os.path.join(self.launcher.project_path, "spython.py"), "w") as f:
             f.write(text)
 

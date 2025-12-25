@@ -1,13 +1,18 @@
-# SlurmRay v6.0.6 - Autonomous Distributed Ray on Slurm
+# SlurmRay v6.0.7 - Autonomous Distributed Ray on Slurm
 
 SlurmRay acts as a bridge between your local development environment and high-performance computing clusters (DESI/Curnagl). It handles environment synchronization, local package detection, and task distribution automatically.
 
 ---
 
-### [NEW] Fixes in v6.0.6
-- **Stability**: Fixed random SIGSEGV crashes in Ray backend (remote execution) by disabling `uvloop`.
-- **Dependency Resolution**: improved `grpcio` handling by allowing `uv` to resolve it against user dependencies, preventing version conflicts.
-- **Local Package Detection**: (v6.0.5) Fixed `bin/` detection bug and `torch` injection.
+### [NEW] Fixes in v6.0.7
+- **Remote Execution**: Fixed `DesiBackend` aggressive cleanup causing persistent `ModuleNotFoundError`.
+- **Dependency Detection**: Enhanced scanner to preserve package structures (`__init__.py`).
+- **Serialization**: Added auto-injection of root package imports to fix `dill` deserialization issues.
+- **Stability**: Fixed result retrieval in synchronous mode.
+
+### Older Fixes
+- **v6.0.6**: Fixed random SIGSEGV crashes in Ray backend (remote execution) by disabling `uvloop`. Improved `grpcio` handling.
+- **v6.0.5**: Fixed `bin/` detection bug and `torch` injection.
 
 ## Project Overview
 - **Goal**: Effortslessly distribute Python tasks on Slurm clusters or standalone servers using the Ray library.

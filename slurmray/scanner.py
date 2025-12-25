@@ -432,6 +432,29 @@ class ProjectScanner:
                     # dep is already a relative path from scan_file
                     result.add(dep)
 
+            # Add the function definition file itself!
+            func_rel_path = os.path.relpath(func_file, self.project_root)
+            result.add(func_rel_path)
+
+            # Ensure all parent packages have their __init__.py included
+            # This is crucial for remote execution to respect package structure
+            init_files = set()
+            for dep in result:
+                # Get the directory of the file
+                dirname = os.path.dirname(dep)
+                
+                # Traverse up to the project root
+                while dirname and dirname != ".":
+                    init_path = os.path.join(dirname, "__init__.py")
+                    # Check if __init__.py exists in this directory (relative to project root)
+                    if os.path.exists(os.path.join(self.project_root, init_path)):
+                        init_files.add(init_path)
+                    
+                    # Move to parent directory
+                    dirname = os.path.dirname(dirname)
+            
+            result.update(init_files)
+
             return list(result)
 
         except (OSError, TypeError) as e:

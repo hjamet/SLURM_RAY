@@ -490,6 +490,7 @@ class RayLauncher:
         Returns:
             Any: Result of the function
         """
+        self.func = func
         if args is None:
             args = {}
 
