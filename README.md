@@ -4,8 +4,8 @@
 
 ## Project Overview
 - **Goal**: Effortslessly distribute Python tasks on Slurm clusters or standalone servers using the Ray library.
-- **Status**: Stable (v6.0.0). Recent fix for relative import tracing.
-- **Features**: Automatic dependency detection, incremental file sync, asynchronous execution, and multi-backend support.
+- **Status**: Stable (v6.0.1). Recent fix for deep dependency tracing and relative submodule imports.
+- **Features**: Automatic deep dependency detection, incremental file sync, asynchronous execution, and multi-backend support.
 
 ## Main Entry Scripts
 | Script | Purpose | Usage Example | Env Vars |

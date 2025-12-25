@@ -166,25 +166,30 @@ class ProjectScanner:
                     if node.level > 0:
                         # Relative import (from . import ... or from .. import ...)
                         # Resolve relative import based on current file location
-                        if node.module:
-                            # from .module import ...
-                            # Calculate relative path from current file
-                            current_rel = os.path.relpath(file_dir, self.project_root)
-                            parts = (
-                                current_rel.split(os.sep) if current_rel != "." else []
-                            )
+                        # Calculate relative path from current file
+                        current_rel = os.path.relpath(file_dir, self.project_root)
+                        parts = (
+                            current_rel.split(os.sep) if current_rel != "." else []
+                        )
 
-                            # Go up 'level' directories
-                            if node.level > len(parts):
-                                # Import from outside project, skip
-                                pass
-                            else:
-                                parent_parts = parts[: len(parts) - (node.level - 1)]
-                                module_parts = node.module.split(".")
-                                full_parts = parent_parts + module_parts
-
-                                # Check if this resolves to a local file
-                                rel_path = os.path.join(*full_parts) if full_parts else ""
+                        # Go up 'level' directories
+                        if node.level <= len(parts):
+                            parent_parts = parts[: len(parts) - (node.level - 1)]
+                            module_parts = node.module.split(".") if node.module else []
+                            
+                            # We want to check:
+                            # 1. The module itself (if present)
+                            # 2. Each name imported from it
+                            
+                            to_check = []
+                            if node.module:
+                                to_check.append(parent_parts + module_parts)
+                            
+                            for alias in node.names:
+                                to_check.append(parent_parts + module_parts + [alias.name])
+                                
+                            for parts_list in to_check:
+                                rel_path = os.path.join(*parts_list) if parts_list else ""
                                 if rel_path:
                                     # Try as file
                                     abs_path = os.path.join(
@@ -199,15 +204,19 @@ class ProjectScanner:
                                         )
                                         if os.path.exists(abs_path):
                                             dependencies.add(rel_path)
-                        else:
-                            # from . import ... (no module name, just current package)
-                            # The current directory is already covered
-                            pass
                     elif node.module:
                         # from module import ... (absolute import)
+                        # Check the module itself
                         is_local, path = self.is_local_file(node.module)
                         if is_local:
                             dependencies.add(path)
+                            
+                        # Also check each name in case they are submodules
+                        for alias in node.names:
+                            full_name = f"{node.module}.{alias.name}"
+                            is_local_sub, sub_path = self.is_local_file(full_name)
+                            if is_local_sub:
+                                dependencies.add(sub_path)
 
                 # 2. Dynamic Imports & File Operations Warnings
                 elif isinstance(node, ast.Call):
