@@ -104,5 +104,53 @@ class TestRequirementsGeneration(unittest.TestCase):
         editable_pkgs = backend._get_editable_packages()
         
         self.assertIn("trail-rag", editable_pkgs, "pip list -e should detect trail-rag")
+
+class TestUVRequirements(unittest.TestCase):
+    def setUp(self):
+        self.launcher = MagicMock()
+        self.launcher.project_path = "/tmp/test_slurmray"
+        self.launcher.pwd_path = "/tmp/test_slurmray"
+        self.launcher.logger = MagicMock()
+        self.launcher.project_name = "test_project"
+        self.launcher.files = []
+        self.launcher.force_reinstall_venv = False
+        
+        if not os.path.exists(self.launcher.project_path):
+            os.makedirs(self.launcher.project_path)
+            
+        self.backend = ConcreteBackend(self.launcher)
+
+    @patch('subprocess.run')
+    @patch('slurmray.backend.base.ClusterBackend._is_package_local', return_value=False)
+    @patch('slurmray.backend.base.ClusterBackend._get_editable_packages', return_value=set())
+    def test_generate_requirements_uv(self, mock_editable, mock_local, mock_run):
+        # Mock uv pip list --format=freeze output
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "accelerate==0.26.0\ntransformers==4.36.0\ntorch==2.1.0\ndill==0.3.7\n"
+        
+        # Mock dill version
+        with patch('dill.__version__', '0.3.7'):
+            self.backend._generate_requirements(force_regenerate=True)
+            
+        req_file = os.path.join(self.launcher.project_path, "requirements.txt")
+        self.assertTrue(os.path.exists(req_file))
+        
+        with open(req_file, 'r') as f:
+            content = f.read()
+            
+        # Check that versions are stripped
+        self.assertIn("accelerate\n", content)
+        self.assertIn("transformers\n", content)
+        self.assertIn("torch\n", content)
+        # dill should be pinned
+        self.assertIn("dill==0.3.7\n", content)
+        # ray[default] and torch should be added if missing
+        self.assertIn("ray[default]\n", content)
+        
+        # Check that versions are NOT there for standard packages
+        self.assertNotIn("accelerate==", content)
+        self.assertNotIn("transformers==", content)
+
+
 if __name__ == '__main__':
     unittest.main()

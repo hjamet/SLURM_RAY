@@ -352,102 +352,54 @@ class ClusterBackend(ABC):
 
         return source_paths
 
-    def _ensure_pip_chill_installed(self):
+    def _run_uv_freeze(self):
         """
-        Ensure pip-chill is installed in the current environment.
-        Raises RuntimeError if installation fails.
-        """
-        # Suppress pkg_resources deprecation warning from pip_chill
-        import warnings
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning, module="pip_chill")
-            warnings.filterwarnings("ignore", message=".*pkg_resources.*", category=UserWarning)
-            try:
-                import pip_chill
-                return
-            except ImportError:
-                if self.logger:
-                    self.logger.info("pip-chill not found, installing...")
-
-                result = subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "pip-chill"],
-                    capture_output=True,
-                    text=True,
-                )
-
-                if result.returncode != 0:
-                    error_msg = result.stderr.strip() if result.stderr else "Unknown error"
-                    raise RuntimeError(
-                        f"Failed to install pip-chill: {error_msg}\n"
-                        f"Command: {sys.executable} -m pip install pip-chill"
-                    )
-
-                if self.logger:
-                    self.logger.info("pip-chill installed successfully")
-
-    def _run_pip_chill(self):
-        """
-        Run pip-chill and return its output.
-        Tries to use pip-chill directly as Python module first,
-        falls back to subprocess if needed.
+        Run uv pip list --format=freeze and return its output.
         Returns stdout on success, raises RuntimeError on failure.
         """
-        # Ensure pip-chill is installed
-        self._ensure_pip_chill_installed()
+        try:
+            # Use sys.executable to ensure we use the correct Python/venv if uv is a python module
+            # But usually uv is a standalone binary. We try 'uv' first.
+            import os
+            env = os.environ.copy()
+            env["PYTHONWARNINGS"] = "ignore::UserWarning"
+            
+            # Use project path if available to ensure we are in the right context
+            cwd = self.launcher.project_path if hasattr(self.launcher, "project_path") else None
+            
+            result = subprocess.run(
+                ["uv", "pip", "list", "--format=freeze"],
+                capture_output=True,
+                text=True,
+                cwd=cwd,
+                env=env,
+            )
 
-        # Suppress pkg_resources deprecation warning from pip_chill
-        import warnings
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning, module="pip_chill")
-            warnings.filterwarnings("ignore", message=".*pkg_resources.*", category=UserWarning)
-
-            # Try to use pip-chill directly as Python module
-            try:
-                from pip_chill import chill
-
-                # chill() returns a generator of groups of Distribution objects
-                # Each group contains Distribution objects with name and version attributes
-                dist_groups = list(chill())
-                requirements_lines = []
-                for group in dist_groups:
-                    for dist in group:
-                        requirements_lines.append(f"{dist.name}=={dist.version}")
-
-                if self.logger:
-                    self.logger.debug("✅ Using pip-chill directly as Python module")
-
-                return "\n".join(requirements_lines) + "\n"
-            except (ImportError, AttributeError, TypeError) as e:
-                # If direct import/execution fails, fall back to subprocess
-                if self.logger:
-                    self.logger.warning(
-                        f"⚠️ Direct pip-chill import/execution failed: {e}. Falling back to subprocess."
-                    )
-
-                # Use sys.executable to ensure we use the correct Python/venv
-                # Also suppress warnings in subprocess by setting PYTHONWARNINGS
-                import os
-                env = os.environ.copy()
-                env["PYTHONWARNINGS"] = "ignore::UserWarning"
+            if result.returncode != 0:
+                # Fallback to 'python -m uv' if 'uv' binary not in path
                 result = subprocess.run(
-                    [sys.executable, "-m", "pip_chill"],
+                    [sys.executable, "-m", "uv", "pip", "list", "--format=freeze"],
                     capture_output=True,
                     text=True,
-                    cwd=self.launcher.project_path,
+                    cwd=cwd,
                     env=env,
                 )
 
-                if result.returncode != 0:
-                    error_msg = result.stderr.strip() if result.stderr else "Unknown error"
-                    raise RuntimeError(
-                        f"Failed to run pip-chill: {error_msg}\n"
-                        f"Command: {sys.executable} -m pip_chill"
-                    )
+            if result.returncode != 0:
+                error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+                raise RuntimeError(
+                    f"Failed to run uv freeze: {error_msg}\n"
+                    f"Please ensure uv is installed in your environment."
+                )
 
-                if self.logger:
-                    self.logger.info("🔄 Using subprocess fallback for pip-chill")
+            if self.logger:
+                self.logger.debug("✅ Using uv to list installed packages")
 
-                return result.stdout
+            return result.stdout
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Error running uv freeze: {e}")
+            raise RuntimeError(f"Failed to run uv freeze: {e}")
 
     @staticmethod
     def _is_package_local(package_name):
@@ -558,8 +510,8 @@ class ClusterBackend(ABC):
         if not force_regenerate and os.path.exists(req_file):
             # Get current environment packages hash
             try:
-                pip_chill_output = self._run_pip_chill()
-                current_env_lines = pip_chill_output.strip().split("\n")
+                uv_freeze_output = self._run_uv_freeze()
+                current_env_lines = uv_freeze_output.strip().split("\n")
                 
                 # Filter local packages from hash computation for consistency
                 # We filter packages that are detected as local (editable or not in site-packages)
@@ -585,7 +537,7 @@ class ClusterBackend(ABC):
                         )
                     return
             except RuntimeError as e:
-                # If pip-chill fails, we can't check hash, so regenerate
+                # If uv fails, we can't check hash, so regenerate
                 if self.logger:
                     self.logger.warning(
                         f"Could not check environment hash: {e}. Regenerating requirements.txt."
@@ -595,15 +547,15 @@ class ClusterBackend(ABC):
         if self.logger:
             self.logger.info("Generating requirements.txt...")
 
-        # Use pip-chill to generate requirements
+        # Use uv to generate requirements
         try:
-            requirements_content = self._run_pip_chill()
+            requirements_content = self._run_uv_freeze()
             if self.logger:
-                self.logger.info("Generated requirements.txt using pip-chill")
+                self.logger.info("Generated requirements.txt using uv")
         except RuntimeError as e:
             raise RuntimeError(
                 f"Failed to generate requirements.txt: {e}\n"
-                f"Please ensure pip-chill can be installed or is available in your environment."
+                f"Please ensure uv is available in your environment."
             )
 
         # Write initial requirements to file
@@ -707,8 +659,8 @@ class ClusterBackend(ABC):
 
             # Store hash of environment for future checks
         try:
-            pip_chill_output = self._run_pip_chill()
-            env_lines = pip_chill_output.strip().split("\n")
+            uv_freeze_output = self._run_uv_freeze()
+            env_lines = uv_freeze_output.strip().split("\n")
             
             # Filter local packages from hash computation for consistency
             filtered_env_lines = []
@@ -722,7 +674,7 @@ class ClusterBackend(ABC):
             env_hash = dep_manager.compute_requirements_hash(env_lines)
             dep_manager.store_env_hash(env_hash)
         except RuntimeError as e:
-            # If pip-chill fails for hash computation, log warning but don't fail
+            # If uv fails for hash computation, log warning but don't fail
             # The requirements.txt was generated successfully, hash is just for optimization
             if self.logger:
                 self.logger.warning(
