@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SlurmRay - Documentation Officielle</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --surface-color: #161b22;
+            --primary-color: #7c4dff;
+            --secondary-color: #03a9f4;
+            --text-color: #e6edf3;
+            --text-muted: #8b949e;
+            --accent-gradient: linear-gradient(135deg, #7c4dff 0%, #03a9f4 100%);
+            --border-color: #30363d;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        /* Hero Section */
+        header {
+            height: 80vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            background: radial-gradient(circle at 50% 50%, rgba(124, 77, 255, 0.1) 0%, transparent 70%);
+        }
+
+        h1 {
+            font-size: 5rem;
+            font-weight: 800;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+            letter-spacing: -2px;
+        }
+
+        .tagline {
+            font-size: 1.5rem;
+            color: var(--text-muted);
+            max-width: 700px;
+            margin-bottom: 2rem;
+        }
+
+        .badge {
+            background: rgba(124, 77, 255, 0.2);
+            border: 1px solid var(--primary-color);
+            color: var(--primary-color);
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            margin-bottom: 2rem;
+        }
+
+        /* Concept Section */
+        .section {
+            padding: 6rem 0;
+        }
+
+        .section-title {
+            font-size: 2.5rem;
+            margin-bottom: 3rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .section-title::before {
+            content: "";
+            width: 40px;
+            height: 4px;
+            background: var(--accent-gradient);
+            border-radius: 2px;
+        }
+
+        .concept-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+            align-items: center;
+        }
+
+        .concept-text h3 {
+            font-size: 1.8rem;
+            margin-bottom: 1.5rem;
+            color: var(--secondary-color);
+        }
+
+        .concept-visual img {
+            width: 100%;
+            border-radius: 20px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            transition: transform 0.3s ease;
+        }
+
+        .concept-visual img:hover {
+            transform: scale(1.02);
+        }
+
+        /* Cards */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .card {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            padding: 2.5rem;
+            border-radius: 16px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            border-color: var(--primary-color);
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(124, 77, 255, 0.1);
+        }
+
+        .card h4 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .card p {
+            color: var(--text-muted);
+        }
+
+        /* Code Block */
+        pre {
+            background-color: #010409;
+            padding: 2rem;
+            border-radius: 12px;
+            overflow-x: auto;
+            border: 1px solid var(--border-color);
+            margin: 2rem 0;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.95rem;
+            color: #d1d5db;
+        }
+
+        .keyword { color: #ff7b72; }
+        .function { color: #d2a8ff; }
+        .string { color: #a5d6ff; }
+        .comment { color: #8b949e; }
+        .blue { color: #79c0ff; }
+
+        /* Footer */
+        footer {
+            padding: 4rem 0;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .cta-button {
+            display: inline-block;
+            background: var(--accent-gradient);
+            color: white;
+            padding: 1rem 2.5rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            transition: opacity 0.3s;
+            margin-top: 2rem;
+        }
+
+        .cta-button:hover {
+            opacity: 0.9;
+        }
+
+        @media (max-width: 768px) {
+            h1 { font-size: 3rem; }
+            .concept-grid { grid-template-columns: 1fr; }
+            header { height: auto; padding: 4rem 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="container">
+            <div class="badge">v6.0.7 Stable</div>
+            <h1>SlurmRay</h1>
+            <p class="tagline">Le pont intelligent entre votre environnement local et la puissance de calcul des clusters HPC.</p>
+            <div class="hero-actions">
+                <a href="#concept" class="cta-button">Découvrir le Concept</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        
+        <section id="concept" class="section">
+            <h2 class="section-title">Le Concept</h2>
+            <div class="concept-grid">
+                <div class="concept-text">
+                    <h3>Synchronisation Automatisée</h3>
+                    <p>
+                        SlurmRay n'est pas qu'un simple client Ray. C'est un <strong>orchestrateur complet</strong> qui gère tout le cycle de vie de votre tâche :
+                    </p>
+                    <br>
+                    <ul style="list-style-position: inside; color: var(--text-muted);">
+                        <li>📦 Scan et push automatique de vos dépendances locales.</li>
+                        <li>🔄 Synchronisation incrémentale de vos fichiers via rsync.</li>
+                        <li>🚀 Soumission de jobs Slurm avec configuration optimisée.</li>
+                        <li>⚡ Déploiement d'un backend Ray dynamique sur les nœuds alloués.</li>
+                    </ul>
+                </div>
+                <div class="concept-visual">
+                    <img src="./slurmray_concept_diagram.png" alt="Schéma conceptuel SlurmRay">
+                </div>
+            </div>
+        </section>
+
+        <section id="usage" class="section">
+            <h2 class="section-title">Utilisation Rapide</h2>
+            <p>Transformez un script local en tâche distribuée en quelques lignes :</p>
+            
+            <pre><code><span class="keyword">from</span> slurmray <span class="keyword">import</span> RayLauncher
+
+<span class="comment"># 1. Définissez votre logique</span>
+<span class="keyword">def</span> <span class="function">compute_pi</span>(iterations):
+    <span class="comment"># Votre code utilisant Ray ici...</span>
+    <span class="keyword">return</span> <span class="blue">3.14159</span>
+
+<span class="comment"># 2. Configurez le pont</span>
+cluster = <span class="function">RayLauncher</span>(
+    project_name=<span class="string">"pi_calc"</span>,
+    cluster=<span class="string">"curnagl"</span>,
+    node_nbr=<span class="blue">4</span>,
+    use_gpu=<span class="keyword">True</span>
+)
+
+<span class="comment"># 3. Lancez !</span>
+result = cluster(compute_pi, args={<span class="string">"iterations"</span>: <span class="blue">1000000</span>})</code></pre>
+        </section>
+
+        <section id="features" class="section">
+            <h2 class="section-title">Pourquoi SlurmRay ?</h2>
+            <div class="features-grid">
+                <div class="card">
+                    <h4>🛠 Dev-Friendly</h4>
+                    <p>Continuez à coder dans votre IDE local (VS Code, PyCharm). SlurmRay s'occupe de faire tourner le code sur le cluster comme s'il était chez vous.</p>
+                </div>
+                <div class="card">
+                    <h4>🧬 Dépendances Intelligentes</h4>
+                    <p>Grâce à son scanner AST, il détecte les packages nécessaires et les injecte dans le cluster sans configuration manuelle fastidieuse.</p>
+                </div>
+                <div class="card">
+                    <h4>🔒 Sécurité & Gestion</h4>
+                    <p>Intègre la gestion des credentials via .env et gère automatiquement le cycle de vie des environnements virtuels distants.</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 DESI @ HEC UNIL. Propulsé par Ray & Slurm.</p>
+        </div>
+    </footer>
+
+</body>
+</html>
