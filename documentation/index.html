@@ -1,12 +1,15 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SlurmRay - Documentation Officielle</title>
+    <title>SlurmRay - Official Documentation</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
     <style>
         :root {
             --bg-color: #0d1117;
@@ -41,7 +44,7 @@
 
         /* Hero Section */
         header {
-            height: 80vh;
+            height: 90vh;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -116,7 +119,7 @@
         .concept-visual img {
             width: 100%;
             border-radius: 20px;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
             transition: transform 0.3s ease;
         }
 
@@ -175,11 +178,25 @@
             color: #d1d5db;
         }
 
-        .keyword { color: #ff7b72; }
-        .function { color: #d2a8ff; }
-        .string { color: #a5d6ff; }
-        .comment { color: #8b949e; }
-        .blue { color: #79c0ff; }
+        .keyword {
+            color: #ff7b72;
+        }
+
+        .function {
+            color: #d2a8ff;
+        }
+
+        .string {
+            color: #a5d6ff;
+        }
+
+        .comment {
+            color: #8b949e;
+        }
+
+        .blue {
+            color: #79c0ff;
+        }
 
         /* Footer */
         footer {
@@ -207,86 +224,101 @@
         }
 
         @media (max-width: 768px) {
-            h1 { font-size: 3rem; }
-            .concept-grid { grid-template-columns: 1fr; }
-            header { height: auto; padding: 4rem 0; }
+            h1 {
+                font-size: 3rem;
+            }
+
+            .concept-grid {
+                grid-template-columns: 1fr;
+            }
+
+            header {
+                height: auto;
+                padding: 4rem 0;
+            }
         }
     </style>
 </head>
+
 <body>
 
     <header>
         <div class="container">
             <div class="badge">v6.0.7 Stable</div>
             <h1>SlurmRay</h1>
-            <p class="tagline">Le pont intelligent entre votre environnement local et la puissance de calcul des clusters HPC.</p>
+            <p class="tagline">The intelligent bridge between your local terminal and High-Performance Computing power.
+            </p>
             <div class="hero-actions">
-                <a href="#concept" class="cta-button">Découvrir le Concept</a>
+                <a href="#concept" class="cta-button">Explore the Concept</a>
             </div>
         </div>
     </header>
 
     <main class="container">
-        
+
         <section id="concept" class="section">
-            <h2 class="section-title">Le Concept</h2>
+            <h2 class="section-title">The Concept</h2>
             <div class="concept-grid">
                 <div class="concept-text">
-                    <h3>Synchronisation Automatisée</h3>
+                    <h3>Automated Orchestration</h3>
                     <p>
-                        SlurmRay n'est pas qu'un simple client Ray. C'est un <strong>orchestrateur complet</strong> qui gère tout le cycle de vie de votre tâche :
+                        SlurmRay is more than just a Ray client. It's a <strong>complete orchestrator</strong> that
+                        manages your task's entire lifecycle:
                     </p>
                     <br>
                     <ul style="list-style-position: inside; color: var(--text-muted);">
-                        <li>📦 Scan et push automatique de vos dépendances locales.</li>
-                        <li>🔄 Synchronisation incrémentale de vos fichiers via rsync.</li>
-                        <li>🚀 Soumission de jobs Slurm avec configuration optimisée.</li>
-                        <li>⚡ Déploiement d'un backend Ray dynamique sur les nœuds alloués.</li>
+                        <li>📦 **AST Scan**: Auto-detects and pushes local project dependencies.</li>
+                        <li>🔄 **Incremental Sync**: Keeps remote files updated via `rsync`.</li>
+                        <li>🚀 **Slurm Submission**: Handles job allocation and node management.</li>
+                        <li>⚡ **Ray Bridging**: Deploys dynamic Ray clusters on allocated nodes.</li>
                     </ul>
                 </div>
                 <div class="concept-visual">
-                    <img src="./slurmray_concept_diagram.png" alt="Schéma conceptuel SlurmRay">
+                    <img src="./slurmray_concept_diagram.png" alt="SlurmRay Concept Diagram">
                 </div>
             </div>
         </section>
 
         <section id="usage" class="section">
-            <h2 class="section-title">Utilisation Rapide</h2>
-            <p>Transformez un script local en tâche distribuée en quelques lignes :</p>
-            
+            <h2 class="section-title">Quick Start</h2>
+            <p>Transform a local script into a distributed task in seconds:</p>
+
             <pre><code><span class="keyword">from</span> slurmray <span class="keyword">import</span> RayLauncher
 
-<span class="comment"># 1. Définissez votre logique</span>
-<span class="keyword">def</span> <span class="function">compute_pi</span>(iterations):
-    <span class="comment"># Votre code utilisant Ray ici...</span>
-    <span class="keyword">return</span> <span class="blue">3.14159</span>
+<span class="comment"># 1. Define your logic</span>
+<span class="keyword">def</span> <span class="function">compute_heavy_pi</span>(n):
+    <span class="comment"># This code runs on the remote cluster nodes!</span>
+    <span class="keyword">return</span> <span class="blue">3.1415926535</span>
 
-<span class="comment"># 2. Configurez le pont</span>
-cluster = <span class="function">RayLauncher</span>(
+<span class="comment"># 2. Configure the bridge</span>
+launcher = <span class="function">RayLauncher</span>(
     project_name=<span class="string">"pi_calc"</span>,
     cluster=<span class="string">"curnagl"</span>,
     node_nbr=<span class="blue">4</span>,
     use_gpu=<span class="keyword">True</span>
 )
 
-<span class="comment"># 3. Lancez !</span>
-result = cluster(compute_pi, args={<span class="string">"iterations"</span>: <span class="blue">1000000</span>})</code></pre>
+<span class="comment"># 3. Execute!</span>
+result = launcher(compute_heavy_pi, args={<span class="string">"n"</span>: <span class="blue">10**8</span>})</code></pre>
         </section>
 
         <section id="features" class="section">
-            <h2 class="section-title">Pourquoi SlurmRay ?</h2>
+            <h2 class="section-title">Why SlurmRay?</h2>
             <div class="features-grid">
                 <div class="card">
                     <h4>🛠 Dev-Friendly</h4>
-                    <p>Continuez à coder dans votre IDE local (VS Code, PyCharm). SlurmRay s'occupe de faire tourner le code sur le cluster comme s'il était chez vous.</p>
+                    <p>Keep coding in your local IDE (VS Code, PyCharm). SlurmRay makes remote clusters feel like a
+                        local backend.</p>
                 </div>
                 <div class="card">
-                    <h4>🧬 Dépendances Intelligentes</h4>
-                    <p>Grâce à son scanner AST, il détecte les packages nécessaires et les injecte dans le cluster sans configuration manuelle fastidieuse.</p>
+                    <h4>🧬 Smart Dependencies</h4>
+                    <p>Proprietary AST scanner detects necessary packages and injects them into the cluster without
+                        manual setup.</p>
                 </div>
                 <div class="card">
-                    <h4>🔒 Sécurité & Gestion</h4>
-                    <p>Intègre la gestion des credentials via .env et gère automatiquement le cycle de vie des environnements virtuels distants.</p>
+                    <h4>🔒 Secure by Design</h4>
+                    <p>Integrated credential management via `.env` files and automated lifecycle management for remote
+                        virtualenvs.</p>
                 </div>
             </div>
         </section>
@@ -295,9 +327,10 @@ result = cluster(compute_pi, args={<span class="string">"iterations"</span>: <sp
 
     <footer>
         <div class="container">
-            <p>&copy; 2026 DESI @ HEC UNIL. Propulsé par Ray & Slurm.</p>
+            <p>&copy; 2026 DESI @ HEC UNIL. Powered by Ray & Slurm.</p>
         </div>
     </footer>
 
 </body>
+
 </html>
