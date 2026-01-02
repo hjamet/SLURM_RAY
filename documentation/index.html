@@ -242,6 +242,17 @@
 
 <body>
 
+    <nav style="padding: 1rem 0; border-bottom: 1px solid var(--border-color); margin-bottom: 2rem;">
+        <div class="container" style="display: flex; gap: 2rem;">
+            <a href="#" style="color: var(--primary-color); text-decoration: none; font-weight: 600;">Home</a>
+            <a href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/daisy.html"
+                style="color: var(--text-muted); text-decoration: none; font-weight: 600; transition: color 0.3s;"
+                onmouseover="this.style.color='#7c4dff'" onmouseout="this.style.color='#8b949e'">Daisy</a>
+            <a href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/kernigol.html"
+                style="color: var(--text-muted); text-decoration: none; font-weight: 600; transition: color 0.3s;"
+                onmouseover="this.style.color='#03a9f4'" onmouseout="this.style.color='#8b949e'">Kernigol</a>
+        </div>
+    </nav>
     <header>
         <div class="container">
             <div class="badge">v6.0.7 Stable</div>
@@ -267,10 +278,10 @@
                     </p>
                     <br>
                     <ul style="list-style-position: inside; color: var(--text-muted);">
-                        <li>📦 **AST Scan**: Auto-detects and pushes local project dependencies.</li>
-                        <li>🔄 **Incremental Sync**: Keeps remote files updated via `rsync`.</li>
-                        <li>🚀 **Slurm Submission**: Handles job allocation and node management.</li>
-                        <li>⚡ **Ray Bridging**: Deploys dynamic Ray clusters on allocated nodes.</li>
+                        <li>📦 <strong>AST Scan</strong>: Auto-detects and pushes local project dependencies.</li>
+                        <li>🔄 <strong>Incremental Sync</strong>: Keeps remote files updated via `rsync`.</li>
+                        <li>🚀 <strong>Slurm Submission</strong>: Handles job allocation and node management.</li>
+                        <li>⚡ <strong>Ray Bridging</strong>: Deploys dynamic Ray clusters on allocated nodes.</li>
                     </ul>
                 </div>
                 <div class="concept-visual">
@@ -327,7 +338,9 @@ result = launcher(compute_heavy_pi, args={<span class="string">"n"</span>: <span
 
     <footer>
         <div class="container">
-            <p>&copy; 2026 DESI @ HEC UNIL. Powered by Ray & Slurm.</p>
+            <p>&copy; 2026 <a href="https://www.unil.ch/hec/fr/home/menuinst/faculte/departements/desi.html"
+                    target="_blank" style="color: var(--text-muted); text-decoration: underline;">DESI @ HEC UNIL</a>.
+                Powered by Ray & Slurm.</p>
         </div>
     </footer>
 

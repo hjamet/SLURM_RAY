@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daisy - SlurmRay Documentation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --surface-color: #161b22;
+            --primary-color: #7c4dff;
+            --secondary-color: #03a9f4;
+            --text-color: #e6edf3;
+            --text-muted: #8b949e;
+            --accent-gradient: linear-gradient(135deg, #7c4dff 0%, #03a9f4 100%);
+            --border-color: #30363d;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        /* Header */
+        header {
+            padding: 4rem 0;
+            text-align: center;
+            background: radial-gradient(circle at 50% 0%, rgba(124, 77, 255, 0.1) 0%, transparent 70%);
+        }
+
+        .banner-img {
+            width: 100%;
+            max-width: 800px;
+            border-radius: 20px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            margin-bottom: 3rem;
+        }
+
+        h1 {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 1.5rem;
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+        }
+
+        /* Navigation */
+        nav {
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-right: 2rem;
+            font-weight: 600;
+            transition: color 0.3s;
+        }
+
+        nav a:hover,
+        nav a.active {
+            color: var(--primary-color);
+        }
+
+        /* Content */
+        .section {
+            padding: 4rem 0;
+        }
+
+        h2 {
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            color: var(--primary-color);
+        }
+
+        h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            margin-top: 2rem;
+            color: #d1d5db;
+        }
+
+        p {
+            margin-bottom: 1.5rem;
+            color: #c9d1d9;
+        }
+
+        /* Tables for Arguments */
+        .args-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 2rem 0;
+            background: var(--surface-color);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .args-table th,
+        .args-table td {
+            text-align: left;
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .args-table th {
+            background-color: #21262d;
+            color: var(--primary-color);
+        }
+
+        .args-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .code-snippet {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(110, 118, 129, 0.4);
+            padding: 0.2rem 0.4rem;
+            border-radius: 6px;
+            font-size: 0.9em;
+            color: #a5d6ff;
+        }
+
+        /* Code Block */
+        pre {
+            background-color: #010409;
+            padding: 2rem;
+            border-radius: 12px;
+            overflow-x: auto;
+            border: 1px solid var(--border-color);
+            margin: 2rem 0;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: #d1d5db;
+        }
+
+        .keyword {
+            color: #ff7b72;
+        }
+
+        .function {
+            color: #d2a8ff;
+        }
+
+        .string {
+            color: #a5d6ff;
+        }
+
+        .comment {
+            color: #8b949e;
+        }
+
+        .number {
+            color: #79c0ff;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <div class="container">
+            <a
+                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/index.html">Home</a>
+            <a href="#" class="active">Daisy</a>
+            <a
+                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/kernigol.html">Kernigol</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <header>
+            <img src="./daisy_banner.png" alt="Daisy Banner" class="banner-img">
+            <h1>Daisy</h1>
+            <p class="subtitle">The Future of Standalone Server Orchestration</p>
+        </header>
+
+        <section class="section">
+            <h2>Overview</h2>
+            <p>
+                <strong>Daisy</strong> is the next-generation interface specifically designed for standalone servers and
+                internal lab machines
+                (like the powerful <a href="https://www.unil.ch/hec/fr/home/menuinst/faculte/departements/desi.html"
+                    target="_blank"
+                    style="color: var(--primary-color); text-decoration: none;"><strong>Desi-Lab</strong></a> servers).
+                It is optimized for rapid iteration, immediate feedback, and bypassing the
+                queue times often associated with Slurm clusters.
+            </p>
+            <p>
+                While Kernigol handles the heavy lifting of multi-node clusters, Daisy provides a lightweight, agile
+                environment
+                that feels exactly like running code on your own laptop—but with 128 cores and 500GB of RAM.
+            </p>
+        </section>
+
+        <section class="section">
+            <h2>Complete Example</h2>
+            <p>
+                This example demonstrates a typical workflow using Daisy to train a model on a remote Desi server.
+                Notice how minimal the change is from local code.
+            </p>
+
+            <pre><code><span class="keyword">from</span> slurmray <span class="keyword">import</span> RayLauncher
+<span class="keyword">import</span> time
+
+<span class="comment"># 1. Define the task locally</span>
+<span class="keyword">def</span> <span class="function">train_and_evaluate</span>(seed, epochs):
+    print(f"Starting training with seed {seed}")
+    <span class="comment"># Simulate heavy work</span>
+    time.sleep(10) 
+    accuracy = 0.95 + (seed * 0.001)
+    <span class="keyword">return</span> {<span class="string">"seed"</span>: seed, <span class="string">"accuracy"</span>: accuracy}
+
+<span class="comment"># 2. Configure Daisy</span>
+launcher = <span class="function">RayLauncher</span>(
+    project_name=<span class="string">"daisy_demo_v1"</span>,
+    cluster=<span class="string">"desi"</span>,        <span class="comment"># Activates Daisy Interface</span>
+    server_username=<span class="string">"henri"</span>, <span class="comment"># Optional if set in .env</span>
+    files=[<span class="string">"data/"</span>]       <span class="comment"># Upload local data folder</span>
+)
+
+<span class="comment"># 3. Execute Remote Task</span>
+print(<span class="string">"🚀 Launching task to Daisy..."</span>)
+result = launcher(
+    train_and_evaluate, 
+    args={
+        <span class="string">"seed"</span>: <span class="number">42</span>, 
+        <span class="string">"epochs"</span>: <span class="number">100</span>
+    }
+)
+
+print(f"✅ Received Result: {result}")</code></pre>
+        </section>
+
+        <section class="section">
+            <h2>Detailed Argument Reference</h2>
+            <table class="args-table">
+                <thead>
+                    <tr>
+                        <th>Argument</th>
+                        <th>Type</th>
+                        <th>Required</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="code-snippet">cluster</span></td>
+                        <td>str</td>
+                        <td>Yes</td>
+                        <td>Set to <code>"desi"</code> to activate the Daisy interface.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">project_name</span></td>
+                        <td>str</td>
+                        <td>Yes</td>
+                        <td>Unique identifier for the workspace. Creates <code>~/.slogs/project_name</code> on the
+                            remote server.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">files</span></td>
+                        <td>list[str]</td>
+                        <td>No</td>
+                        <td>List of local files or directories to sync to the server. Daisy intelligently uses
+                            <code>rsync</code> to only upload changes.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">server_username</span></td>
+                        <td>str</td>
+                        <td>No</td>
+                        <td>SSH username. Can be omitted if <code>DESI_USERNAME</code> is set in your <code>.env</code>
+                            file.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">force_reinstall_venv</span></td>
+                        <td>bool</td>
+                        <td>No</td>
+                        <td>If <code>True</code>, completely wipes the remote virtual environment and reinstalls
+                            dependencies. Useful for dependency conflict resolution.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">node_nbr</span></td>
+                        <td>int</td>
+                        <td>No</td>
+                        <td>Ignored in Daisy mode (always 1 node), but kept for API compatibility.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="section">
+            <h2>Why use Daisy?</h2>
+            <p>
+                Daisy is built for <strong>speed</strong>.
+            </p>
+            <ul style="list-style-position: inside; color: #8b949e;">
+                <li>⚡ <strong>Zero Queue Time</strong>: Unlike Slurm, Daisy jobs start immediately.</li>
+                <li>🔄 <strong>Smart Sync</strong>: Changes to your code are reflected instantly on the server.</li>
+                <li>🛠 <strong>Shared Resource Management</strong>: Daisy is polite. It shares resources with other
+                    users on the server without strict exclusivity, making it perfect for development and testing
+                    phases.</li>
+            </ul>
+        </section>
+
+    </main>
+
+    <footer
+        style="padding: 4rem 0; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.9rem; margin-top: 4rem;">
+        <div class="container">
+            <p>&copy; 2026 <a href="https://www.unil.ch/hec/fr/home/menuinst/faculte/departements/desi.html"
+                    target="_blank" style="color: var(--text-muted); text-decoration: underline;">DESI @ HEC UNIL</a>.
+                Powered by Ray & Slurm.</p>
+        </div>
+    </footer>
+</body>
+
+</html>

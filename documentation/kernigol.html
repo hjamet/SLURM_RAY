@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kernigol - SlurmRay Documentation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --surface-color: #161b22;
+            --primary-color: #03a9f4;
+            --secondary-color: #7c4dff;
+            --text-color: #e6edf3;
+            --text-muted: #8b949e;
+            --accent-gradient: linear-gradient(135deg, #03a9f4 0%, #7c4dff 100%);
+            --border-color: #30363d;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        /* Header */
+        header {
+            padding: 4rem 0;
+            text-align: center;
+            background: radial-gradient(circle at 50% 0%, rgba(3, 169, 244, 0.1) 0%, transparent 70%);
+        }
+
+        .banner-img {
+            width: 100%;
+            max-width: 800px;
+            border-radius: 20px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            margin-bottom: 3rem;
+        }
+
+        h1 {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 1.5rem;
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+        }
+
+        /* Navigation */
+        nav {
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-right: 2rem;
+            font-weight: 600;
+            transition: color 0.3s;
+        }
+
+        nav a:hover,
+        nav a.active {
+            color: var(--primary-color);
+        }
+
+        /* Content */
+        .section {
+            padding: 4rem 0;
+        }
+
+        h2 {
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            color: var(--primary-color);
+        }
+
+        h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            margin-top: 2rem;
+            color: #d1d5db;
+        }
+
+        p {
+            margin-bottom: 1.5rem;
+            color: #c9d1d9;
+        }
+
+        /* Tables for Arguments */
+        .args-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 2rem 0;
+            background: var(--surface-color);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .args-table th,
+        .args-table td {
+            text-align: left;
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .args-table th {
+            background-color: #21262d;
+            color: var(--primary-color);
+        }
+
+        .args-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .code-snippet {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(110, 118, 129, 0.4);
+            padding: 0.2rem 0.4rem;
+            border-radius: 6px;
+            font-size: 0.9em;
+            color: #a5d6ff;
+        }
+
+        /* Code Block */
+        pre {
+            background-color: #010409;
+            padding: 2rem;
+            border-radius: 12px;
+            overflow-x: auto;
+            border: 1px solid var(--border-color);
+            margin: 2rem 0;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: #d1d5db;
+        }
+
+        .keyword {
+            color: #ff7b72;
+        }
+
+        .function {
+            color: #d2a8ff;
+        }
+
+        .string {
+            color: #a5d6ff;
+        }
+
+        .comment {
+            color: #8b949e;
+        }
+
+        .number {
+            color: #79c0ff;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <div class="container">
+            <a
+                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/index.html">Home</a>
+            <a
+                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/daisy.html">Daisy</a>
+            <a href="#" class="active">Kernigol</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <header>
+            <img src="./kernigol_banner.png" alt="Kernigol Banner" class="banner-img">
+            <h1>Kernigol</h1>
+            <p class="subtitle">The Core Interface for High-Performance Slurm Clusters</p>
+        </header>
+
+        <section class="section">
+            <h2>Overview</h2>
+            <p>
+                <strong>Kernigol</strong> is the backbone module designed to interface with massive HPC clusters running
+                Slurm,
+                such as the <a href="https://wiki.unil.ch/ci/books/high-performance-computing-hpc/page/curnagl"
+                    target="_blank"
+                    style="color: var(--primary-color); text-decoration: none;"><strong>Curnagl</strong></a> cluster at
+                UNIL. It handles the complexity of job allocation,
+                node orchestration, and environment synchronization at scale.
+            </p>
+            <p>
+                Unlike standard sbatch scripts, Kernigol dynamically deploys a Ray cluster <em>inside</em> your Slurm
+                allocation,
+                giving you a unified Python interface to control hundreds of cores.
+            </p>
+        </section>
+
+        <section class="section">
+            <h2>Usage with RayLauncher</h2>
+            <p>
+                To use the Kernigol backend, simply set <code>cluster="curnagl"</code> (or your custom cluster name)
+                when initializing <code>RayLauncher</code>.
+            </p>
+
+            <pre><code><span class="keyword">from</span> slurmray <span class="keyword">import</span> RayLauncher
+
+<span class="comment"># Initialize Kernigol for Curnagl Cluster</span>
+launcher = <span class="function">RayLauncher</span>(
+    project_name=<span class="string">"genomic_analysis_v4"</span>,
+    cluster=<span class="string">"curnagl"</span>,  <span class="comment"># Activates Kernigol backend</span>
+    node_nbr=<span class="number">4</span>,         <span class="comment"># Number of nodes</span>
+    time=<span class="number">120</span>,           <span class="comment"># 2 hours</span>
+    memory=<span class="number">64</span>           <span class="comment"># 64GB per node</span>
+)</code></pre>
+        </section>
+
+        <section class="section">
+            <h2>Argument Reference</h2>
+            <table class="args-table">
+                <thead>
+                    <tr>
+                        <th>Argument</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Default</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="code-snippet">cluster</span></td>
+                        <td>str</td>
+                        <td>Must be set to <code>"curnagl"</code> (or custom IP) to activate Kernigol.</td>
+                        <td>"curnagl"</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">node_nbr</span></td>
+                        <td>int</td>
+                        <td>Number of separate physical nodes to allocate.</td>
+                        <td>1</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">use_gpu</span></td>
+                        <td>bool</td>
+                        <td>If True, loads CUDA/cuDNN modules and requests GPU resources in Slurm.</td>
+                        <td>False</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">memory</span></td>
+                        <td>int</td>
+                        <td>RAM to request per node (in GB).</td>
+                        <td>64</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">max_running_time</span></td>
+                        <td>int</td>
+                        <td>Max duration of the job in minutes. Slurm will kill the job after this time.</td>
+                        <td>60</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">modules</span></td>
+                        <td>list[str]</td>
+                        <td>List of Slurm modules to load (e.g. <code>["gcc/11.2.0"]</code>). Note: Kernigol loads
+                            default GCC/Python/CUDA automatically.</td>
+                        <td>[]</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="section">
+            <h2>Advanced Features</h2>
+            <h3>Automated Module Management</h3>
+            <p>
+                Kernigol keeps your environment sane. It automatically loads the optimal versions of GCC, Python, and
+                CUDA
+                that match the Desi-Labs standards, ensuring binary compatibility for compiled packages.
+            </p>
+            <h3>Job Cleanup</h3>
+            <p>
+                The <code>cancel()</code> method sends a <code>scancel</code> command to the cluster, instantly
+                terminating the job
+                and freeing up your allocation priority.
+            </p>
+        </section>
+
+    </main>
+
+    <footer
+        style="padding: 4rem 0; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.9rem; margin-top: 4rem;">
+        <div class="container">
+            <p>&copy; 2026 <a href="https://www.unil.ch/hec/fr/home/menuinst/faculte/departements/desi.html"
+                    target="_blank" style="color: var(--text-muted); text-decoration: underline;">DESI @ HEC UNIL</a>.
+                Powered by Ray & Slurm.</p>
+        </div>
+    </footer>
+</body>
+
+</html>
