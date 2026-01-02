@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kernigol - SlurmRay Documentation</title>
+    <title>Desi - SlurmRay Documentation</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -14,11 +14,11 @@
         :root {
             --bg-color: #0d1117;
             --surface-color: #161b22;
-            --primary-color: #03a9f4;
-            --secondary-color: #7c4dff;
+            --primary-color: #7c4dff;
+            --secondary-color: #03a9f4;
             --text-color: #e6edf3;
             --text-muted: #8b949e;
-            --accent-gradient: linear-gradient(135deg, #03a9f4 0%, #7c4dff 100%);
+            --accent-gradient: linear-gradient(135deg, #7c4dff 0%, #03a9f4 100%);
             --border-color: #30363d;
         }
 
@@ -46,7 +46,7 @@
         header {
             padding: 4rem 0;
             text-align: center;
-            background: radial-gradient(circle at 50% 0%, rgba(3, 169, 244, 0.1) 0%, transparent 70%);
+            background: radial-gradient(circle at 50% 0%, rgba(124, 77, 255, 0.1) 0%, transparent 70%);
         }
 
         .banner-img {
@@ -193,123 +193,143 @@
         <div class="container">
             <a
                 href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/index.html">Home</a>
+            <a href="#" class="active">Desi</a>
             <a
-                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/daisy.html">Daisy</a>
-            <a href="#" class="active">Kernigol</a>
+                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/curnagl.html">Curnagl</a>
         </div>
     </nav>
 
     <main class="container">
         <header>
-            <img src="./kernigol_banner.png" alt="Kernigol Banner" class="banner-img">
-            <h1>Kernigol</h1>
-            <p class="subtitle">The Core Interface for High-Performance Slurm Clusters</p>
+            <img src="./desi_banner.png" alt="Desi Banner" class="banner-img">
+            <h1>Desi</h1>
+            <p class="subtitle">The Future of Standalone Server Orchestration</p>
         </header>
 
         <section class="section">
             <h2>Overview</h2>
             <p>
-                <strong>Kernigol</strong> is the backbone module designed to interface with massive HPC clusters running
-                Slurm,
-                such as the <a href="https://wiki.unil.ch/ci/books/high-performance-computing-hpc/page/curnagl"
+                The <strong>Desi Interface</strong> is specifically designed for standalone servers and internal lab
+                machines
+                (like the powerful <a href="https://www.unil.ch/hec/fr/home/menuinst/faculte/departements/desi.html"
                     target="_blank"
-                    style="color: var(--primary-color); text-decoration: none;"><strong>Curnagl</strong></a> cluster at
-                UNIL. It handles the complexity of job allocation,
-                node orchestration, and environment synchronization at scale.
+                    style="color: var(--primary-color); text-decoration: none;"><strong>Desi-Lab</strong></a> servers).
+                It is optimized for rapid iteration, immediate feedback, and bypassing the
+                queue times often associated with Slurm clusters.
             </p>
             <p>
-                Unlike standard sbatch scripts, Kernigol dynamically deploys a Ray cluster <em>inside</em> your Slurm
-                allocation,
-                giving you a unified Python interface to control hundreds of cores.
+                While the Curnagl interface handles the heavy lifting of multi-node clusters, the Desi interface
+                provides a lightweight, agile environment
+                that feels exactly like running code on your own laptop—but with 128 cores and 500GB of RAM.
             </p>
         </section>
 
         <section class="section">
-            <h2>Usage with RayLauncher</h2>
+            <h2>Complete Example</h2>
             <p>
-                To use the Kernigol backend, simply set <code>cluster="curnagl"</code> (or your custom cluster name)
-                when initializing <code>RayLauncher</code>.
+                This example demonstrates a typical workflow using the Desi backend to train a model on a remote server.
+                Notice how minimal the change is from local code.
             </p>
 
             <pre><code><span class="keyword">from</span> slurmray <span class="keyword">import</span> RayLauncher
+<span class="keyword">import</span> time
 
-<span class="comment"># Initialize Kernigol for Curnagl Cluster</span>
+<span class="comment"># 1. Define the task locally</span>
+<span class="keyword">def</span> <span class="function">train_and_evaluate</span>(seed, epochs):
+    print(f"Starting training with seed {seed}")
+    <span class="comment"># Simulate heavy work</span>
+    time.sleep(10) 
+    accuracy = 0.95 + (seed * 0.001)
+    <span class="keyword">return</span> {<span class="string">"seed"</span>: seed, <span class="string">"accuracy"</span>: accuracy}
+
+<span class="comment"># 2. Configure for Desi Server</span>
 launcher = <span class="function">RayLauncher</span>(
-    project_name=<span class="string">"genomic_analysis_v4"</span>,
-    cluster=<span class="string">"curnagl"</span>,  <span class="comment"># Activates Kernigol backend</span>
-    node_nbr=<span class="number">4</span>,         <span class="comment"># Number of nodes</span>
-    time=<span class="number">120</span>,           <span class="comment"># 2 hours</span>
-    memory=<span class="number">64</span>           <span class="comment"># 64GB per node</span>
-)</code></pre>
+    project_name=<span class="string">"desi_demo_v1"</span>,
+    cluster=<span class="string">"desi"</span>,        <span class="comment"># Activates Desi Interface</span>
+    server_username=<span class="string">"henri"</span>, <span class="comment"># Optional if set in .env</span>
+    files=[<span class="string">"data/"</span>]       <span class="comment"># Upload local data folder</span>
+)
+
+<span class="comment"># 3. Execute Remote Task</span>
+print(<span class="string">"🚀 Launching task to Desi..."</span>)
+result = launcher(
+    train_and_evaluate, 
+    args={
+        <span class="string">"seed"</span>: <span class="number">42</span>, 
+        <span class="string">"epochs"</span>: <span class="number">100</span>
+    }
+)
+
+print(f"✅ Received Result: {result}")</code></pre>
         </section>
 
         <section class="section">
-            <h2>Argument Reference</h2>
+            <h2>Detailed Argument Reference</h2>
             <table class="args-table">
                 <thead>
                     <tr>
                         <th>Argument</th>
                         <th>Type</th>
+                        <th>Required</th>
                         <th>Description</th>
-                        <th>Default</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
                         <td><span class="code-snippet">cluster</span></td>
                         <td>str</td>
-                        <td>Must be set to <code>"curnagl"</code> (or custom IP) to activate Kernigol.</td>
-                        <td>"curnagl"</td>
+                        <td>Yes</td>
+                        <td>Set to <code>"desi"</code> to activate the Desi interface.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">project_name</span></td>
+                        <td>str</td>
+                        <td>Yes</td>
+                        <td>Unique identifier for the workspace. Creates <code>~/.slogs/project_name</code> on the
+                            remote server.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">files</span></td>
+                        <td>list[str]</td>
+                        <td>No</td>
+                        <td>List of local files or directories to sync to the server. SlurmRay intelligently uses
+                            <code>rsync</code> to only upload changes.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">server_username</span></td>
+                        <td>str</td>
+                        <td>No</td>
+                        <td>SSH username. Can be omitted if <code>DESI_USERNAME</code> is set in your <code>.env</code>
+                            file.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">force_reinstall_venv</span></td>
+                        <td>bool</td>
+                        <td>No</td>
+                        <td>If <code>True</code>, completely wipes the remote virtual environment and reinstalls
+                            dependencies. Useful for dependency conflict resolution.</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">node_nbr</span></td>
                         <td>int</td>
-                        <td>Number of separate physical nodes to allocate.</td>
-                        <td>1</td>
-                    </tr>
-                    <tr>
-                        <td><span class="code-snippet">use_gpu</span></td>
-                        <td>bool</td>
-                        <td>If True, loads CUDA/cuDNN modules and requests GPU resources in Slurm.</td>
-                        <td>False</td>
-                    </tr>
-                    <tr>
-                        <td><span class="code-snippet">memory</span></td>
-                        <td>int</td>
-                        <td>RAM to request per node (in GB).</td>
-                        <td>64</td>
-                    </tr>
-                    <tr>
-                        <td><span class="code-snippet">max_running_time</span></td>
-                        <td>int</td>
-                        <td>Max duration of the job in minutes. Slurm will kill the job after this time.</td>
-                        <td>60</td>
-                    </tr>
-                    <tr>
-                        <td><span class="code-snippet">modules</span></td>
-                        <td>list[str]</td>
-                        <td>List of Slurm modules to load (e.g. <code>["gcc/11.2.0"]</code>). Note: Kernigol loads
-                            default GCC/Python/CUDA automatically.</td>
-                        <td>[]</td>
+                        <td>No</td>
+                        <td>Ignored in Desi mode (always 1 node), but kept for API compatibility.</td>
                     </tr>
                 </tbody>
             </table>
         </section>
 
         <section class="section">
-            <h2>Advanced Features</h2>
-            <h3>Automated Module Management</h3>
+            <h2>Why use the Desi Backend?</h2>
             <p>
-                Kernigol keeps your environment sane. It automatically loads the optimal versions of GCC, Python, and
-                CUDA
-                that match the Desi-Labs standards, ensuring binary compatibility for compiled packages.
+                It is built for <strong>speed and agility</strong>.
             </p>
-            <h3>Job Cleanup</h3>
-            <p>
-                The <code>cancel()</code> method sends a <code>scancel</code> command to the cluster, instantly
-                terminating the job
-                and freeing up your allocation priority.
-            </p>
+            <ul style="list-style-position: inside; color: #8b949e;">
+                <li>⚡ <strong>Zero Queue Time</strong>: Unlike Slurm, jobs on Desi-Lab servers start immediately.</li>
+                <li>🔄 <strong>Smart Sync</strong>: Changes to your code are reflected instantly on the server.</li>
+                <li>🛠 <strong>Shared Resource Management</strong>: It is polite. It shares resources with other users
+                    on the server without strict exclusivity, making it perfect for development and testing phases.</li>
+            </ul>
         </section>
 
     </main>
