@@ -317,8 +317,9 @@ result = launcher(compute_heavy_pi, args={<span class="string">"n"</span>: <span
             <h2 class="section-title">API Reference</h2>
             <div class="card">
                 <h4 style="margin-bottom: 1.5rem; color: var(--primary-color);">class RayLauncher</h4>
-                <p style="margin-bottom: 2rem;">The main entry point for orchestrating jobs across local and remote environments.</p>
-                
+                <p style="margin-bottom: 2rem;">The main entry point for orchestrating jobs across local and remote
+                    environments.</p>
+
                 <div style="overflow-x: auto;">
                     <table style="width: 100%; border-collapse: collapse; min-width: 600px;">
                         <thead>
@@ -331,103 +332,129 @@ result = launcher(compute_heavy_pi, args={<span class="string">"n"</span>: <span
                         </thead>
                         <tbody>
                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">project_name</td>
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    project_name</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">str</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">None</td>
                                 <td style="padding: 1rem;">Required. Name of the project integration.</td>
                             </tr>
                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">cluster</td>
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    cluster</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">str</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">'curnagl'</td>
-                                <td style="padding: 1rem;">Target environment: 'curnagl', 'desi', 'local', or custom IP.</td>
+                                <td style="padding: 1rem;">Target environment: 'curnagl', 'desi', 'local', or custom IP.
+                                </td>
                             </tr>
                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">files</td>
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    files</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">List[str]</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">[]</td>
                                 <td style="padding: 1rem;">List of relative file paths to synchronize.</td>
                             </tr>
                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">modules</td>
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    modules</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">List[str]</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">[]</td>
-                                <td style="padding: 1rem;">Slurm modules to load (e.g. ['gcc/13.2.0']). Ignored on Desi.</td>
+                                <td style="padding: 1rem;">Slurm modules to load (e.g. ['gcc/13.2.0']). Ignored on Desi.
+                                </td>
                             </tr>
-                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">node_nbr</td>
+                            <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    node_nbr</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">int</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">1</td>
                                 <td style="padding: 1rem;">Number of nodes. Fixed to 1 for Desi/Local.</td>
                             </tr>
                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">use_gpu</td>
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    use_gpu</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">bool</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">False</td>
                                 <td style="padding: 1rem;">Request GPU resources. Auto-loads CUDA/CuDNN if needed.</td>
                             </tr>
-                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">memory</td>
+                            <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    memory</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">int</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">64</td>
                                 <td style="padding: 1rem;">RAM per node in GB.</td>
                             </tr>
-                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">max_running_time</td>
+                            <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    max_running_time</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">int</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">60</td>
                                 <td style="padding: 1rem;">Wall time limit in minutes.</td>
                             </tr>
-                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">runtime_env</td>
+                            <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    runtime_env</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">dict</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">{'env_vars': {}}</td>
                                 <td style="padding: 1rem;">Ray runtime environment configuration.</td>
                             </tr>
-                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">server_run</td>
+                            <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    server_run</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">bool</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">True</td>
                                 <td style="padding: 1rem;">Enable remote execution. If False, runs locally.</td>
                             </tr>
-                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">server_ssh</td>
+                            <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    server_ssh</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">str</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">None</td>
                                 <td style="padding: 1rem;">SSH host. Auto-detected from cluster config.</td>
                             </tr>
-                              <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">server_username</td>
+                            <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    server_username</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">str</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">None</td>
                                 <td style="padding: 1rem;">SSH user. Auto-loaded from .env (CURNAGL_USERNAME etc.).</td>
                             </tr>
-                              <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">server_password</td>
+                            <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    server_password</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">str</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">None</td>
                                 <td style="padding: 1rem;">SSH password. Auto-loaded from .env.</td>
                             </tr>
                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">log_file</td>
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    log_file</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">str</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">'logs/RayLauncher.log'</td>
                                 <td style="padding: 1rem;">Path to log file.</td>
                             </tr>
-                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">force_reinstall_venv</td>
+                            <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    force_reinstall_venv</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">bool</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">False</td>
                                 <td style="padding: 1rem;">Wipe and recreate the remote virtualenv.</td>
                             </tr>
-                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">retention_days</td>
+                            <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    retention_days</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">int</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">7</td>
                                 <td style="padding: 1rem;">Days to keep remote files/venv (1-30).</td>
                             </tr>
-                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
-                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">asynchronous</td>
+                            <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    force_reinstall_project</td>
+                                <td style="padding: 1rem; color: var(--secondary-color);">bool</td>
+                                <td style="padding: 1rem; color: var(--text-muted);">False</td>
+                                <td style="padding: 1rem;">Force project files cleanup before upload.</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    asynchronous</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">bool</td>
                                 <td style="padding: 1rem; color: var(--text-muted);">False</td>
                                 <td style="padding: 1rem;">Return immediately with a tracking object.</td>

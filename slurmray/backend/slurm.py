@@ -544,144 +544,229 @@ class SlurmBackend(RemoteMixin):
         # Define project directory on cluster (organized by project name)
         project_dir = f"slurmray-server/{self.launcher.project_name}"
 
-        # Write server script
-        self._write_server_script()
+        # --- LOCK MECHANISM START ---
+        # Acquire lock to prevent race conditions during sync
+        lock_dir = f"slurmray-server/.{self.launcher.project_name}.lock"
+        self.logger.info("Acquiring sync lock...")
+        lock_acquired = False
+        start_lock_time = time.time()
+        timeout = 600 # 10 minutes timeout
+        
+        while not lock_acquired:
+            try:
+                # mkdir is atomic on POSIX
+                ssh_client.exec_command(f"mkdir -p slurmray-server") # Ensure parent exists
+                stdin, stdout, stderr = ssh_client.exec_command(f"mkdir {lock_dir}")
+                exit_status = stdout.channel.recv_exit_status()
+                if exit_status == 0:
+                    lock_acquired = True
+                else:
+                    # Check timeout
+                    if time.time() - start_lock_time > timeout:
+                        self.logger.warning("Timeout waiting for lock. Breaking lock (dangerous if another process is active).")
+                        ssh_client.exec_command(f"rm -rf {lock_dir}")
+                        # Next iteration will likely succeed
+                    time.sleep(2)
+            except Exception as e:
+                self.logger.warning(f"Error acquiring lock: {e}")
+                time.sleep(2)
+        
+        self.logger.info("Sync lock acquired.")
+        
+        try:
+            # Write server script
+            self._write_server_script()
 
-        self.logger.info("Downloading server...")
+            self.logger.info("Downloading server...")
 
-        # Generate requirements first to check venv hash
-        self._generate_requirements()
+            # Generate requirements first to check venv hash
+            self._generate_requirements()
 
-        # Add slurmray (unpinned for now to match legacy behavior, but could be pinned)
-        # Check if slurmray is already in requirements.txt to avoid duplicates
-        req_file = f"{self.launcher.project_path}/requirements.txt"
-        with open(req_file, "r") as f:
-            content = f.read()
-        if "slurmray" not in content.lower():
-            with open(req_file, "a") as f:
-                f.write("slurmray\n")
+            # Add slurmray (unpinned for now to match legacy behavior, but could be pinned)
+            # Check if slurmray is already in requirements.txt to avoid duplicates
+            req_file = f"{self.launcher.project_path}/requirements.txt"
+            with open(req_file, "r") as f:
+                content = f.read()
+            if "slurmray" not in content.lower():
+                with open(req_file, "a") as f:
+                    f.write("slurmray\n")
 
-        # Check if venv can be reused based on requirements hash
-        dep_manager = DependencyManager(self.launcher.project_path, self.logger)
-        req_file = os.path.join(self.launcher.project_path, "requirements.txt")
+            # Check if venv can be reused based on requirements hash
+            dep_manager = DependencyManager(self.launcher.project_path, self.logger)
+            req_file = os.path.join(self.launcher.project_path, "requirements.txt")
 
-        should_recreate_venv = True
-        if self.launcher.force_reinstall_venv:
-            # Force recreation: remove venv if it exists
-            self.logger.info("Force reinstall enabled: removing existing virtualenv...")
-            ssh_client.exec_command(f"rm -rf {project_dir}/.venv")
             should_recreate_venv = True
-        elif os.path.exists(req_file):
-            with open(req_file, "r") as f:
-                req_lines = f.readlines()
-            # Check remote hash (if venv exists on remote)
-            remote_hash_file = f"{project_dir}/.slogs/venv_hash.txt"
-            stdin, stdout, stderr = ssh_client.exec_command(
-                f"test -f {remote_hash_file} && cat {remote_hash_file} || echo ''"
-            )
-            remote_hash = stdout.read().decode("utf-8").strip()
-            current_hash = dep_manager.compute_requirements_hash(req_lines)
-
-            if remote_hash and remote_hash == current_hash:
-                # Hash matches, check if venv exists
-                stdin, stdout, stderr = ssh_client.exec_command(
-                    f"test -d {project_dir}/.venv && echo exists || echo missing"
-                )
-                venv_exists = stdout.read().decode("utf-8").strip() == "exists"
-                if venv_exists:
-                    should_recreate_venv = False
-                    self.logger.info(
-                        "Virtualenv can be reused (requirements hash matches)"
-                    )
-
-        # Optimize requirements
-        # Assuming standard path structure on Slurm cluster (Curnagl)
-        venv_cmd = (
-            f"cd {project_dir} && source .venv/bin/activate &&"
-            if not should_recreate_venv
-            else ""
-        )
-        req_file_to_push = self._optimize_requirements(ssh_client, venv_cmd)
-
-        # Copy files from the project to the server
-        for file in os.listdir(self.launcher.project_path):
-            if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".sh"):
-                if file == "requirements.txt":
-                    continue
-                sftp.put(os.path.join(self.launcher.project_path, file), file)
-
-        # Smart cleanup: preserve venv if hash matches, only clean server logs
-        ssh_client.exec_command(f"mkdir -p {project_dir}/.slogs/server")
-        if should_recreate_venv:
-            # Clean server logs only (venv will be recreated by script if needed)
-            ssh_client.exec_command(f"rm -rf {project_dir}/.slogs/server/*")
-            # Create flag file to force venv recreation in script
             if self.launcher.force_reinstall_venv:
-                ssh_client.exec_command(f"touch {project_dir}/.force_reinstall")
-            self.logger.info(
-                "Virtualenv will be recreated if needed (requirements changed or missing)"
+                # Force recreation: remove venv if it exists
+                self.logger.info("Force reinstall enabled: removing existing virtualenv...")
+                ssh_client.exec_command(f"rm -rf {project_dir}/.venv")
+                should_recreate_venv = True
+            elif os.path.exists(req_file):
+                with open(req_file, "r") as f:
+                    req_lines = f.readlines()
+                # Check remote hash (if venv exists on remote)
+                remote_hash_file = f"{project_dir}/.slogs/venv_hash.txt"
+                stdin, stdout, stderr = ssh_client.exec_command(
+                    f"test -f {remote_hash_file} && cat {remote_hash_file} || echo ''"
+                )
+                remote_hash = stdout.read().decode("utf-8").strip()
+                current_hash = dep_manager.compute_requirements_hash(req_lines)
+
+                if remote_hash and remote_hash == current_hash:
+                    # Hash matches, check if venv exists
+                    stdin, stdout, stderr = ssh_client.exec_command(
+                        f"test -d {project_dir}/.venv && echo exists || echo missing"
+                    )
+                    venv_exists = stdout.read().decode("utf-8").strip() == "exists"
+                    if venv_exists:
+                        should_recreate_venv = False
+                        self.logger.info(
+                            "Virtualenv can be reused (requirements hash matches)"
+                        )
+
+            # Optimize requirements
+            # Assuming standard path structure on Slurm cluster (Curnagl)
+            venv_cmd = (
+                f"cd {project_dir} && source .venv/bin/activate &&"
+                if not should_recreate_venv
+                else ""
             )
-        else:
-            # Clean server logs only, preserve venv
+            req_file_to_push = self._optimize_requirements(ssh_client, venv_cmd)
+
+            # --- FORCE REINSTALL PROJECT LOGIC ---
+            if self.launcher.force_reinstall_project:
+                self.logger.warning(f"Force reinstall project enabled: cleaning {project_dir} (preserving venv if possible)...")
+                # Remove everything except .venv and .slogs (we might need logs/hashes)
+                # Actually, if we force reinstall, we should probably clean hashes too to force re-upload.
+                # But we want to preserve venv if self.launcher.force_reinstall_venv is False.
+                
+                # Command to delete all except .venv
+                cmd = f"find {project_dir} -mindepth 1 -maxdepth 1 ! -name '.venv' -exec rm -rf {{}} +"
+                ssh_client.exec_command(cmd)
+                
+                # If we cleaned the project, we should probably reset the remote hashes to ensure fresh upload
+                ssh_client.exec_command(f"rm -f {project_dir}/.slogs/.remote_file_hashes.json")
+
+            # Prepare files to upload
+            # Include generated files (.py, .pkl, .sh) in the smart sync list
+            files_to_sync = self.launcher.files.copy()
+            
+            # Auto-add generated files from project_path
+            for file in os.listdir(self.launcher.project_path):
+                if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".sh"):
+                    if file == "requirements.txt": 
+                        continue # Handled separately below
+                    files_to_sync.append(file) # These are essentially in project_path, which is treated as root for relative paths?
+                    # Wait, launcher.files expect relative paths to pwd_path usually.
+                    # But generated files are in project_path (~/.slogs/project_name/).
+                    # file_sync.py works with launcher.pwd_path as root.
+                    # So we need to put these files in a place where file_sync can find them or adjust file_sync.
+                    # Actually, simplistic approach: just use sftp.put for these critical small files?
+                    # OR, better: these files change every run (job_name changes), so hash sync is useless for them.
+                    # They SHOULD simply be overwritten.
+                    # Keeping the original logic for these specific files is safer for now, 
+                    # BUT we must do it *after* potential cleanup.
+                    pass
+
+            # Smart cleanup: preserve venv if hash matches, only clean server logs
+            ssh_client.exec_command(f"mkdir -p {project_dir}/.slogs/server")
+            
+            # --- LOG CLEANUP LOGIC ---
+            # If force_reinstall_project is True, logs are already gone.
+            # If False, we generally want to keep them?
+            # Original code: always cleaned logs.
+            # User request: "Les nouveaux uploads devraient écraser les anciens, mais pour les fichiers qui étaient déjà là, ils ne devraient pas être supprimés."
+            # This refers to project files. Logs are execution artifacts.
+            # Let's clean logs only if explicitly requested or standard cleanup?
+            # Standard cleanup seems to be "clean server logs only".
+            # Let's keep it but careful not to break race condition (though lock protects us).
             ssh_client.exec_command(f"rm -rf {project_dir}/.slogs/server/*")
-            # Remove flag file if it exists
-            ssh_client.exec_command(f"rm -f {project_dir}/.force_reinstall")
-            self.logger.info("Preserving virtualenv (requirements unchanged)")
-        # Filter valid files
-        valid_files = []
-        for file in self.launcher.files:
-            # Skip invalid paths
-            if (
-                not file
-                or file == "."
-                or file == ".."
-                or file.startswith("./")
-                or file.startswith("../")
-            ):
-                self.logger.warning(f"Skipping invalid file path: {file}")
-                continue
-            valid_files.append(file)
 
-        # Use incremental sync for local files
-        if valid_files:
-            self._sync_local_files_incremental(
-                sftp, project_dir, valid_files, ssh_client
+            if should_recreate_venv:
+                # Create flag file to force venv recreation in script
+                if self.launcher.force_reinstall_venv:
+                    ssh_client.exec_command(f"touch {project_dir}/.force_reinstall")
+                self.logger.info(
+                    "Virtualenv will be recreated if needed (requirements changed or missing)"
+                )
+            else:
+                # Remove flag file if it exists
+                ssh_client.exec_command(f"rm -f {project_dir}/.force_reinstall")
+                self.logger.info("Preserving virtualenv (requirements unchanged)")
+            
+            # Filter valid files
+            valid_files = []
+            for file in self.launcher.files:
+                # Skip invalid paths
+                if (
+                    not file
+                    or file == "."
+                    or file == ".."
+                    or file.startswith("./")
+                    or file.startswith("../")
+                ):
+                    self.logger.warning(f"Skipping invalid file path: {file}")
+                    continue
+                valid_files.append(file)
+
+            # Use incremental sync for local files
+            # The lock protects this section critical section
+            if valid_files:
+                self._sync_local_files_incremental(
+                    sftp, project_dir, valid_files, ssh_client
+                )
+
+            # Copy generated files (always overwrite, they are small and critical)
+            for file in os.listdir(self.launcher.project_path):
+                if file.endswith(".py") or file.endswith(".pkl") or file.endswith(".sh"):
+                    if file == "requirements.txt":
+                        continue
+                    sftp.put(os.path.join(self.launcher.project_path, file), file)
+
+            # Copy the requirements.txt (optimized) to the server
+            sftp.put(req_file_to_push, "requirements.txt")
+
+            # Store venv hash on remote for future checks
+            if os.path.exists(req_file):
+                with open(req_file, "r") as f:
+                    req_lines = f.readlines()
+                current_hash = dep_manager.compute_requirements_hash(req_lines)
+                # Ensure .slogs directory exists on remote
+                ssh_client.exec_command(f"mkdir -p {project_dir}/.slogs")
+                stdin, stdout, stderr = ssh_client.exec_command(
+                    f"echo '{current_hash}' > {project_dir}/.slogs/venv_hash.txt"
+                )
+                stdout.channel.recv_exit_status()
+                # Also store locally
+                dep_manager.store_venv_hash(current_hash)
+
+            # Update retention timestamp
+            self._update_retention_timestamp(
+                ssh_client, project_dir, self.launcher.retention_days
             )
 
-        # Copy the requirements.txt (optimized) to the server
-        sftp.put(req_file_to_push, "requirements.txt")
-
-        # Store venv hash on remote for future checks
-        if os.path.exists(req_file):
-            with open(req_file, "r") as f:
-                req_lines = f.readlines()
-            current_hash = dep_manager.compute_requirements_hash(req_lines)
-            # Ensure .slogs directory exists on remote
-            ssh_client.exec_command(f"mkdir -p {project_dir}/.slogs")
-            stdin, stdout, stderr = ssh_client.exec_command(
-                f"echo '{current_hash}' > {project_dir}/.slogs/venv_hash.txt"
+            # Write and copy the server script to the server
+            self._write_slurmray_server_sh()
+            sftp.put(
+                os.path.join(self.launcher.project_path, "slurmray_server.sh"),
+                "slurmray_server.sh",
             )
-            stdout.channel.recv_exit_status()
-            # Also store locally
-            dep_manager.store_venv_hash(current_hash)
+            # Chmod script
+            sftp.chmod("slurmray_server.sh", 0o755)
 
-        # Update retention timestamp
-        self._update_retention_timestamp(
-            ssh_client, project_dir, self.launcher.retention_days
-        )
+            # Run the server
+            self.logger.info("Running server...")
+            stdin, stdout, stderr = ssh_client.exec_command("./slurmray_server.sh")
 
-        # Write and copy the server script to the server
-        self._write_slurmray_server_sh()
-        sftp.put(
-            os.path.join(self.launcher.project_path, "slurmray_server.sh"),
-            "slurmray_server.sh",
-        )
-        # Chmod script
-        sftp.chmod("slurmray_server.sh", 0o755)
+        finally:
+            # RELEASE LOCK
+            try:
+                ssh_client.exec_command(f"rm -rf {lock_dir}")
+                self.logger.info("Sync lock released.")
+            except Exception as e:
+                self.logger.warning(f"Failed to release lock: {e}") 
 
-        # Run the server
-        self.logger.info("Running server...")
-        stdin, stdout, stderr = ssh_client.exec_command("./slurmray_server.sh")
+        # Read the output in real time and capture job ID
 
         # Read the output in real time and capture job ID
         job_id = None

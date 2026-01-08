@@ -47,183 +47,203 @@ class DesiBackend(RemoteMixin):
         # Base directory on server (organized by project name)
         base_dir = f"/home/{self.launcher.server_username}/slurmray-server/{self.launcher.project_name}"
 
-        # Generate requirements first to check venv hash
-        self._generate_requirements()
-
-        # Add slurmray (unpinned for now to match legacy behavior, but could be pinned)
-        # Check if slurmray is already in requirements.txt to avoid duplicates
-        req_file = f"{self.launcher.project_path}/requirements.txt"
-        with open(req_file, "r") as f:
-            content = f.read()
-        if "slurmray" not in content.lower():
-            with open(req_file, "a") as f:
-                f.write("slurmray\n")
-
-        # Check if venv can be reused based on requirements hash
-        dep_manager = DependencyManager(self.launcher.project_path, self.logger)
-        req_file = os.path.join(self.launcher.project_path, "requirements.txt")
-
-        should_recreate_venv = True
-        if self.launcher.force_reinstall_venv:
-            # Force recreation: remove venv if it exists
-            self.logger.info("🔄 Recreating virtual environment...")
-            self.ssh_client.exec_command(f"rm -rf {base_dir}/venv")
-            should_recreate_venv = True
-        elif os.path.exists(req_file):
-            with open(req_file, "r") as f:
-                req_lines = f.readlines()
-            # Check remote hash (if venv exists on remote)
-            remote_hash_file = f"{base_dir}/.slogs/venv_hash.txt"
-            stdin, stdout, stderr = self.ssh_client.exec_command(
-                f"test -f {remote_hash_file} && cat {remote_hash_file} || echo ''"
-            )
-            remote_hash = stdout.read().decode("utf-8").strip()
-            current_hash = dep_manager.compute_requirements_hash(req_lines)
-
-            if remote_hash and remote_hash == current_hash:
-                # Hash matches, check if venv exists
-                stdin, stdout, stderr = self.ssh_client.exec_command(
-                    f"test -d {base_dir}/venv && echo exists || echo missing"
-                )
-                venv_exists = stdout.read().decode("utf-8").strip() == "exists"
-                if venv_exists:
-                    should_recreate_venv = False
-
-        # Smart cleanup: preserve venv if hash matches
-        if should_recreate_venv:
-            # Clean up everything including venv
-            self.ssh_client.exec_command(f"mkdir -p {base_dir} && rm -rf {base_dir}/*")
-            # Create flag file to force venv recreation in script
-            if self.launcher.force_reinstall_venv:
-                self.ssh_client.exec_command(f"touch {base_dir}/.force_reinstall")
-        else:
-            # Clean up everything except venv and cache
-            # Clean up everything except venv and cache
-            self.ssh_client.exec_command(
-                f"mkdir -p {base_dir} && find {base_dir} -mindepth 1 ! -name 'venv' ! -path '{base_dir}/venv/*' ! -name '.slogs' ! -path '{base_dir}/.slogs/*' -delete"
-            )
-            # CRITICAL: Since we wiped the files, we must also invalid file sync cache
-            # ensuring files are re-uploaded. We preserve venv hash (venv_hash.txt).
-            self.ssh_client.exec_command(f"rm -f {base_dir}/.slogs/.remote_file_hashes.json")
-            
-            # Remove flag file if it exists
-            self.ssh_client.exec_command(f"rm -f {base_dir}/.force_reinstall")
-
-        # Generate Python script (spython.py) that will run on Desi
-        # This script uses RayLauncher in LOCAL mode (but on the remote machine)
-        # We need to adapt spython.py generation to NOT look for sbatch/slurm
-        self._write_python_script(base_dir)
-
-        # Optimize requirements
-        venv_cmd = (
-            f"source {base_dir}/venv/bin/activate &&"
-            if not should_recreate_venv
-            else ""
-        )
-        req_file_to_push = self._optimize_requirements(self.ssh_client, venv_cmd)
-
-        # Push files
-        files_to_push = [
-            f
-            for f in os.listdir(self.launcher.project_path)
-            if (f.endswith(".py") or f.endswith(".pkl") or f.endswith(".txt"))
-            and f != "requirements.txt"
-        ]
+        # --- LOCK MECHANISM START ---
+        # Acquire lock to prevent race conditions during sync
+        lock_dir = f"/home/{self.launcher.server_username}/slurmray-server/.{self.launcher.project_name}.lock"
+        self.logger.info("Acquiring sync lock...")
+        lock_acquired = False
+        start_lock_time = time.time()
+        timeout = 600 # 10 minutes timeout
         
-        # Fail-fast: ensure func_name.txt is present and will be uploaded
-        func_name_txt = "func_name.txt"
-        func_name_path = os.path.join(self.launcher.project_path, func_name_txt)
-        if not os.path.exists(func_name_path):
-            error_msg = f"❌ ERROR: func_name.txt not found locally at {func_name_path}. Cannot proceed without function name."
-            self.logger.error(error_msg)
-            raise FileNotFoundError(error_msg)
-        
-        if func_name_txt not in files_to_push:
-            files_to_push.append(func_name_txt)
-        
-        if files_to_push:
-            self.logger.info(f"📤 Uploading {len(files_to_push)} file(s) to server...")
-            for file in files_to_push:
-                sftp.put(
-                    os.path.join(self.launcher.project_path, file), f"{base_dir}/{file}"
-                )
-        
-        # Verify func_name.txt was uploaded successfully (fail-fast)
-        stdin, stdout, stderr = self.ssh_client.exec_command(
-            f"test -f {base_dir}/{func_name_txt} && echo 'exists' || echo 'missing'"
-        )
-        stdout.channel.recv_exit_status()
-        if "missing" in stdout.read().decode("utf-8").strip():
-            error_msg = f"❌ ERROR: func_name.txt upload failed. File not found on server at {base_dir}/{func_name_txt}"
-            self.logger.error(error_msg)
-            raise FileNotFoundError(error_msg)
-
-        # Push optimized requirements as requirements.txt
-        if os.path.exists(req_file_to_push):
-            sftp.put(req_file_to_push, f"{base_dir}/requirements.txt")
-        else:
-            # Ensure no stale requirements.txt exists on remote if local one is missing
+        while not lock_acquired:
             try:
-                sftp.remove(f"{base_dir}/requirements.txt")
-            except IOError:
-                pass  # File didn't exist
+                # mkdir is atomic on POSIX
+                self.ssh_client.exec_command(f"mkdir -p /home/{self.launcher.server_username}/slurmray-server") # Ensure parent exists
+                stdin, stdout, stderr = self.ssh_client.exec_command(f"mkdir {lock_dir}")
+                exit_status = stdout.channel.recv_exit_status()
+                if exit_status == 0:
+                    lock_acquired = True
+                else:
+                    # Check timeout
+                    if time.time() - start_lock_time > timeout:
+                        self.logger.warning("Timeout waiting for lock. Breaking lock (dangerous if another process is active).")
+                        self.ssh_client.exec_command(f"rm -rf {lock_dir}")
+                    time.sleep(2)
+            except Exception as e:
+                self.logger.warning(f"Error acquiring lock: {e}")
+                time.sleep(2)
+        
+        self.logger.info("Sync lock acquired.")
 
-        # Store venv hash on remote for future checks
-        if os.path.exists(req_file):
+        try:
+            # Generate requirements first to check venv hash
+            self._generate_requirements()
+
+            # Add slurmray (unpinned for now to match legacy behavior, but could be pinned)
+            req_file = f"{self.launcher.project_path}/requirements.txt"
             with open(req_file, "r") as f:
-                req_lines = f.readlines()
-            current_hash = dep_manager.compute_requirements_hash(req_lines)
-            # Ensure .slogs directory exists on remote
-            self.ssh_client.exec_command(f"mkdir -p {base_dir}/.slogs")
+                content = f.read()
+            if "slurmray" not in content.lower():
+                with open(req_file, "a") as f:
+                    f.write("slurmray\n")
+
+            # Check if venv can be reused based on requirements hash
+            dep_manager = DependencyManager(self.launcher.project_path, self.logger)
+            req_file = os.path.join(self.launcher.project_path, "requirements.txt")
+
+            should_recreate_venv = True
+            if self.launcher.force_reinstall_venv:
+                # Force recreation: remove venv if it exists
+                self.logger.info("Force reinstall enabled: removing existing virtualenv...")
+                self.ssh_client.exec_command(f"rm -rf {base_dir}/venv")
+                should_recreate_venv = True
+            elif os.path.exists(req_file):
+                with open(req_file, "r") as f:
+                    req_lines = f.readlines()
+                # Check remote hash (if venv exists on remote)
+                remote_hash_file = f"{base_dir}/.slogs/venv_hash.txt"
+                stdin, stdout, stderr = self.ssh_client.exec_command(
+                    f"test -f {remote_hash_file} && cat {remote_hash_file} || echo ''"
+                )
+                remote_hash = stdout.read().decode("utf-8").strip()
+                current_hash = dep_manager.compute_requirements_hash(req_lines)
+
+                if remote_hash and remote_hash == current_hash:
+                    # Hash matches, check if venv exists
+                    stdin, stdout, stderr = self.ssh_client.exec_command(
+                        f"test -d {base_dir}/venv && echo exists || echo missing"
+                    )
+                    venv_exists = stdout.read().decode("utf-8").strip() == "exists"
+                    if venv_exists:
+                        should_recreate_venv = False
+
+            # --- FORCE REINSTALL PROJECT LOGIC ---
+            if self.launcher.force_reinstall_project:
+                self.logger.warning(f"Force reinstall project enabled: cleaning {base_dir} (preserving venv if possible)...")
+                cmd = f"find {base_dir} -mindepth 1 -maxdepth 1 ! -name 'venv' -exec rm -rf {{}} +"
+                self.ssh_client.exec_command(cmd)
+                self.ssh_client.exec_command(f"rm -f {base_dir}/.slogs/.remote_file_hashes.json")
+
+            # Smart cleanup: preserve venv if hash matches
+            self.ssh_client.exec_command(f"mkdir -p {base_dir}/.slogs/server")
+            if should_recreate_venv:
+                 # Clean server logs only (venv will be recreated by script if needed)
+                self.ssh_client.exec_command(f"rm -rf {base_dir}/.slogs/server/*")
+                if self.launcher.force_reinstall_venv:
+                    self.ssh_client.exec_command(f"touch {base_dir}/.force_reinstall")
+            else:
+                 # Clean server logs only, preserve venv
+                 # Unlike previous Desi logic which cleaned everything, we now match Slurm logic: prevent deletion of project files.
+                self.ssh_client.exec_command(f"rm -rf {base_dir}/.slogs/server/*")
+                self.ssh_client.exec_command(f"rm -f {base_dir}/.force_reinstall")
+
+            # Generate Python script (spython.py) that will run on Desi
+            self._write_python_script(base_dir)
+
+            # Optimize requirements
+            venv_cmd = (
+                f"source {base_dir}/venv/bin/activate &&"
+                if not should_recreate_venv
+                else ""
+            )
+            req_file_to_push = self._optimize_requirements(self.ssh_client, venv_cmd)
+
+            # Prepare files to push
+            # Include generated files in list
+            files_to_sync = self.launcher.files.copy()
+            
+            # generated files handling
+            generated_files = []
+            for f in os.listdir(self.launcher.project_path):
+                if (f.endswith(".py") or f.endswith(".pkl") or f.endswith(".txt")) and f != "requirements.txt":
+                       generated_files.append(f)
+
+            # Fail-fast: check func_name.txt
+            func_name_txt = "func_name.txt"
+            func_name_path = os.path.join(self.launcher.project_path, func_name_txt)
+            if not os.path.exists(func_name_path):
+                error_msg = f"❌ ERROR: func_name.txt not found locally at {func_name_path}."
+                self.logger.error(error_msg)
+                raise FileNotFoundError(error_msg)
+            
+            # Add generated files to sync list doesn't work easily because they are in project_path, not pwd_path
+            # We will push them manually as before for now, BUT INSIDE THE LOCK.
+
+            # Filter valid files from launcher.files
+            valid_files = []
+            for file in self.launcher.files:
+                 if (not file or file == "." or file == ".." or file.startswith("./") or file.startswith("../")):
+                      continue
+                 valid_files.append(file)
+
+            # Sync local files (incremental)
+            if valid_files:
+                self._sync_local_files_incremental(sftp, base_dir, valid_files)
+
+            # Push generated/critical files (always overwrite)
+            if generated_files:
+                self.logger.info(f"📤 Uploading {len(generated_files)} generated file(s) to server...")
+                for file in generated_files:
+                    sftp.put(
+                        os.path.join(self.launcher.project_path, file), f"{base_dir}/{file}"
+                    )
+
+            # Verify func_name.txt uploaded
             stdin, stdout, stderr = self.ssh_client.exec_command(
-                f"echo '{current_hash}' > {base_dir}/.slogs/venv_hash.txt"
+                f"test -f {base_dir}/{func_name_txt} && echo 'exists' || echo 'missing'"
             )
             stdout.channel.recv_exit_status()
-            # Also store locally
-            dep_manager.store_venv_hash(current_hash)
+            if "missing" in stdout.read().decode("utf-8").strip():
+                raise FileNotFoundError(f"func_name.txt upload failed.")
 
-        # Update retention timestamp
-        self._update_retention_timestamp(
-            self.ssh_client, base_dir, self.launcher.retention_days
-        )
+            # Push requirements
+            if os.path.exists(req_file_to_push):
+                sftp.put(req_file_to_push, f"{base_dir}/requirements.txt")
+            else:
+                 try: sftp.remove(f"{base_dir}/requirements.txt")
+                 except IOError: pass
 
-        # Filter valid files
-        valid_files = []
-        for file in self.launcher.files:
-            # Skip invalid paths
-            if (
-                not file
-                or file == "."
-                or file == ".."
-                or file.startswith("./")
-                or file.startswith("../")
-            ):
-                self.logger.warning(f"Skipping invalid file path: {file}")
-                continue
-            valid_files.append(file)
+            # Store venv hash
+            if os.path.exists(req_file):
+                with open(req_file, "r") as f:
+                    req_lines = f.readlines()
+                current_hash = dep_manager.compute_requirements_hash(req_lines)
+                self.ssh_client.exec_command(f"mkdir -p {base_dir}/.slogs")
+                self.ssh_client.exec_command(f"echo '{current_hash}' > {base_dir}/.slogs/venv_hash.txt")
+                dep_manager.store_venv_hash(current_hash)
 
-        # Use incremental sync for local files
-        if valid_files:
-            self._sync_local_files_incremental(sftp, base_dir, valid_files)
+            # Update retention
+            self._update_retention_timestamp(
+                self.ssh_client, base_dir, self.launcher.retention_days
+            )
 
-        # Create runner script (shell script to setup env and run python)
-        runner_script = "run_desi.sh"
-        self._write_runner_script(runner_script, base_dir)
-        sftp.put(
-            os.path.join(self.launcher.project_path, runner_script),
-            f"{base_dir}/{runner_script}",
-        )
-        self.ssh_client.exec_command(f"chmod +x {base_dir}/{runner_script}")
+            # Create runner script
+            runner_script = "run_desi.sh"
+            self._write_runner_script(runner_script, base_dir)
+            sftp.put(
+                os.path.join(self.launcher.project_path, runner_script),
+                f"{base_dir}/{runner_script}",
+            )
+            self.ssh_client.exec_command(f"chmod +x {base_dir}/{runner_script}")
+
+            # Desi Wrapper
+            desi_wrapper_script = "desi_wrapper.py"
+            self._write_desi_wrapper(desi_wrapper_script)
+            sftp.put(
+                os.path.join(self.launcher.project_path, desi_wrapper_script),
+                f"{base_dir}/{desi_wrapper_script}",
+            )
+        
+        finally:
+            # RELEASE LOCK
+            try:
+                self.ssh_client.exec_command(f"rm -rf {lock_dir}")
+                self.logger.info("Sync lock released.")
+            except Exception as e:
+                self.logger.warning(f"Failed to release lock: {e}")
 
         # Run the script
         self.logger.info("🚀 Starting job execution...")
-
-        desi_wrapper_script = "desi_wrapper.py"
-        self._write_desi_wrapper(desi_wrapper_script)
-        sftp.put(
-            os.path.join(self.launcher.project_path, desi_wrapper_script),
-            f"{base_dir}/{desi_wrapper_script}",
-        )
         
         # Determine command based on wait mode
         if wait:

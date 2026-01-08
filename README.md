@@ -60,6 +60,8 @@ DESI_PASSWORD=your_password
 | `memory` | `64` | GB of RAM per node. |
 | `max_running_time` | `60` | Max job duration in minutes. |
 | `retention_days` | `7` | Days before remote environment cleanup. |
+| `force_reinstall_venv` | `False` | Force complete venv reinstallation. |
+| `force_reinstall_project` | `False` | Force project files cleanup before upload. |
 
 ---
 

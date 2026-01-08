@@ -37,6 +37,7 @@ class RayLauncher(
     force_reinstall_venv: bool = False,
     retention_days: int = 7,
     asynchronous: bool = False,
+    force_reinstall_project: bool = False,
 )
 ```
 
@@ -58,6 +59,7 @@ class RayLauncher(
 - **cluster** (`str`, optional): Cluster/server to use: 'curnagl' (default, Slurm cluster), 'desi' (ISIPOL09/Desi server), 'local' (local execution), or a custom IP/hostname (for custom Slurm clusters). Defaults to "curnagl".
 - **retention_days** (`int`, optional): Number of days to retain files and venv on the cluster before automatic cleanup. Must be between 1 and 30 days. Defaults to 7.
 - **force_reinstall_venv** (`bool`, optional): Force complete removal and recreation of virtual environment on remote server/cluster. This will delete the existing venv and reinstall all packages from requirements.txt. Use this if the venv is corrupted or you need a clean installation. Defaults to False.
+- **force_reinstall_project** (`bool`, optional): Force complete removal of the project directory (excluding logs/venv if possible, but practically cleans the project code) before uploading. Use to ensure a clean state. Defaults to False.
 - **asynchronous** (`bool`, optional): If True, the call to the function returns immediately with a `FunctionReturn` object. Defaults to False.
 
 
