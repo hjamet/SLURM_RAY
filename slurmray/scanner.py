@@ -389,6 +389,39 @@ class ProjectScanner:
                         )
                         dependencies.update(sub_deps)
 
+            # --- NEW: Check for implicit __init__.py files in the path of the current file ---
+            # When a module is imported (e.g. A.B.C), Python executes A/__init__.py and A/B/__init__.py
+            # implicitly. We must scan these files for dependencies too (e.g. side-effect imports).
+            
+            # Start from the directory of the current file
+            current_dir = os.path.dirname(file_path)
+            
+            # Traverse up to the project root
+            # We use os.path.abspath to ensure safe comparison
+            project_root_abs = os.path.normpath(self.project_root)
+            
+            while current_dir.startswith(project_root_abs) and current_dir != project_root_abs:
+                init_file = os.path.join(current_dir, "__init__.py")
+                if os.path.exists(init_file):
+                     # Add the __init__.py itself to dependencies
+                    init_rel = os.path.relpath(init_file, self.project_root)
+                    dependencies.add(init_rel)
+                    
+                    # Recursively scan it (if not already visited)
+                    # This call will add its dependencies to our set
+                    # Note: We don't check 'if init_file not in visited' here because 
+                    # _follow_imports_recursive handles visited check internally and returns empty set
+                    init_deps = self._follow_imports_recursive(
+                        init_file, visited, path_modified
+                    )
+                    dependencies.update(init_deps)
+                
+                # Move up one level
+                parent_dir = os.path.dirname(current_dir)
+                if parent_dir == current_dir: # Reached root of filesystem
+                    break
+                current_dir = parent_dir
+
             return dependencies
         finally:
             # Restore sys.path only if we're the top-level call
