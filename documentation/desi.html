@@ -292,28 +292,37 @@ print(f"✅ Received Result: {result}")</code></pre>
                         <td><span class="code-snippet">files</span></td>
                         <td>list[str]</td>
                         <td>No</td>
-                        <td>List of local files or directories to sync to the server. SlurmRay intelligently uses
-                            <code>rsync</code> to only upload changes.</td>
+                        <td>List of local files/dirs to sync. Auto-sync via <code>rsync</code>.</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">server_username</span></td>
                         <td>str</td>
                         <td>No</td>
-                        <td>SSH username. Can be omitted if <code>DESI_USERNAME</code> is set in your <code>.env</code>
-                            file.</td>
+                        <td>SSH username. Defaults to <code>DESI_USERNAME</code> in <code>.env</code>.</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">force_reinstall_venv</span></td>
                         <td>bool</td>
                         <td>No</td>
-                        <td>If <code>True</code>, completely wipes the remote virtual environment and reinstalls
-                            dependencies. Useful for dependency conflict resolution.</td>
+                        <td>If <code>True</code>, wipes and reinstalls the remote venv.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">runtime_env</span></td>
+                        <td>dict</td>
+                        <td>No</td>
+                        <td>Ray runtime environment (e.g., environment variables).</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">retention_days</span></td>
+                        <td>int</td>
+                        <td>No</td>
+                        <td>Days to keep files on server (default: 7).</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">node_nbr</span></td>
                         <td>int</td>
                         <td>No</td>
-                        <td>Ignored in Desi mode (always 1 node), but kept for API compatibility.</td>
+                        <td>Ignored (always 1).</td>
                     </tr>
                 </tbody>
             </table>

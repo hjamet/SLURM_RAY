@@ -1,1 +1,362 @@
-<html>Test</html>
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RayLauncher API - SlurmRay Documentation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --surface-color: #161b22;
+            --primary-color: #d2a8ff;
+            --secondary-color: #79c0ff;
+            --text-color: #e6edf3;
+            --text-muted: #8b949e;
+            --accent-gradient: linear-gradient(135deg, #d2a8ff 0%, #79c0ff 100%);
+            --border-color: #30363d;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        nav {
+            padding: 1rem 0;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 3rem;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-right: 2rem;
+            font-weight: 600;
+            transition: color 0.3s;
+        }
+
+        nav a:hover,
+        nav a.active {
+            color: var(--primary-color);
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        h2 {
+            font-size: 2rem;
+            margin-top: 4rem;
+            margin-bottom: 1.5rem;
+            color: var(--primary-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+
+        h3 {
+            font-size: 1.5rem;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            color: var(--secondary-color);
+        }
+
+        .api-card {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .method-sig {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(110, 118, 129, 0.4);
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            color: #d1d5db;
+            margin-bottom: 1.5rem;
+        }
+
+        .param-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        .param-table th,
+        .param-table td {
+            text-align: left;
+            padding: 0.8rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .param-table th {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--secondary-color);
+            background: rgba(110, 118, 129, 0.2);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <div class="container">
+            <a
+                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/index.html">Home</a>
+            <a
+                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/desi.html">Desi</a>
+            <a
+                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/curnagl.html">Curnagl</a>
+            <a href="#" class="active">RayLauncher API</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <header>
+            <h1>RayLauncher API Reference</h1>
+            <p style="color: var(--text-muted); font-size: 1.2rem;">Complete documentation for the SlurmRay Python
+                interface.</p>
+        </header>
+
+        <section id="class">
+            <h2>Class: RayLauncher</h2>
+            <div class="api-card">
+                <p>The main orchestrator class. Initializes a connection to a specific cluster or local environment and
+                    manages the lifecycle of the job.</p>
+
+                <h3>Constructor</h3>
+                <div class="method-sig">
+                    __init__(project_name, files=[], modules=[], node_nbr=1, use_gpu=False, memory=64,
+                    max_running_time=60, runtime_env={}, server_run=True, server_username=None, server_password=None,
+                    log_file="logs/RayLauncher.log", cluster="curnagl", force_reinstall_venv=False, retention_days=7,
+                    asynchronous=False)
+                </div>
+
+                <table class="param-table">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Type</th>
+                            <th>Default</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>project_name</code></td>
+                            <td>str</td>
+                            <td>None</td>
+                            <td><strong>Required.</strong> Unique identifier for the project. Creates
+                                <code>~/.slogs/&lt;project_name&gt;</code> on the remote server.</td>
+                        </tr>
+                        <tr>
+                            <td><code>cluster</code></td>
+                            <td>str</td>
+                            <td>'curnagl'</td>
+                            <td>Target environment. Options: <code>'curnagl'</code>, <code>'desi'</code>,
+                                <code>'local'</code>, or a custom IP/Hostname.</td>
+                        </tr>
+                        <tr>
+                            <td><code>files</code></td>
+                            <td>List[str]</td>
+                            <td>[]</td>
+                            <td>List of file/directory paths (relative to project root) to synchronize to the server.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>modules</code></td>
+                            <td>List[str]</td>
+                            <td>[]</td>
+                            <td>Slurm modules to load (e.g., <code>['gcc/13.2.0']</code>). Ignored if
+                                <code>cluster='desi'</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><code>node_nbr</code></td>
+                            <td>int</td>
+                            <td>1</td>
+                            <td>Number of nodes to allocate. Forced to 1 for <code>'desi'</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><code>use_gpu</code></td>
+                            <td>bool</td>
+                            <td>False</td>
+                            <td>If True, requests GPU resources and auto-loads CUDA/CuDNN modules on Slurm.</td>
+                        </tr>
+                        <tr>
+                            <td><code>memory</code></td>
+                            <td>int</td>
+                            <td>64</td>
+                            <td>RAM to request per node in GB. Ignored on Desi (shared).</td>
+                        </tr>
+                        <tr>
+                            <td><code>max_running_time</code></td>
+                            <td>int</td>
+                            <td>60</td>
+                            <td>Maximum execution time in minutes before timeout.</td>
+                        </tr>
+                        <tr>
+                            <td><code>runtime_env</code></td>
+                            <td>dict</td>
+                            <td>{'env_vars': {}}</td>
+                            <td>Ray runtime environment configuration (e.g. environment variables).</td>
+                        </tr>
+                        <tr>
+                            <td><code>server_run</code></td>
+                            <td>bool</td>
+                            <td>True</td>
+                            <td>If False, forces local execution regardless of cluster setting.</td>
+                        </tr>
+                        <tr>
+                            <td><code>force_reinstall_venv</code></td>
+                            <td>bool</td>
+                            <td>False</td>
+                            <td>If True, deletes and recreates the remote virtualenv. Use to fix dependency issues.</td>
+                        </tr>
+                        <tr>
+                            <td><code>retention_days</code></td>
+                            <td>int</td>
+                            <td>7</td>
+                            <td>Number of days to keep remote files and venvs active (1-30).</td>
+                        </tr>
+                        <tr>
+                            <td><code>asynchronous</code></td>
+                            <td>bool</td>
+                            <td>False</td>
+                            <td>If True, <code>__call__</code> returns a <code>FunctionReturn</code> object immediately.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="methods">
+            <h2>Methods</h2>
+
+            <div class="api-card">
+                <h3>__call__</h3>
+                <div class="method-sig">
+                    __call__(func, args={}, cancel_old_jobs=True, serialize=True) -> Any
+                </div>
+                <p>Executes the given function on the configured cluster.</p>
+                <table class="param-table">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Type</th>
+                            <th>Default</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>func</code></td>
+                            <td>Callable</td>
+                            <td>-</td>
+                            <td>The function to execute. Must be picklable.</td>
+                        </tr>
+                        <tr>
+                            <td><code>args</code></td>
+                            <td>dict</td>
+                            <td>{}</td>
+                            <td>Keyword arguments to pass to the function.</td>
+                        </tr>
+                        <tr>
+                            <td><code>cancel_old_jobs</code></td>
+                            <td>bool</td>
+                            <td>True</td>
+                            <td>If True, cancels previous jobs for this project before starting.</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p style="margin-top: 1rem;"><strong>Returns:</strong> The result of the function, or a
+                    <code>FunctionReturn</code> object if <code>asynchronous=True</code>.</p>
+            </div>
+
+            <div class="api-card">
+                <h3>cancel</h3>
+                <div class="method-sig">
+                    cancel(target=None)
+                </div>
+                <p>Cancels a running job.</p>
+                <table class="param-table">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Type</th>
+                            <th>Default</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>target</code></td>
+                            <td>Any</td>
+                            <td>None</td>
+                            <td>Job ID or FunctionReturn object. If None, cancels the last started job.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="objects">
+            <h2>Associated Objects</h2>
+
+            <div class="api-card">
+                <h3>class FunctionReturn</h3>
+                <p>Returned when <code>asynchronous=True</code>. Allows non-blocking monitoring of the job.</p>
+
+                <h4 style="margin-top: 1rem;">Properties</h4>
+                <ul style="margin-left: 1.5rem; color: var(--text-color);">
+                    <li><code>result</code>: Returns the computation result if ready, or "Compute still in progress".
+                    </li>
+                    <li><code>logs</code>: Generator yielding log lines.</li>
+                </ul>
+
+                <h4 style="margin-top: 1rem;">Methods</h4>
+                <ul style="margin-left: 1.5rem; color: var(--text-color);">
+                    <li><code>cancel()</code>: Cancels the job associated with this result.</li>
+                </ul>
+            </div>
+        </section>
+
+    </main>
+</body>
+
+</html>

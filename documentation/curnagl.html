@@ -256,41 +256,64 @@ launcher = <span class="function">RayLauncher</span>(
                 </thead>
                 <tbody>
                     <tr>
+                        <td><span class="code-snippet">project_name</span></td>
+                        <td>str</td>
+                        <td><strong>Required</strong>. Unique project identifier.</td>
+                        <td>None</td>
+                    </tr>
+                    <tr>
                         <td><span class="code-snippet">cluster</span></td>
                         <td>str</td>
-                        <td>Must be set to <code>"curnagl"</code> (or custom IP) to activate the Slurm interface.</td>
+                        <td>Must be <code>"curnagl"</code> (or custom IP).</td>
                         <td>"curnagl"</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">files</span></td>
+                        <td>list[str]</td>
+                        <td>List of files/dirs to sync.</td>
+                        <td>[]</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">node_nbr</span></td>
                         <td>int</td>
-                        <td>Number of separate physical nodes to allocate.</td>
+                        <td>Number of separate physical nodes.</td>
                         <td>1</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">use_gpu</span></td>
                         <td>bool</td>
-                        <td>If True, loads CUDA/cuDNN modules and requests GPU resources in Slurm.</td>
+                        <td>If True, requests GPU resources/modules.</td>
                         <td>False</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">memory</span></td>
                         <td>int</td>
-                        <td>RAM to request per node (in GB).</td>
+                        <td>RAM per node (GB).</td>
                         <td>64</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">max_running_time</span></td>
                         <td>int</td>
-                        <td>Max duration of the job in minutes. Slurm will kill the job after this time.</td>
+                        <td>Max duration in minutes.</td>
                         <td>60</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">modules</span></td>
                         <td>list[str]</td>
-                        <td>List of Slurm modules to load (e.g. <code>["gcc/11.2.0"]</code>). Note: The launcher loads
-                            default GCC/Python/CUDA automatically.</td>
+                        <td>Slurm modules (e.g. <code>["gcc/13.2.0"]</code>).</td>
                         <td>[]</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">runtime_env</span></td>
+                        <td>dict</td>
+                        <td>Ray runtime env configuration.</td>
+                        <td>{...}</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">retention_days</span></td>
+                        <td>int</td>
+                        <td>Days to keep remote files.</td>
+                        <td>7</td>
                     </tr>
                 </tbody>
             </table>
