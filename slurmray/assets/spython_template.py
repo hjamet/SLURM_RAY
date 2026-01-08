@@ -84,6 +84,20 @@ else:
         print(f"✅ Loaded function from dill pickle.")
     except Exception as e:
         print(f"❌ Error loading function from dill pickle: {e}")
+
+        # Check for likely causes of unpickling failures
+        if isinstance(e, (ImportError, ModuleNotFoundError, AttributeError)):
+            print("\n" + "="*60)
+            print("💡 SlurmRay Diagnosis: Standalone Runner Pattern Recommended")
+            print("="*60)
+            print("You are likely encountering a 'Bootstrap Paradox' where dill cannot unpickle")
+            print("your function because the required modules are not yet in sys.path.")
+            print("")
+            print("Solution: Move your remote entry point to a standalone script (e.g., scripts/runner.py)")
+            print("that sets up sys.path BEFORE importing your package modules.")
+            print("See: usage/deployment_patterns.md -> 'Autonomous Script Orchestration Pattern'")
+            print("="*60 + "\n")
+
         import traceback
 
         traceback.print_exc()
