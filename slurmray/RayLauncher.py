@@ -12,7 +12,8 @@ from getpass import getpass
 import time
 
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
+
 
 from slurmray.backend.slurm import SlurmBackend
 from slurmray.backend.local import LocalBackend
@@ -132,7 +133,14 @@ class RayLauncher:
             asynchronous (bool, optional): If True, the call to the function returns immediately with a FunctionReturn object. Defaults to False.
         """
         # Load environment variables from .env file
-        load_dotenv()
+        # Load environment variables from .env file
+        # Explicitly look for .env in current directory or parents to ensure it's found
+        # even when running from installed package context
+        env_file = find_dotenv(usecwd=True)
+        if env_file:
+            load_dotenv(env_file)
+        else:
+            load_dotenv()
 
         # Normalize cluster parameter
         cluster_lower = cluster.lower()

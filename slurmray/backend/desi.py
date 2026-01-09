@@ -5,6 +5,7 @@ import re
 import paramiko
 import subprocess
 import dill
+import random
 from typing import Any
 
 from slurmray.backend.remote import RemoteMixin
@@ -548,7 +549,11 @@ class DesiBackend(RemoteMixin):
         if "RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO" not in runtime_env["env_vars"]:
             runtime_env["env_vars"]["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
 
-        local_mode = f"\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=8265,\nruntime_env = {runtime_env},\n"
+        # Generate a random port to avoid conflicts and allow concurrency
+        dashboard_port = random.randint(15000, 45000)
+        self.logger.info(f"Using random dashboard port: {dashboard_port}")
+
+        local_mode = f"\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port={dashboard_port},\nruntime_env = {runtime_env},\n"
 
         text = text.replace(
             "{{LOCAL_MODE}}",
@@ -595,7 +600,8 @@ class DesiBackend(RemoteMixin):
 set -e  # Exit immediately if a command exits with a non-zero status
 
 # Clean up any previous Ray instances (silently)
-pkill -f ray 2>/dev/null || true
+# pkill -f ray 2>/dev/null || true
+# disabled to allow concurrency
 
 # Setup pyenv if available
 """
@@ -774,6 +780,7 @@ import time
 import fcntl
 import subprocess
 import json
+import random
 
 # Configuration
 LOCK_FILE = "/tmp/slurmray_desi_resources.lock"
@@ -958,7 +965,7 @@ def main():
         # Error already printed via stdout streaming
         sys.exit(e.returncode)
     except Exception as e:
-        print(f"❌ Job failed: {e}", flush=True)
+        print(f"❌ Job failed: {{e}}", flush=True)
         sys.exit(1)
     finally:
         # Cleanup State
