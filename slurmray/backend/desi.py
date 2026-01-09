@@ -936,9 +936,29 @@ def main():
 
     try:
         # Run the actual workload
-        subprocess.check_call([python_cmd, "spython.py"])
+        # Run the actual workload with stdout/stderr streaming
+        process = subprocess.Popen(
+            [python_cmd, "spython.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Interleave stderr into stdout
+            text=True,
+            bufsize=1  # Line buffered
+        )
+
+        # Stream output in real-time
+        for line in process.stdout:
+            print(line, end='', flush=True)
+            
+        process.wait()
+        
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(process.returncode, process.args)
+
+    except subprocess.CalledProcessError as e:
+        # Error already printed via stdout streaming
+        sys.exit(e.returncode)
     except Exception as e:
-        print(f"❌ Job failed: {{e}}", flush=True)
+        print(f"❌ Job failed: {e}", flush=True)
         sys.exit(1)
     finally:
         # Cleanup State

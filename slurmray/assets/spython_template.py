@@ -31,7 +31,15 @@ os.environ.setdefault("GRPC_POLL_STRATEGY", "poll")
 
 
 # Start the ray cluster
-ray.init({{LOCAL_MODE}})
+try:
+    ray.init({{LOCAL_MODE}})
+except Exception as e:
+    print(f"❌ Ray initialization failed: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    sys.exit(1)
 
 # Load the function
 # Read the serialization method used
@@ -69,6 +77,8 @@ if serialization_method == "source_extraction":
         import traceback
 
         traceback.print_exc()
+        sys.stdout.flush()
+        sys.stderr.flush()
         with open(os.path.join(PROJECT_PATH, "func.pkl"), "rb") as f:
             func = dill.load(f)
         print("✅ Loaded function from dill pickle (fallback).")
@@ -101,11 +111,30 @@ else:
         import traceback
 
         traceback.print_exc()
+        sys.stdout.flush()
+        sys.stderr.flush()
         sys.exit(1)
 
 # Load the arguments
-with open(os.path.join(PROJECT_PATH, "args.pkl"), "rb") as f:
-    args = dill.load(f)
+try:
+    with open(os.path.join(PROJECT_PATH, "args.pkl"), "rb") as f:
+        args = dill.load(f)
+except Exception as e:
+    print(f"❌ Error loading arguments: {e}")
+    # Diagnose potential import errors
+    if isinstance(e, (ImportError, ModuleNotFoundError, AttributeError)):
+        print("\\n" + "="*60)
+        print("💡 SlurmRay Diagnosis: Argument Deserialization Failure")
+        print("="*60)
+        print("Failed to unpickle arguments. This usually means the arguments contain")
+        print("custom classes whose modules are not yet loaded in spython.py.")
+        print("="*60 + "\\n")
+    
+    import traceback
+    traceback.print_exc()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    sys.exit(1)
 
 # Run the function
 try:
@@ -115,6 +144,8 @@ except Exception as e:
     import traceback
 
     traceback.print_exc()
+    sys.stdout.flush()
+    sys.stderr.flush()
     sys.exit(1)
 
 # Write the result
@@ -128,6 +159,8 @@ except Exception as e:
     import traceback
 
     traceback.print_exc()
+    sys.stdout.flush()
+    sys.stderr.flush()
     sys.exit(1)
 
 # Stop ray
