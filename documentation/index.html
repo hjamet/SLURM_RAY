@@ -306,7 +306,7 @@ launcher = <span class="function">RayLauncher</span>(
     project_name=<span class="string">"pi_calc"</span>,
     cluster=<span class="string">"curnagl"</span>,
     node_nbr=<span class="blue">4</span>,
-    use_gpu=<span class="keyword">True</span>
+    num_gpus=<span class="blue">1</span>
 )
 
 <span class="comment"># 3. Execute!</span>
@@ -370,17 +370,24 @@ result = launcher(compute_heavy_pi, args={<span class="string">"n"</span>: <span
                             </tr>
                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
                                 <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
-                                    use_gpu</td>
-                                <td style="padding: 1rem; color: var(--secondary-color);">bool</td>
-                                <td style="padding: 1rem; color: var(--text-muted);">False</td>
-                                <td style="padding: 1rem;">Request GPU resources. Auto-loads CUDA/CuDNN if needed.</td>
+                                    num_gpus</td>
+                                <td style="padding: 1rem; color: var(--secondary-color);">int</td>
+                                <td style="padding: 1rem; color: var(--text-muted);">0</td>
+                                <td style="padding: 1rem;">Number of GPUs to request. Auto-loads CUDA/CuDNN if > 0.</td>
                             </tr>
                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
                                 <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
                                     memory</td>
                                 <td style="padding: 1rem; color: var(--secondary-color);">int</td>
-                                <td style="padding: 1rem; color: var(--text-muted);">64</td>
+                                <td style="padding: 1rem; color: var(--text-muted);">20</td>
                                 <td style="padding: 1rem;">RAM per node in GB.</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
+                                <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
+                                    num_cpus</td>
+                                <td style="padding: 1rem; color: var(--secondary-color);">int</td>
+                                <td style="padding: 1rem; color: var(--text-muted);">4</td>
+                                <td style="padding: 1rem;">Number of CPUs to use per node.</td>
                             </tr>
                             <tr style="border-bottom: 1px solid rgba(48, 54, 61, 0.5);">
                                 <td style="padding: 1rem; font-family: 'JetBrains Mono'; color: var(--text-color);">
