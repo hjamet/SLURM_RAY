@@ -24,8 +24,9 @@ class RayLauncher(
     files: List[str] = [],
     modules: List[str] = [],
     node_nbr: int = 1,
-    use_gpu: bool = False,
-    memory: int = 64,
+    num_gpus: int = 0,
+    memory: int = 20,
+    num_cpus: int = 4,
     max_running_time: int = 60,
     runtime_env: dict = {"env_vars": {}},
     server_run: bool = True,
@@ -47,8 +48,9 @@ class RayLauncher(
 - **files** (`List[str]`, optional): List of files to push to the cluster/server. This path must be **relative** to the project directory. Defaults to [].
 - **modules** (`List[str]`, optional): List of modules to load (Slurm mode only). Use `module spider` to see available modules. Ignored in Desi mode. Defaults to None.
 - **node_nbr** (`int`, optional): Number of nodes to use. For Desi mode, this is always 1 (single server). Defaults to 1.
-- **use_gpu** (`bool`, optional): Use GPU or not. Defaults to False.
-- **memory** (`int`, optional): Amount of RAM to use per node in GigaBytes. For Desi mode, this is not enforced (shared resource). Defaults to 64.
+- **num_gpus** (`int`, optional): Number of GPUs to use. Defaults to 0.
+- **memory** (`int`, optional): Amount of RAM to use per node in GigaBytes. Defaults to 20.
+- **num_cpus** (`int`, optional): Number of CPUs to use per node. Defaults to 4.
 - **max_running_time** (`int`, optional): Maximum running time of the job in minutes. For Desi mode, this is not enforced by a scheduler. Defaults to 60.
 - **runtime_env** (`dict`, optional): Environment variables to share between all the workers. Can be useful for issues like https://github.com/ray-project/ray/issues/418. Default to empty.
 - **server_run** (`bool`, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster/server ressources. Defaults to True.
@@ -96,7 +98,7 @@ def main():
         # Only push datasets or non-code configs. 
         # Source code is auto-detected and synced!
         files=["data/dataset.json", "config/params.yaml"], 
-        use_gpu=True,
+        num_gpus=1,
         cluster="desi", # Use Desi backend
         force_reinstall_project=True, # Ensure a clean slate for the project code
     )

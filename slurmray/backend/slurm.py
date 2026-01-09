@@ -210,7 +210,7 @@ class SlurmBackend(RemoteMixin):
         text = text.replace(MEMORY, str(self.launcher.memory))
         text = text.replace(RUNNING_TIME, str(max_time))
         text = text.replace(
-            PARTITION_NAME, str("gpu" if self.launcher.use_gpu > 0 else "cpu")
+            PARTITION_NAME, str("gpu" if self.launcher.num_gpus > 0 else "cpu")
         )
         text = text.replace(
             COMMAND_PLACEHOLDER,
@@ -228,13 +228,16 @@ class SlurmBackend(RemoteMixin):
         )
 
         # ===== Add partition specifics =====
-        if self.launcher.use_gpu > 0:
+        # Add CPU request
+        cpu_directive = f"#SBATCH --cpus-per-task={self.launcher.num_cpus}\n"
+        
+        if self.launcher.num_gpus > 0:
             text = text.replace(
                 PARTITION_SPECIFICS,
-                str("#SBATCH --gres gpu:1\n#SBATCH --gres-flags enforce-binding"),
+                str(f"{cpu_directive}#SBATCH --gres gpu:{self.launcher.num_gpus}\n#SBATCH --gres-flags enforce-binding"),
             )
         else:
-            text = text.replace(PARTITION_SPECIFICS, "#SBATCH --exclusive")
+            text = text.replace(PARTITION_SPECIFICS, f"{cpu_directive}#SBATCH --exclusive")
 
         # ===== Save the script =====
         script_file = "sbatch.sh"
@@ -303,7 +306,7 @@ class SlurmBackend(RemoteMixin):
             else:
                 # Get result from squeue -p {{PARTITION_NAME}}
                 result = subprocess.run(
-                    ["squeue", "-p", "gpu" if self.launcher.use_gpu is True else "cpu"],
+                    ["squeue", "-p", "gpu" if self.launcher.num_gpus > 0 else "cpu"],
                     capture_output=True,
                 )
                 df = result.stdout.decode("utf-8").split("\n")

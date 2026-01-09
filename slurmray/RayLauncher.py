@@ -92,8 +92,9 @@ class RayLauncher:
         files: List[str] = [],
         modules: List[str] = [],
         node_nbr: int = 1,
-        use_gpu: bool = False,
-        memory: int = 64,
+        num_gpus: int = 0,
+        memory: int = 20,
+        num_cpus: int = 4,
         max_running_time: int = 60,
         runtime_env: dict = {"env_vars": {}},
         server_run: bool = True,
@@ -114,8 +115,9 @@ class RayLauncher:
             files (List[str], optional): List of files to push to the cluster/server. This path must be **relative** to the project directory. Defaults to [].
             modules (List[str], optional): List of modules to load (Slurm mode only). Use `module spider` to see available modules. Ignored in Desi mode. Defaults to None.
             node_nbr (int, optional): Number of nodes to use. For Desi mode, this is always 1 (single server). Defaults to 1.
-            use_gpu (bool, optional): Use GPU or not. Defaults to False.
-            memory (int, optional): Amount of RAM to use per node in GigaBytes. For Desi mode, this is not enforced (shared resource). Defaults to 64.
+            num_gpus (int, optional): Number of GPUs to use. Defaults to 0.
+            memory (int, optional): Amount of RAM to use per node in GigaBytes. Defaults to 20.
+            num_cpus (int, optional): Number of CPUs to use per node. Defaults to 4.
             max_running_time (int, optional): Maximum running time of the job in minutes. For Desi mode, this is not enforced by a scheduler. Defaults to 60.
             runtime_env (dict, optional): Environment variables to share between all the workers. Can be useful for issues like https://github.com/ray-project/ray/issues/418. Default to empty.
             server_run (bool, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster/server ressources. Defaults to True.
@@ -200,8 +202,9 @@ class RayLauncher:
         self.files = files
         self.modules = modules
         self.node_nbr = node_nbr
-        self.use_gpu = use_gpu
+        self.num_gpus = num_gpus
         self.memory = memory
+        self.num_cpus = num_cpus
         self.max_running_time = max_running_time
 
         # Validate and save retention_days
@@ -288,7 +291,7 @@ class RayLauncher:
 
         self.modules = default_modules + user_modules
 
-        if self.use_gpu is True:
+        if self.num_gpus > 0:
             # Check if user provided specific cuda/cudnn versions
             has_cuda = any("cuda" in mod for mod in self.modules)
             has_cudnn = any("cudnn" in mod for mod in self.modules)
@@ -411,9 +414,15 @@ class RayLauncher:
                     f"Warning: Desi cluster only supports single node execution. node_nbr={self.node_nbr} will be ignored (effectively 1)."
                 )
 
+            # Check num_gpus and num_cpus
+            if self.num_gpus < 0:
+                raise ValueError(f"num_gpus must be >= 0, got {self.num_gpus}")
+            if self.num_cpus < 1:
+                 raise ValueError(f"num_cpus must be >= 1, got {self.num_cpus}")
+
             # Only warn if modules were explicitly passed by user (not just defaults)
             # Check if user provided modules beyond the default ones (gcc/python) or GPU modules (cuda/cudnn)
-            # GPU modules are added automatically if use_gpu=True, so they don't count as user-provided
+            # GPU modules are added automatically if num_gpus > 0, so they don't count as user-provided
             user_provided_modules = [
                 m
                 for m in self.modules
@@ -428,11 +437,9 @@ class RayLauncher:
                 self.logger.warning(
                     "Warning: Modules loading is not supported on Desi (no module system). Modules list will be ignored."
                 )
+            
+            # Memory warning removed: now supported by scheduler
 
-            if "memory" in self._explicit_params and self.memory != 64:  # 64 is default
-                self.logger.warning(
-                    "Warning: Memory allocation is not enforced on Desi (shared resource)."
-                )
 
     def _handle_signal(self, signum, frame):
         """Handle interruption signals (SIGINT, SIGTERM) to cleanup resources"""
@@ -1019,7 +1026,7 @@ if __name__ == "__main__":
     cluster = RayLauncher(
         project_name="example",  # Name of the project (will create a directory with this name in the current directory)
         files=["documentation/RayLauncher.html"],  # List of files to push to the server
-        use_gpu=True,  # If you need GPU, you can set it to True
+        num_gpus=1,  # If you need GPU, you can set it to > 0
         runtime_env={
             "env_vars": {"NCCL_SOCKET_IFNAME": "eno1"}
         },  # Example of environment variable

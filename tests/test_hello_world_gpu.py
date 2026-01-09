@@ -62,21 +62,23 @@ def test_hello_world_gpu():
     if server_password is None:
         server_password = getpass("Enter your cluster password: ")
 
-    cluster = RayLauncher(
-        project_name="test_hello_world_gpu",
-        files=[],
+    launcher = RayLauncher(
+        project_name="hello_world_gpu",
+        func=hello_world_gpu,
+        args={},
         modules=[],
         node_nbr=1,
-        use_gpu=True,
-        memory=8,
-        max_running_time=5,
-        server_username=server_username,
-        server_password=server_password,
-        cluster="curnagl",  # Use Curnagl cluster
+        num_gpus=1,
+        num_cpus=1,
+        memory=16,
+        max_running_time=15,
+        server_run=True,
+        log_file="hello_world_gpu.log",
+        cluster="curnagl"
     )
 
     print("Launching GPU test job...")
-    result = cluster(hello_world_gpu, args={})
+    result = launcher()
 
     # Validations
     assert "message" in result, "Result should contain 'message' key"

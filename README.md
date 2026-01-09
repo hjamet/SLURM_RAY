@@ -56,7 +56,7 @@ DESI_PASSWORD=your_password
 | `project_name` | **Required** | Unique ID for the project logs and remote files. |
 | `cluster` | `"curnagl"` | `"curnagl"`, `"desi"`, `"local"`, or a custom IP. |
 | `node_nbr` | `1` | Number of nodes to allocate on Slurm. |
-| `use_gpu` | `False` | Automatically loads CUDA/cuDNN modules on Slurm. |
+| `num_gpus` | `0` | Number of GPUs to request. |
 | `memory` | `64` | GB of RAM per node. |
 | `max_running_time` | `60` | Max job duration in minutes. |
 | `retention_days` | `7` | Days before remote environment cleanup. |
@@ -104,7 +104,7 @@ def train_model(epochs):
 
 launcher = RayLauncher(
     project_name="deep_learning",
-    use_gpu=True,
+    num_gpus=1,
     node_nbr=1,
     max_running_time=120
 )

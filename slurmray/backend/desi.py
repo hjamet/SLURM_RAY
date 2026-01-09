@@ -761,7 +761,12 @@ echo "🔒 Acquiring Smart Lock and starting job..."
             f.write(content)
 
     def _write_desi_wrapper(self, filename):
-        """Write python wrapper for Smart Lock with queue management"""
+        """Write python wrapper for Smart Lock with Resource Management"""
+        
+        # Resource Limits (Hardcoded for Desi based on audit)
+        # 24 CPUs, 125GB RAM -> Safety margin: 24 CPUs, 120GB RAM
+        # 2 GPUs
+        
         content = f"""
 import os
 import sys
@@ -770,163 +775,189 @@ import fcntl
 import subprocess
 import json
 
-LOCK_FILE = "/tmp/slurmray_desi.lock"
-QUEUE_FILE = "/tmp/slurmray_desi.queue"
-MAX_RETRIES = 1000
-RETRY_DELAY = 30 # seconds
+# Configuration
+LOCK_FILE = "/tmp/slurmray_desi_resources.lock"
+STATE_FILE = "/tmp/slurmray_desi_resources.json"
 
-def read_queue():
-    '''Read queue file (read-only, no lock needed)'''
-    if not os.path.exists(QUEUE_FILE):
-        return []
+# Hardware Limits (Desi specific)
+LIMITS = {{
+    "cpu": 24,
+    "ram": 120, # GB
+    "gpu": [0, 1] # GPU IDs
+}}
+
+# Job Requirements (Injected)
+REQ_CPU = {self.launcher.num_cpus}
+REQ_RAM = {self.launcher.memory}
+REQ_GPU = {self.launcher.num_gpus}
+
+MAX_RETRIES = 10000 # Wait for a long time if needed
+RETRY_DELAY = 10 # Check every 10 seconds
+
+def get_lock(fd):
+    '''Acquire exclusive lock on state file'''
+    fcntl.lockf(fd, fcntl.LOCK_EX)
+
+def release_lock(fd):
+    '''Release lock'''
+    fcntl.lockf(fd, fcntl.LOCK_UN)
+
+def load_state():
+    '''Load state from JSON file'''
+    if not os.path.exists(STATE_FILE):
+        return {{"jobs": []}}
     try:
-        with open(QUEUE_FILE, 'r') as f:
+        with open(STATE_FILE, 'r') as f:
             return json.load(f)
     except (json.JSONDecodeError, IOError):
-        return []
+        return {{"jobs": []}}
 
-def write_queue(queue_data):
-    '''Write queue file with exclusive lock'''
-    max_retries = 10
-    retry_delay = 0.1
-    for attempt in range(max_retries):
-        try:
-            queue_fd = open(QUEUE_FILE, 'w')
-            try:
-                fcntl.lockf(queue_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                json.dump(queue_data, queue_fd, indent=2)
-                queue_fd.flush()
-                os.fsync(queue_fd.fileno())
-                fcntl.lockf(queue_fd, fcntl.LOCK_UN)
-                queue_fd.close()
-                return True
-            except IOError:
-                queue_fd.close()
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                    continue
-                return False
-        except IOError:
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay)
-                continue
-            return False
-    return False
+def save_state(state):
+    '''Save state to JSON file'''
+    with open(STATE_FILE, 'w') as f:
+        json.dump(state, f, indent=2)
 
-def add_to_queue(pid, user, func_name, project_dir, status):
-    '''Add or update entry in queue'''
-    queue = read_queue()
-    # Remove existing entry with same PID if present
-    queue = [entry for entry in queue if entry.get("pid") != str(pid)]
-    # Add new entry
-    entry = {{
-        "pid": str(pid),
-        "user": user,
-        "func_name": func_name,
-        "status": status,
-        "timestamp": int(time.time()),
-        "project_dir": project_dir
-    }}
-    queue.append(entry)
-    write_queue(queue)
-
-def remove_from_queue(pid):
-    '''Remove entry from queue'''
-    queue = read_queue()
-    queue = [entry for entry in queue if entry.get("pid") != str(pid)]
-    write_queue(queue)
-
-def update_queue_status(pid, status):
-    '''Update status of an entry in queue'''
-    queue = read_queue()
-    for entry in queue:
-        if entry.get("pid") == str(pid):
-            entry["status"] = status
-            write_queue(queue)
-            return True
-    return False
-
-def acquire_lock():
-    lock_fd = open(LOCK_FILE, 'w')
+def is_pid_running(pid):
+    '''Check if PID is running using /proc'''
     try:
-        # Try to acquire non-blocking exclusive lock
-        fcntl.lockf(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return lock_fd
-    except IOError:
-        lock_fd.close()
-        return None
+        # Check if /proc/PID folder exists
+        return os.path.exists(f"/proc/{{pid}}")
+    except Exception:
+        return False
+
+def clean_stale_jobs(state):
+    '''Remove jobs that are no longer running'''
+    active_jobs = []
+    
+    dirty = False
+    for job in state.get("jobs", []):
+        pid = job["pid"]
+        if is_pid_running(pid):
+            active_jobs.append(job)
+        else:
+            print(f"🧹 Cleaning stale job {{pid}} from registry")
+            dirty = True
+            
+    state["jobs"] = active_jobs
+    return state, dirty
+
+def check_resources(state):
+    '''Check if resources are available'''
+    used_cpu = sum(job["cpu"] for job in state["jobs"])
+    used_ram = sum(job["ram"] for job in state["jobs"])
+    used_gpus = []
+    for job in state["jobs"]:
+        used_gpus.extend(job["gpu_ids"])
+    
+    available_cpu = LIMITS["cpu"] - used_cpu
+    available_ram = LIMITS["ram"] - used_ram
+    available_gpus = [g for g in LIMITS["gpu"] if g not in used_gpus]
+    
+    print(f"📊 Resources: CPU {{used_cpu}}/{{LIMITS['cpu']}}, RAM {{used_ram}}/{{LIMITS['ram']}} GB, GPUs Used {{used_gpus}}", flush=True)
+    
+    if REQ_CPU > available_cpu:
+        return False, None, "Not enough CPU"
+        
+    if REQ_RAM > available_ram:
+        return False, None, "Not enough RAM"
+        
+    if REQ_GPU > 0:
+        if len(available_gpus) < REQ_GPU:
+            return False, None, "Not enough GPU"
+        # Allocate specific GPUs
+        allocated_gpus = available_gpus[:REQ_GPU]
+        return True, allocated_gpus, "OK"
+    
+    return True, [], "OK"
 
 def main():
-    lock_fd = None
-    retries = 0
-    pid = os.getpid()
-    user = os.getenv('USER', 'unknown')
-    project_dir = os.path.dirname(os.path.abspath(__file__))
+    print(f"🔒 Requesting resources: {{REQ_CPU}} CPU, {{REQ_RAM}} GB RAM, {{REQ_GPU}} GPU", flush=True)
     
-    # Read function name from func_name.txt (fail-fast if missing or empty)
-    func_name_path = os.path.join(project_dir, "func_name.txt")
-    if not os.path.exists(func_name_path):
-        print("❌ ERROR: func_name.txt not found at " + func_name_path)
+    # Ensure lock file exists
+    if not os.path.exists(LOCK_FILE):
+        open(LOCK_FILE, 'w').close()
+        
+    lock_fd = open(LOCK_FILE, 'w')
+    
+    allocated_gpu_ids = []
+    
+    # Resource Acquisition Loop
+    for attempt in range(MAX_RETRIES):
+        get_lock(lock_fd)
+        try:
+            state = load_state()
+            state, dirty = clean_stale_jobs(state)
+            
+            allowed, gpus, reason = check_resources(state)
+            
+            if allowed:
+                # Register job
+                my_pid = os.getpid()
+                new_job = {{
+                    "pid": my_pid,
+                    "cpu": REQ_CPU,
+                    "ram": REQ_RAM,
+                    "gpu_ids": gpus,
+                    "start_time": time.time()
+                }}
+                state["jobs"].append(new_job)
+                save_state(state)
+                allocated_gpu_ids = gpus
+                print(f"✅ Resources acquired! Job registered (PID {{my_pid}}). GPUs: {{gpus}}", flush=True)
+                break
+            else:
+                if attempt % 6 == 0: # Log every minute
+                    print(f"⏳ Waiting for resources... Reason: {{reason}}", flush=True)
+        finally:
+            release_lock(lock_fd)
+            
+        time.sleep(RETRY_DELAY)
+    else:
+        print("❌ Timeout waiting for resources.", flush=True)
         sys.exit(1)
-    
-    try:
-        with open(func_name_path, 'r') as f:
-            func_name = f.read().strip()
-    except IOError as e:
-        print("❌ ERROR: Failed to read func_name.txt: " + str(e))
-        sys.exit(1)
-    
-    if not func_name:
-        print("❌ ERROR: func_name.txt is empty at " + func_name_path)
-        sys.exit(1)
-    
-    # Add to queue as waiting at startup
-    add_to_queue(pid, user, func_name, project_dir, "waiting")
-    
-    print("🔒 Attempting to acquire Smart Lock...")
-    while lock_fd is None:
-        lock_fd = acquire_lock()
-        if lock_fd is None:
-            if retries == 0:
-                print("⏳ Waiting for resources to become available (another job may be running)...")
-            elif retries % 10 == 0:  # Log every 10 retries (every 5 minutes)
-                print(f"⏳ Still waiting... (attempt {{retries}}/{{MAX_RETRIES}})")
-            time.sleep(RETRY_DELAY)
-            retries += 1
-            if retries > MAX_RETRIES:
-                print(f"❌ Timeout: Could not acquire lock after {{MAX_RETRIES}} attempts ({{MAX_RETRIES * RETRY_DELAY / 60:.1f}} minutes)")
-                # Remove from queue before exiting
-                remove_from_queue(pid)
-                sys.exit(1)
-    
-    # Update queue status to running and write function name to lock file
-    update_queue_status(pid, "running")
-    lock_fd.seek(0)
-    lock_fd.truncate()
-    lock_fd.write(str(pid) + "\\n" + user + "\\n" + func_name + "\\n" + project_dir + "\\n")
-    lock_fd.flush()
-    
-    print("✅ Lock acquired! Starting job execution...")
-    # Lock acquired, run payload
+        
+    # Set CUDA_VISIBLE_DEVICES if validated
+    if allocated_gpu_ids:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, allocated_gpu_ids))
+        print(f"🔧 Set CUDA_VISIBLE_DEVICES={{os.environ['CUDA_VISIBLE_DEVICES']}}", flush=True)
+    elif REQ_GPU == 0:
+        # Hide GPUs if not requested to prevent incidental usage?
+        # Standard behavior: if 0 requested, we often leave it visible but tell Ray 0.
+        # But to be safe on shared machine:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
+    # Execute Runtime
     # Use venv Python if available, otherwise fallback to sys.executable
     venv_python = os.path.join(os.path.dirname(__file__), "venv", "bin", "python")
     if os.path.exists(venv_python):
         python_cmd = venv_python
     else:
         python_cmd = sys.executable
+
     try:
+        # Run the actual workload
         subprocess.check_call([python_cmd, "spython.py"])
+    except Exception as e:
+        print(f"❌ Job failed: {{e}}", flush=True)
+        sys.exit(1)
     finally:
-        # Remove from queue before releasing lock
-        remove_from_queue(pid)
-        # Release lock
-        print("🔓 Releasing Smart Lock...")
-        fcntl.lockf(lock_fd, fcntl.LOCK_UN)
-        lock_fd.close()
-        print("✅ Lock released")
+        # Cleanup State
+        print("🧹 Cleaning up resource registration...", flush=True)
+        get_lock(lock_fd)
+        try:
+            state = load_state()
+            # Remove my PID
+            my_pid = os.getpid()
+            state["jobs"] = [j for j in state["jobs"] if j["pid"] != my_pid]
+            save_state(state)
+            print("✅ Resources released.", flush=True)
+        finally:
+            release_lock(lock_fd)
+            lock_fd.close()
 
 if __name__ == "__main__":
     main()
 """
         with open(os.path.join(self.launcher.project_path, filename), "w") as f:
             f.write(content)
+
