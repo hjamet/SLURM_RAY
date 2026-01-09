@@ -292,13 +292,13 @@ class DesiBackend(RemoteMixin):
                                 ssh_username=self.launcher.server_username,
                                 ssh_password=self.launcher.server_password,
                                 remote_host="127.0.0.1",
-                                local_port=8888,
+                                local_port=0, # Dynamic port to avoid contention
                                 remote_port=8265,
                                 logger=self.logger,
                             )
                             self.tunnel.__enter__()
                             self.logger.info(
-                                "🌐 Dashboard accessible locally at http://localhost:8888"
+                                f"🌐 Dashboard accessible locally at http://localhost:{self.tunnel.local_port}"
                             )
                         except Exception as e:
                             self.logger.warning(f"⚠️  Could not establish SSH tunnel: {e}")

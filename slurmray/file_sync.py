@@ -56,6 +56,9 @@ class FileHashManager:
                 abs_path = os.path.join(self.project_root, file_path)
             else:
                 abs_path = file_path
+            
+            # Resolve symlinks and normalize
+            abs_path = os.path.realpath(abs_path)
 
             if not os.path.exists(abs_path):
                 continue
