@@ -643,13 +643,19 @@ if [ -f requirements.txt ]; then
     if [ -s requirements.txt ]; then
         echo "📥 Installing dependencies from requirements.txt..."
         
+        # Create temp files safely
+        TMP_INSTALLED=$(mktemp)
+        TMP_SEEN=$(mktemp)
+        TMP_TO_INSTALL=$(mktemp)
+        TMP_ERRORS=$(mktemp)
+        
         # Get installed packages once (fast, single command) - create lookup file
-        uv pip list --format=freeze 2>/dev/null | sed 's/==/ /' | awk '{{print $1" "$2}}' > /tmp/installed_packages.txt || touch /tmp/installed_packages.txt
+        uv pip list --format=freeze 2>/dev/null | sed 's/==/ /' | awk '{{print $1" "$2}}' > "$TMP_INSTALLED" || touch "$TMP_INSTALLED"
         
         # Process requirements: filter duplicates and check what needs installation
         INSTALL_ERRORS=0
         SKIPPED_COUNT=0
-        > /tmp/to_install.txt  # Clear file
+        > "$TMP_TO_INSTALL"  # Clear file
         
         while IFS= read -r line || [ -n "$line" ]; do
             # Skip empty lines and comments
@@ -665,10 +671,10 @@ if [ -f requirements.txt ]; then
             fi
             
             # Skip duplicates (check if we've already processed this package)
-            if grep -qi "^$pkg_name$" /tmp/seen_packages.txt 2>/dev/null; then
+            if grep -qi "^$pkg_name$" "$TMP_SEEN" 2>/dev/null; then
                 continue
             fi
-            echo "$pkg_name" >> /tmp/seen_packages.txt
+            echo "$pkg_name" >> "$TMP_SEEN"
             
             # Extract required version if present
             required_version=""
@@ -677,7 +683,7 @@ if [ -f requirements.txt ]; then
             fi
             
             # Check if package is already installed with correct version
-            installed_version=$(grep -i "^$pkg_name " /tmp/installed_packages.txt 2>/dev/null | awk '{{print $2}}' | head -1)
+            installed_version=$(grep -i "^$pkg_name " "$TMP_INSTALLED" 2>/dev/null | awk '{{print $2}}' | head -1)
             
             if [ -n "$installed_version" ]; then
                 if [ -z "$required_version" ] || [ "$installed_version" = "$required_version" ]; then
@@ -688,35 +694,35 @@ if [ -f requirements.txt ]; then
             fi
             
             # Package not installed or version mismatch, add to install list
-            echo "$line" >> /tmp/to_install.txt
+            echo "$line" >> "$TMP_TO_INSTALL"
         done < requirements.txt
         
         # Install packages that need installation
-        if [ -s /tmp/to_install.txt ]; then
-            > /tmp/install_errors.txt  # Track errors
+        if [ -s "$TMP_TO_INSTALL" ]; then
+            > "$TMP_ERRORS"  # Track errors
             while IFS= read -r line; do
                 pkg_name=$(echo "$line" | sed 's/[<>=!].*//' | sed 's/\\[.*\\]//' | sed 's/[[:space:]]*//')
                 if uv pip install --quiet "$line" >/dev/null 2>&1; then
                     echo "  ✅ $pkg_name"
                 else
                     echo "  ❌ $pkg_name"
-                    echo "1" >> /tmp/install_errors.txt
+                    echo "1" >> "$TMP_ERRORS"
                     # Show error details
                     uv pip install "$line" 2>&1 | grep -E "(error|Error|ERROR|failed|Failed|FAILED)" | head -3 | sed 's/^/      /' || true
                 fi
-            done < /tmp/to_install.txt
-            INSTALL_ERRORS=$(wc -l < /tmp/install_errors.txt 2>/dev/null | tr -d ' ' || echo "0")
-            rm -f /tmp/install_errors.txt
+            done < "$TMP_TO_INSTALL"
+            INSTALL_ERRORS=$(wc -l < "$TMP_ERRORS" 2>/dev/null | tr -d ' ' || echo "0")
+            rm -f "$TMP_ERRORS"
         fi
         
         # Count newly installed packages before cleanup
         NEWLY_INSTALLED=0
-        if [ -s /tmp/to_install.txt ]; then
-            NEWLY_INSTALLED=$(wc -l < /tmp/to_install.txt 2>/dev/null | tr -d ' ' || echo "0")
+        if [ -s "$TMP_TO_INSTALL" ]; then
+            NEWLY_INSTALLED=$(wc -l < "$TMP_TO_INSTALL" 2>/dev/null | tr -d ' ' || echo "0")
         fi
         
         # Cleanup temp files
-        rm -f /tmp/installed_packages.txt /tmp/seen_packages.txt /tmp/to_install.txt
+        rm -f "$TMP_INSTALLED" "$TMP_SEEN" "$TMP_TO_INSTALL"
         
         if [ $INSTALL_ERRORS -eq 0 ]; then
             if [ $SKIPPED_COUNT -gt 0 ]; then
