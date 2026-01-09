@@ -35,9 +35,9 @@ class RayLauncher(
     log_file: str = "logs/RayLauncher.log",
     cluster: str = "curnagl",  # 'curnagl', 'desi', 'local', or custom IP/hostname
     force_reinstall_venv: bool = False,
+    force_reinstall_project: bool = False,
     retention_days: int = 7,
     asynchronous: bool = False,
-    force_reinstall_project: bool = False,
 )
 ```
 
@@ -57,9 +57,9 @@ class RayLauncher(
 - **server_password** (`str`, optional): If `server_run` is set to true, the password of the user to connect to the server. Credentials are automatically loaded from a `.env` file (CURNAGL_PASSWORD for Curnagl/custom IP, DESI_PASSWORD for Desi) if available. Priority: explicit parameter → environment variables → interactive prompt. CAUTION: never write your password in the code. Defaults to None.
 - **log_file** (`str`, optional): Path to the log file. Defaults to "logs/RayLauncher.log".
 - **cluster** (`str`, optional): Cluster/server to use: 'curnagl' (default, Slurm cluster), 'desi' (ISIPOL09/Desi server), 'local' (local execution), or a custom IP/hostname (for custom Slurm clusters). Defaults to "curnagl".
-- **retention_days** (`int`, optional): Number of days to retain files and venv on the cluster before automatic cleanup. Must be between 1 and 30 days. Defaults to 7.
 - **force_reinstall_venv** (`bool`, optional): Force complete removal and recreation of virtual environment on remote server/cluster. This will delete the existing venv and reinstall all packages from requirements.txt. Use this if the venv is corrupted or you need a clean installation. Defaults to False.
 - **force_reinstall_project** (`bool`, optional): Force complete removal of the project directory (excluding logs/venv if possible, but practically cleans the project code) before uploading. Use to ensure a clean state. Defaults to False.
+- **retention_days** (`int`, optional): Number of days to retain files and venv on the cluster before automatic cleanup. Must be between 1 and 30 days. Defaults to 7.
 - **asynchronous** (`bool`, optional): If True, the call to the function returns immediately with a `FunctionReturn` object. Defaults to False.
 
 
@@ -76,32 +76,45 @@ result = cluster(func, args={}, cancel_old_jobs=True, serialize=True)
 - **cancel_old_jobs** (`bool`, optional): Cancel the old jobs. Defaults to True.
 - **serialize** (`bool`, optional): Serialize the function and the arguments. This should be set to False if the function is automatically called by the server. Defaults to True.
 
-### Example
+### Example (Desi Mode)
+
+> [!IMPORTANT]
+> **Key Best Practices:**
+> 1. **Do NOT push source code**: SlurmRay automatically detects and synchronizes your `src` directory and dependencies. Only list datasets, config files, or non-Python resources in the `files` argument.
+> 2. **External Launch Script**: Keep your launch script (e.g., `scripts/launch.py`) separate from your actual project code (e.g., in `src/`).
+> 3. **Credentials in .env**: Never hardcode passwords. Store `DESI_USERNAME` and `DESI_PASSWORD` in a `.env` file at the root of your project.
 
 ```python
+# scripts/launch_desi.py
 from slurmray.RayLauncher import RayLauncher
-import ray
-import torch
+from src.my_project.experiment import run_experiment
 
-def example_func(x):
-    result = (
-        ray.cluster_resources(),
-        f"GPU is available : {torch.cuda.is_available()}",
-        x + 1,
+def main():
+    # Initialize the launcher for Desi server
+    launcher = RayLauncher(
+        project_name="my_desi_experiment",
+        # Only push datasets or non-code configs. 
+        # Source code is auto-detected and synced!
+        files=["data/dataset.json", "config/params.yaml"], 
+        use_gpu=True,
+        cluster="desi", # Use Desi backend
+        force_reinstall_project=True, # Ensure a clean slate for the project code
     )
-    return result
 
-cluster = RayLauncher(
-    project_name="example",
-    files=[],
-    node_nbr=1,
-    use_gpu=True,
-    memory=8,
-    max_running_time=5,
-    cluster="curnagl",  # Use Curnagl cluster (server_ssh auto-detected)
-)
+    # Launch the function
+    # The function 'run_experiment' will be executed on the Desi server
+    result = launcher(
+        run_experiment, 
+        args={
+            "epochs": 10,
+            "batch_size": 32,
+            "config_path": "config/params.yaml" # Path relative to project root
+        }
+    )
+    
+    print(f"Experiment Result: {result}")
 
-result = cluster(example_func, args={"x": 5})
-print(result)
+if __name__ == "__main__":
+    main()
 ```
 
