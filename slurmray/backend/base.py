@@ -476,6 +476,89 @@ class ClusterBackend(ABC):
         except Exception:
             return False
 
+    def _get_local_project_name(self):
+        """
+        Attempt to detect the local project name from pyproject.toml, setup.cfg, or setup.py.
+        Returns the normalized project name (lowercase) or None if not found.
+        """
+        try:
+            project_path = self.launcher.project_path
+        except AttributeError:
+            # If launcher doesn't need project_path, we can't find it
+            return None
+
+        # 1. Try pyproject.toml (standard)
+        pyproject_path = os.path.join(project_path, "pyproject.toml")
+        if os.path.exists(pyproject_path):
+            data = None
+            try:
+                # Try standard library (Python 3.11+)
+                try:
+                    import tomllib
+                    with open(pyproject_path, "rb") as f:
+                        data = tomllib.load(f)
+                except ImportError:
+                    # Fallback to tomli if installed
+                    try:
+                        import tomli as tomllib
+                        with open(pyproject_path, "rb") as f:
+                            data = tomllib.load(f)
+                    except ImportError:
+                        pass
+                
+                if data:
+                    # Check standard [project] table
+                    if "project" in data and "name" in data["project"]:
+                        return data["project"]["name"].lower()
+                    
+                    # Check poetry [tool.poetry]
+                    if "tool" in data and "poetry" in data["tool"] and "name" in data["tool"]["poetry"]:
+                         return data["tool"]["poetry"]["name"].lower()
+
+            except Exception as e:
+                if self.logger:
+                    self.logger.debug(f"Failed to parse pyproject.toml: {e}")
+            
+            # Fallback regex for pyproject.toml if simple parse failed or dependencies missing
+            if not data:
+                try:
+                    import re
+                    with open(pyproject_path, "r") as f:
+                        content = f.read()
+                    # Look for name = "..."
+                    match = re.search(r'name\s*=\s*["\']([^"\']+)["\']', content)
+                    if match:
+                         return match.group(1).lower()
+                except Exception:
+                    pass
+
+        # 2. Try setup.cfg
+        setup_cfg_path = os.path.join(project_path, "setup.cfg")
+        if os.path.exists(setup_cfg_path):
+            try:
+                import configparser
+                config = configparser.ConfigParser()
+                config.read(setup_cfg_path)
+                if "metadata" in config and "name" in config["metadata"]:
+                    return config["metadata"]["name"].lower()
+            except Exception:
+                pass
+        
+        # 3. Try setup.py (simple regex)
+        setup_py_path = os.path.join(project_path, "setup.py")
+        if os.path.exists(setup_py_path):
+            try:
+                import re
+                with open(setup_py_path, "r") as f:
+                    content = f.read()
+                match = re.search(r'name\s*=\s*["\']([^"\']+)["\']', content)
+                if match:
+                    return match.group(1).lower()
+            except Exception:
+                pass
+                
+        return None
+
     def _generate_requirements(self, force_regenerate=False):
         """
         Generate requirements.txt.
@@ -593,6 +676,18 @@ class ClusterBackend(ABC):
                 if self.logger:
                     self.logger.warning(f"Failed to get editable packages for filtering: {e}")
                 editable_packages_set = set()
+
+            # Proactively detect local project name (from pyproject.toml etc)
+            # This ensures we filter out the project itself even if 'pip list -e' fails to detect it correctly
+            # or if is_package_local fails (common with some editable installs).
+            local_proj_name = self._get_local_project_name()
+            if local_proj_name:
+                editable_packages_set.add(local_proj_name)
+                # Also add potential variants (underscore vs dash) to be safe
+                editable_packages_set.add(local_proj_name.replace("-", "_"))
+                editable_packages_set.add(local_proj_name.replace("_", "-"))
+                if self.logger:
+                    self.logger.debug(f"Detected and excluding local project: {local_proj_name}")
 
             # Filter out local packages (development installs) using robust detection
             filtered_lines = []
