@@ -82,7 +82,7 @@ result = cluster(func, args={}, cancel_old_jobs=True, serialize=True)
 
 > [!IMPORTANT]
 > **Key Best Practices:**
-> 1. **Do NOT push source code**: SlurmRay automatically detects and synchronizes your `src` directory and dependencies. Only list datasets, config files, or non-Python resources in the `files` argument.
+> 1. **Do NOT push source code**: SlurmRay automatically detects and synchronizes your `src` directory and dependencies. Only list datasets, config files, or non-Python resources in the `files` argument. SlurmRay will display a warning if redundant Python files or `requirements.txt` are detected in the `files` list.
 > 2. **External Launch Script**: Keep your launch script (e.g., `scripts/launch.py`) separate from your actual project code (e.g., in `src/`).
 > 3. **Credentials in .env**: Never hardcode passwords. Store `DESI_USERNAME` and `DESI_PASSWORD` in a `.env` file at the root of your project.
 

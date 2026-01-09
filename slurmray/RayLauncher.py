@@ -514,6 +514,8 @@ class RayLauncher:
 
         # Intelligent dependency detection from function source file
         if self.server_run:
+            # Capture manual files before auto-detection modifies the list
+            manual_files = list(self.files) if self.files else []
             try:
                 from slurmray.scanner import ProjectScanner
 
@@ -579,6 +581,80 @@ class RayLauncher:
 
             except Exception as e:
                 self.logger.warning(f"Dependency detection from function failed: {e}")
+
+            # --- Warnings for redundant manual uploads (Source Files & requirements.txt) ---
+            # We do this after detection to know what was redundant, but only if detection ran.
+            if self.server_run:
+                try:
+                    # 1. Warning for requirements.txt
+                    if "requirements.txt" in manual_files:
+                        print("\n" + "=" * 60)
+                        print("⚠️  Use of manual 'requirements.txt' detected ⚠️")
+                        print("=" * 60)
+                        print(
+                            "You manually added 'requirements.txt' to the 'files' list."
+                        )
+                        print(
+                            "SlurmRay handles dependency installation automatically."
+                        )
+                        print(
+                            "Please remove it from 'files' to keep your configuration clean."
+                        )
+                        print("=" * 60 + "\n")
+
+                    # 2. Warning for manual Python source files
+                    # Only show this if NO dynamic import warnings were found.
+                    # If dynamic warnings exist, the user might legitimately need to upload files manually.
+                    if not scanner.dynamic_imports_warnings:
+                        redundant_sources = []
+                        for m_file in manual_files:
+                            # Check if it's a python file or package
+                            is_python_source = m_file.endswith(".py") or (
+                                os.path.isdir(os.path.join(self.pwd_path, m_file))
+                                and os.path.exists(
+                                    os.path.join(self.pwd_path, m_file, "__init__.py")
+                                )
+                            )
+
+                            if is_python_source:
+                                # Check if this file was effectively covered by auto-detection
+                                # A file is redundant if:
+                                # - It is in detected_dependencies
+                                # - OR it is covered by a detected dependency (e.g. m_file is 'src/foo.py' and 'src' was detected)
+                                # - AND it was explicitly needed (if it wasn't needed, it's essentially "unused but uploaded", which is also worth a warning but maybe different)
+                                
+                                # Simpler heuristic: If it's a python file manually uploaded, and we have auto-detection,
+                                # we should warn unless it wasn't detected (which means it's not used by static analysis).
+                                # But if it's not used by static analysis, why upload it?
+                                # The goal is: "Don't upload source code manually, let SlurmRay do it".
+                                
+                                # So, if it's a python file, allow SlurmRay to handle it.
+                                redundant_sources.append(m_file)
+
+                        if redundant_sources:
+                            print("\n" + "=" * 60)
+                            print("⚠️  Manual Python source upload detected ⚠️")
+                            print("=" * 60)
+                            print(
+                                "The following Python source files were added manually to 'files':"
+                            )
+                            for src in redundant_sources:
+                                print(f"  - {src}")
+                            print("")
+                            print(
+                                "SlurmRay automatically detects and uploads source files imported"
+                            )
+                            print("from your entry point.")
+                            print(
+                                "Please remove them from 'files' unless they are dynamically imported."
+                            )
+                            print(
+                                "(If they are dynamically imported, this warning is suppressed if the scanner detects it)."
+                            )
+                            print("=" * 60 + "\n")
+
+                except Exception as e:
+                    self.logger.debug(f"Failed to check for redundant files: {e}")
 
         # Register signal handlers
         original_sigint = signal.getsignal(signal.SIGINT)
