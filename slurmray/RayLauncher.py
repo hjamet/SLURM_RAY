@@ -667,7 +667,23 @@ class RayLauncher:
 
         try:
             # Serialize function and arguments
+            # Serialize function and arguments
             if serialize:
+                # Cleanup previous run artifacts to avoid contamination and stale heavy files
+                if self.server_run: # Only relevant if running efficiently on server? Actually good practice locally too.
+                    cleanup_targets = [
+                        "func.pkl", "args.pkl", "result.pkl", 
+                        "spython.py", "func_source.py", "func_name.txt", 
+                        "serialization_method.txt", "run_desi.sh", "server_script.py"
+                    ]
+                    for target in cleanup_targets:
+                        target_path = os.path.join(self.project_path, target)
+                        if os.path.exists(target_path):
+                            try:
+                                os.remove(target_path)
+                            except Exception:
+                                pass # Ignore cleanup errors
+
                 self.__serialize_func_and_args(func, args)
 
             # Execute

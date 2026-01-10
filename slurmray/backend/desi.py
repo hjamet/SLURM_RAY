@@ -154,10 +154,24 @@ class DesiBackend(RemoteMixin):
             files_to_sync = self.launcher.files.copy()
             
             # generated files handling
+            # generated files handling - STRICT WHITELIST to avoid uploading result.pkl or other garbage
+            # We explicitly list the files we expect to generate and upload as payload.
+            # All other files (source code, data) should be handled by the user via 'files=[...]'
+            whitelist_files = [
+                "func.pkl",
+                "args.pkl",
+                "spython.py",
+                "func_source.py",  # If source extraction used
+                "func_name.txt",
+                "serialization_method.txt",
+                # "requirements_to_install.txt" is handled separately below (optimized_reqs)
+            ]
+            
             generated_files = []
-            for f in os.listdir(self.launcher.project_path):
-                if (f.endswith(".py") or f.endswith(".pkl") or f.endswith(".txt")) and f != "requirements.txt":
-                       generated_files.append(f)
+            for fname in whitelist_files:
+                fpath = os.path.join(self.launcher.project_path, fname)
+                if os.path.exists(fpath):
+                    generated_files.append(fname)
 
             # Fail-fast: check func_name.txt
             func_name_txt = "func_name.txt"
@@ -184,10 +198,27 @@ class DesiBackend(RemoteMixin):
             # Push generated/critical files (always overwrite)
             if generated_files:
                 self.logger.info(f"📤 Uploading {len(generated_files)} generated file(s) to server...")
+                
+                # Define progress callback
+                def progress_callback(transferred, total):
+                    # Log every 10MB or 100%
+                    if total > 0:
+                        percent = int((transferred / total) * 100)
+                        # Avoid spamming logs - only log huge files progress or completion? 
+                        # Actually standard logger might be too verbose if we log every chunk.
+                        # Let's log only every 10MB
+                        if transferred % (10 * 1024 * 1024) < 32768: # Rough check
+                             self.logger.info(f"    ... transferred {transferred/1024/1024:.1f} MB ({percent}%)")
+
                 for file in generated_files:
-                    sftp.put(
-                        os.path.join(self.launcher.project_path, file), f"{base_dir}/{file}"
-                    )
+                    local_path = os.path.join(self.launcher.project_path, file)
+                    remote_path = f"{base_dir}/{file}"
+                    file_size = os.path.getsize(local_path)
+                    
+                    if file_size > 50 * 1024 * 1024: # 50 MB
+                        self.logger.warning(f"⚠️  Large generated file detected: {file} ({file_size/1024/1024:.1f} MB). This might take a while.")
+                    
+                    sftp.put(local_path, remote_path, callback=None if file_size < 10*1024*1024 else progress_callback)
 
             # Verify func_name.txt uploaded
             stdin, stdout, stderr = self.ssh_client.exec_command(

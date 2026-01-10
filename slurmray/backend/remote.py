@@ -56,6 +56,8 @@ class RemoteMixin(ClusterBackend):
                     hostname=self.launcher.server_ssh,
                     username=self.launcher.server_username,
                     password=self.launcher.server_password,
+                    banner_timeout=30, # Increased safety against hanging
+                    auth_timeout=30,
                 )
                 connected = True
             except paramiko.ssh_exception.AuthenticationException:
