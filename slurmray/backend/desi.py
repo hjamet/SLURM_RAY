@@ -284,6 +284,7 @@ class DesiBackend(RemoteMixin):
             
             # Stream output
             ray_started = False
+            dashboard_url = None
 
             # Read output line by line
             while True:
@@ -315,17 +316,27 @@ class DesiBackend(RemoteMixin):
                         if url_match:
                             dashboard_url = url_match.group(0)
                             self.logger.info(f"📊 Ray dashboard started at {dashboard_url}")
+                        else:
+                             self.logger.warning(f"⚠️ Could not parse dashboard URL from line: {line_stripped}")
 
                     # Start SSH Tunnel
-                    if not self.tunnel:
+                    if not self.tunnel and dashboard_url:
                         try:
+                            # Parse port cleanly
+                            try:
+                                remote_port = int(dashboard_url.split(":")[-1].strip("/"))
+                                self.logger.debug(f"🔍 Parsed remote dashboard port: {remote_port}")
+                            except ValueError:
+                                self.logger.warning(f"⚠️ Could not parse port from {dashboard_url}. Defaulting to 8265.")
+                                remote_port = 8265
+
                             self.tunnel = SSHTunnel(
                                 ssh_host=self.launcher.server_ssh,
                                 ssh_username=self.launcher.server_username,
                                 ssh_password=self.launcher.server_password,
                                 remote_host="127.0.0.1",
                                 local_port=0, # Dynamic port to avoid contention
-                                remote_port=8265,
+                                remote_port=remote_port,
                                 logger=self.logger,
                             )
                             self.tunnel.__enter__()

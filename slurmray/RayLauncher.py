@@ -106,7 +106,7 @@ class RayLauncher:
         cluster: str = "curnagl",  # 'curnagl', 'desi', 'local', or custom IP/hostname
         force_reinstall_venv: bool = False,
         force_reinstall_project: bool = False,
-        retention_days: int = 7,
+        retention_days: int = 1,
         asynchronous: bool = False,
     ):
         """Initialize the launcher
@@ -332,19 +332,21 @@ class RayLauncher:
             self.backend = LocalBackend(self)
 
         # Auto-detect and add editable package source paths to files list
+        self._auto_added_files = []
         if self.server_run and hasattr(self.backend, "_get_editable_package_source_paths"):
             try:
                 editable_sources = self.backend._get_editable_package_source_paths()
                 for src in editable_sources:
                     if src not in self.files:
                         self.files.append(src)
+                        self._auto_added_files.append(src)
                         self.logger.info(f"Auto-added editable package source to upload: {src}")
             except Exception as e:
                 self.logger.warning(f"Failed to auto-detect editable packages: {e}")
 
-        # Note: Intelligent dependency detection is now done in __call__
-        # when we have the function to analyze. We don't auto-add editable packages
-        # blindly anymore to avoid adding unwanted files or breaking with complex setups.
+        # Note: Intelligent dependency detection is done in __call__.
+        # We auto-add editable packages here to ensure development changes are synced,
+        # and we track them in _auto_added_files to avoid false positive "manual upload" warnings.
 
     def __setup_logger(self):
         """Setup the logger"""
@@ -514,8 +516,11 @@ class RayLauncher:
 
         # Intelligent dependency detection from function source file
         if self.server_run:
-            # Capture manual files before auto-detection modifies the list
-            manual_files = list(self.files) if self.files else []
+            # Capture manual files but EXCLUDE auto-added files (to avoid false positive warnings)
+            auto_added = getattr(self, "_auto_added_files", [])
+            current_files = list(self.files) if self.files else []
+            manual_files = [f for f in current_files if f not in auto_added]
+            
             try:
                 from slurmray.scanner import ProjectScanner
 

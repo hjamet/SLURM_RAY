@@ -283,8 +283,9 @@ class ClusterBackend(ABC):
 
             if not location_abs.startswith(pwd_abs):
                 if self.logger:
-                    self.logger.warning(
-                        f"Editable package {pkg_name} location {location} is outside project {self.launcher.pwd_path}. Skipping auto-upload for now."
+                    # Downgrade to debug as this is common for unrelated editable projects
+                    self.logger.debug(
+                        f"Editable package {pkg_name} location {location} is outside project {self.launcher.pwd_path}. Skipping auto-upload."
                     )
                 continue
 

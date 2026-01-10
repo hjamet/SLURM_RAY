@@ -239,15 +239,16 @@ def print_status_table(state, my_pos, total_waiting, used_cpu, used_ram, used_gp
         cpu_str = str(job["cpu"])
         ram_str = f"{job['ram']}G"
         
-        # Display allocated for running, requested for waiting
+    # Display allocated for running, requested for waiting
         if job["status"] == "running":
              gpu_count = len(job["gpu_ids"])
+             gpu_display = f"{gpu_count}/{len(LIMITS['gpu'])}"
         else:
              gpu_count = job.get("req_gpu", 0)
-        gpu_str = str(gpu_count)
+             gpu_display = f"{gpu_count}/{len(LIMITS['gpu'])}"
         
         # Highlight my own job
-        line = fmt.format(pid_str, user_str, status_str, start_time_str, duration_str, cpu_str, ram_str, gpu_str)
+        line = fmt.format(pid_str, user_str, status_str, start_time_str, duration_str, cpu_str, ram_str, gpu_display)
         if job["pid"] == os.getpid():
             print(f"➤ {line}", flush=True)
         else:
@@ -293,7 +294,7 @@ def main():
             state = update_myself_in_state(state, "running", gpus)
             save_state(state)
             allocated_gpu_ids = gpus
-            print(f"✅ Resources acquired immediately! (PID {os.getpid()}). GPUs: {len(gpus)}/{REQ_GPU}", flush=True)
+            print(f"✅ Resources acquired immediately! (PID {os.getpid()}). CPU: {REQ_CPU}, RAM: {REQ_RAM}GB, GPUs: {REQ_GPU}", flush=True)
             run_job = True
         else:
             if "Global Fail" in reason:
@@ -330,7 +331,7 @@ def main():
                     state = update_myself_in_state(state, "running", gpus)
                     save_state(state)
                     allocated_gpu_ids = gpus
-                    print(f"✅ Resources acquired! (PID {os.getpid()}). GPUs: {len(gpus)}/{REQ_GPU}", flush=True)
+                    print(f"✅ Resources acquired! (PID {os.getpid()}). CPU: {REQ_CPU}, RAM: {REQ_RAM}GB, GPUs: {len(gpus)}/{REQ_GPU}", flush=True)
                     break
                 else:
                     # Refresh my timestamp/status (keep alive)
@@ -388,7 +389,7 @@ def main():
     try:
         # Run the actual workload
         process = subprocess.Popen(
-            [python_cmd, "spython.py"],
+            [python_cmd, "-u", "spython.py"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

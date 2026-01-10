@@ -7,7 +7,11 @@
 
 SlurmRay allows you to transparently distribute your Python tasks across Slurm clusters (like Curnagl) or standalone servers. It handles environment synchronization, local package detection, and task distribution automatically, turning your local machine into a control center for massive compute resources.
 
----
+
+## Direction actuelle
+*   **Maintenance & Stabilisation**: Fix critique du tunnel SSH pour le dashboard Ray sur Desi (support des ports dynamiques).
+*   **Orchestration**: Amélioration des stratégies d'agent (Architecte, Contexte).
+
 
 ## 🚀 The "Local-to-Cluster" Concept
 
