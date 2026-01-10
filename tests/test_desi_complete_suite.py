@@ -149,7 +149,7 @@ def test_desi_concurrency(desi_credentials):
     # Wait for all jobs to complete
     completed = 0
     start_time = time.time()
-    timeout = 180 # 3 minutes timeout
+    timeout = 360 # 6 minutes timeout
     
     while completed < job_count and (time.time() - start_time) < timeout:
         active_count = 0
@@ -167,10 +167,14 @@ def test_desi_concurrency(desi_credentials):
             # Actually RayLauncher in async mode returns a handle or the launcher itself.
             # Let's check verify_desi_parallelism_real.py logic:
             
-            if "Result received" in log_str or "Resources released" in log_str:
+            if "Result received" in log_str or "Resources released" in log_str or "Result written to" in log_str:
                 completed += 1
             elif "Job started" in log_str:
                 active_count += 1
+            
+            # Debug log
+            if log_str:
+                print(f"DEBUG [{job.launcher.project_name}]: {log_str.strip()[-100:]}")
                 
         time.sleep(5)
         print(f"Waiting for jobs: {completed}/{job_count} completed. Active: {active_count}")

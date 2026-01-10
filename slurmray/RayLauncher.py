@@ -90,8 +90,8 @@ class RayLauncher:
     def __init__(
         self,
         project_name: str = None,
-        files: List[str] = [],
-        modules: List[str] = [],
+        files: List[str] = None,
+        modules: List[str] = None,
         node_nbr: int = 1,
         num_gpus: int = 0,
         memory: int = 20,
@@ -207,8 +207,8 @@ class RayLauncher:
 
         # Save the other parameters
         self.project_name = project_name
-        self.files = files
-        self.modules = modules
+        self.files = files if files is not None else []
+        self.modules = modules if modules is not None else []
         self.node_nbr = node_nbr
         self.num_gpus = num_gpus
         self.memory = memory
@@ -291,7 +291,7 @@ class RayLauncher:
         # Filter out any gcc or python modules from user list (we use defaults)
         # Allow user to override by providing specific versions
         user_modules = []
-        for mod in modules:
+        for mod in self.modules:
             # Skip if it's a gcc or python module (user can override by providing full version)
             if mod.startswith("gcc") or mod.startswith("python"):
                 continue
