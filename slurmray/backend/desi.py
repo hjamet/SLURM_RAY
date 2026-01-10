@@ -738,7 +738,8 @@ if [ -f requirements.txt ]; then
             fi
         else
             echo "❌ Failed to install $INSTALL_ERRORS package(s)" >&2
-            exit 1
+            echo "⚠️  Continuing execution despite installation errors..."
+            # exit 1  <-- Disabled to allow flexible execution
         fi
     else
         if [ "$VENV_EXISTED" = "true" ]; then
