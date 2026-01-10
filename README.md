@@ -151,6 +151,8 @@ launcher = RayLauncher(project_name="auto_sync")
 print(launcher(main_task))
 ```
 
+> **New in v7.2**: SlurmRay also auto-detects hardcoded paths to local `.py` files in your code (e.g., inside `subprocess.run(["python", "script.py"])`), preventing remote `FileNotFoundError` without manual configuration.
+
 ---
 
 ## 🗺 Repository Map

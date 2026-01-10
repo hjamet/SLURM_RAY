@@ -264,6 +264,20 @@ class ProjectScanner:
                                     "open() with dynamic path detected",
                                 )
 
+                # 3. General Hardcoded Path Detection (Any string literal ending in .py)
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    val = node.value
+                    if val.endswith(".py"):
+                        candidate_path = os.path.normpath(os.path.join(self.project_root, val))
+                        exists = os.path.isfile(candidate_path)
+                        
+                        if exists:
+                            # Verify it is not system/venv
+                            is_sys = self._is_system_or_venv_file(candidate_path)
+                            if not is_sys:
+                                self.logger.debug(f"  [Auto-Detect] Found hardcoded python path: {val}")
+                                dependencies.add(val)
+
         except Exception as e:
             self.logger.debug(f"Failed to scan {file_path}: {e}")
 
