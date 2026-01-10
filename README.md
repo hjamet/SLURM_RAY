@@ -1,4 +1,4 @@
-# SlurmRay v6.0.7 - Autonomous Distributed Ray on Slurm
+# SlurmRay v8.0.0 - Autonomous Distributed Ray on Slurm
 
 > **The intelligent bridge between your local terminal and High-Performance Computing (HPC) power.**
 
@@ -62,6 +62,28 @@ DESI_PASSWORD=your_password
 | `retention_days` | `7` | Days before remote environment cleanup. |
 | `force_reinstall_venv` | `False` | Force complete venv reinstallation. |
 | `force_reinstall_project` | `False` | Force project files cleanup before upload. |
+
+---
+
+## ✨ New in v7.5: Desi Smart Queue
+
+SlurmRay v7.5 introduces a sophisticated resource manager for standalone servers (Desi Mode):
+
+*   **Interactive ASCII Table**: Real-time view of the job queue when waiting for resources.
+*   **"Available for Me" Metrics**: Calculates exactly what resources are left for *your* job, accounting for those ahead of you in the queue.
+*   **Smart Locking**: Robust mutex system (`/tmp/slurmray_desi_resources.lock`) to prevent resource over-allocation on shared servers.
+
+```text
+⏳ Job is queued (Position #1/3).
+   Limits:             CPU 24,    RAM 120GB,    GPU 2
+   Available for me:   CPU 4/24,  RAM 110/4GB,   GPU 2/2
+---------------------------------------------------------------------------
+PID      User         State        Start Time Duration   CPU   RAM GPU
+---------------------------------------------------------------------------
+  9991     blocker      RUNNING      14:32:39   01:00       20   10G   0
+➤ 12345    tester       WAIT #1      14:33:39   00:00       24    4G   2
+---------------------------------------------------------------------------
+```
 
 ---
 

@@ -201,8 +201,8 @@ class SlurmManager(ClusterManager):
 class DesiManager(ClusterManager):
     """Manager for Desi server (ISIPOL09) using Smart Lock"""
     
-    LOCK_FILE = "/tmp/slurmray_desi.lock"
-    QUEUE_FILE = "/tmp/slurmray_desi.queue"
+    LOCK_FILE = "/tmp/slurmray_desi_resources.lock"
+    QUEUE_FILE = "/tmp/slurmray_desi_resources.json"
     
     def __init__(self, username: str = None, password: str = None, ssh_host: str = None):
         super().__init__(username, password, ssh_host)
@@ -248,8 +248,8 @@ class DesiManager(ClusterManager):
             if exit_status != 0:
                 return []
             import json
-            queue_data = json.loads(stdout.strip() or "[]")
-            return queue_data if isinstance(queue_data, list) else []
+            queue_data = json.loads(stdout.strip() or "{}")
+            return queue_data.get("jobs", []) if isinstance(queue_data, dict) else []
         except (json.JSONDecodeError, ValueError, Exception):
             return []
     
@@ -269,7 +269,9 @@ import json
 import fcntl
 import base64
 import sys
+import os
 
+LOCK_FILE = "{self.LOCK_FILE}"
 QUEUE_FILE = "{self.QUEUE_FILE}"
 queue_b64 = "{queue_b64}"
 
@@ -277,27 +279,43 @@ max_retries = 10
 retry_delay = 0.1
 success = False
 
+# Ensure lock file exists
+if not os.path.exists(LOCK_FILE):
+    try:
+        open(LOCK_FILE, 'w').close()
+        os.chmod(LOCK_FILE, 0o666)
+    except IOError:
+        pass
+
 for attempt in range(max_retries):
     try:
-        queue_fd = open(QUEUE_FILE, 'w')
+        # Acquire lock on the LOCK_FILE, not the queue file directly
+        lock_fd = open(LOCK_FILE, 'w')
         try:
-            fcntl.lockf(queue_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.lockf(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            
+            # Write to state file
             queue_json = base64.b64decode(queue_b64).decode('utf-8')
-            queue_data = json.loads(queue_json)
-            json.dump(queue_data, queue_fd, indent=2)
-            queue_fd.flush()
-            import os
-            os.fsync(queue_fd.fileno())
-            fcntl.lockf(queue_fd, fcntl.LOCK_UN)
-            queue_fd.close()
+            
+            input_jobs = json.loads(queue_json)
+            state = {{"jobs": input_jobs}}
+            
+            with open(QUEUE_FILE, 'w') as f:
+                json.dump(state, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            
+            fcntl.lockf(lock_fd, fcntl.LOCK_UN)
             success = True
             break
         except IOError:
-            queue_fd.close()
+            # Lock failed
             if attempt < max_retries - 1:
                 import time
                 time.sleep(retry_delay)
                 continue
+        finally:
+            lock_fd.close()
     except IOError:
         if attempt < max_retries - 1:
             import time
@@ -325,7 +343,7 @@ sys.exit(0 if success else 1)
             return
         
         # Check all PIDs at once
-        pids_str = " ".join(pids_to_check)
+        pids_str = " ".join(str(pid) for pid in pids_to_check)
         stdout, stderr, exit_status = self.run_command(
             f"for pid in {pids_str}; do ps -p $pid >/dev/null 2>&1 && echo $pid; done"
         )
@@ -479,9 +497,20 @@ sys.exit(0 if success else 1)
             # Combine: running jobs first, then waiting jobs
             jobs = running_jobs + waiting_jobs
             
+            # Map gpu_ids to a string for display if useful, or just update the table logic later
+            for job in jobs:
+                # Add resources info to custom fields
+                orig_job = next((j for j in queue if j.get("pid") == job["pid"]), None)
+                if orig_job:
+                    job["cpu"] = orig_job.get("cpu", "?")
+                    job["ram"] = orig_job.get("ram", "?")
+                    job["gpu"] = len(orig_job.get("gpu_ids", []))
+            
             return jobs
         except Exception as e:
+            import traceback
             console.print(f"[red]Error retrieving jobs: {e}[/red]")
+            console.print(traceback.format_exc())
             return []
     
     def cancel_job(self, job_id):
@@ -542,6 +571,7 @@ def display_jobs_table(jobs, cluster_type="slurm"):
         table.add_column("User", style="blue", no_wrap=True)
         table.add_column("State", style="green")
         table.add_column("Queue", style="yellow", justify="center")
+        table.add_column("Resources", style="cyan")
         table.add_column("Time", style="yellow")
         table.add_column("PID", style="blue", no_wrap=True)
 
@@ -562,12 +592,16 @@ def display_jobs_table(jobs, cluster_type="slurm"):
             elif job["state"] == "RUNNING":
                 queue_display = "RUNNING"
             
+            # Format resources
+            res_display = f"C:{job.get('cpu','?')} M:{job.get('ram','?')} G:{job.get('gpu','0')}"
+
             table.add_row(
                 job["id"],
                 job.get("name", "N/A"),
                 job.get("user", "N/A"),
                 state_display,
                 queue_display,
+                res_display,
                 job.get("time", "N/A"),
                 job.get("pid", "N/A")
             )

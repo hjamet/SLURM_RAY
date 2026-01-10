@@ -415,7 +415,7 @@ class DesiBackend(RemoteMixin):
         else:
              # Async mode: Run with nohup and redirect to log file
              log_file = "desi.log"
-             cmd = f"cd {base_dir} && nohup ./run_desi.sh > {log_file} 2>&1 & echo $!"
+             cmd = f"cd {base_dir} && nohup ./run_desi.sh > {log_file} 2>&1 < /dev/null & echo $!"
              stdin, stdout, stderr = self.ssh_client.exec_command(cmd)
              pid = stdout.read().decode("utf-8").strip()
              self.logger.info(f"Async mode: Job started with PID {pid}. Log file: {base_dir}/{log_file}")
@@ -770,222 +770,43 @@ echo "🔒 Acquiring Smart Lock and starting job..."
     def _write_desi_wrapper(self, filename):
         """Write python wrapper for Smart Lock with Resource Management"""
         
+        # Load template
+        template_path = os.path.join(self.launcher.module_path, "assets", "desi_wrapper_template.py")
+        with open(template_path, "r") as f:
+            content = f.read()
+            
         # Resource Limits (Hardcoded for Desi based on audit)
-        # 24 CPUs, 125GB RAM -> Safety margin: 24 CPUs, 120GB RAM
-        # 2 GPUs
+        limits_cpu = 24
+        limits_ram = 120
+        limits_gpu_ids = [0, 1]
         
-        content = f"""
-import os
-import sys
-import time
-import fcntl
-import subprocess
-import json
-import random
-
-# Configuration
-LOCK_FILE = "/tmp/slurmray_desi_resources.lock"
-STATE_FILE = "/tmp/slurmray_desi_resources.json"
-
-# Hardware Limits (Desi specific)
-LIMITS = {{
-    "cpu": 24,
-    "ram": 120, # GB
-    "gpu": [0, 1] # GPU IDs
-}}
-
-# Job Requirements (Injected)
-REQ_CPU = {self.launcher.num_cpus}
-REQ_RAM = {self.launcher.memory}
-REQ_GPU = {self.launcher.num_gpus}
-
-MAX_RETRIES = 10000 # Wait for a long time if needed
-RETRY_DELAY = 10 # Check every 10 seconds
-
-def get_lock(fd):
-    '''Acquire exclusive lock on state file'''
-    fcntl.lockf(fd, fcntl.LOCK_EX)
-
-def release_lock(fd):
-    '''Release lock'''
-    fcntl.lockf(fd, fcntl.LOCK_UN)
-
-def load_state():
-    '''Load state from JSON file'''
-    if not os.path.exists(STATE_FILE):
-        return {{"jobs": []}}
-    try:
-        with open(STATE_FILE, 'r') as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return {{"jobs": []}}
-
-def save_state(state):
-    '''Save state to JSON file'''
-    with open(STATE_FILE, 'w') as f:
-        json.dump(state, f, indent=2)
-
-def is_pid_running(pid):
-    '''Check if PID is running using /proc'''
-    try:
-        # Check if /proc/PID folder exists
-        return os.path.exists(f"/proc/{{pid}}")
-    except Exception:
-        return False
-
-def clean_stale_jobs(state):
-    '''Remove jobs that are no longer running'''
-    active_jobs = []
-    
-    dirty = False
-    for job in state.get("jobs", []):
-        pid = job["pid"]
-        if is_pid_running(pid):
-            active_jobs.append(job)
-        else:
-            print(f"🧹 Cleaning stale job {{pid}} from registry")
-            dirty = True
-            
-    state["jobs"] = active_jobs
-    return state, dirty
-
-def check_resources(state):
-    '''Check if resources are available'''
-    used_cpu = sum(job["cpu"] for job in state["jobs"])
-    used_ram = sum(job["ram"] for job in state["jobs"])
-    used_gpus = []
-    for job in state["jobs"]:
-        used_gpus.extend(job["gpu_ids"])
-    
-    available_cpu = LIMITS["cpu"] - used_cpu
-    available_ram = LIMITS["ram"] - used_ram
-    available_gpus = [g for g in LIMITS["gpu"] if g not in used_gpus]
-    
-    print(f"📊 Resources: CPU {{used_cpu}}/{{LIMITS['cpu']}}, RAM {{used_ram}}/{{LIMITS['ram']}} GB, GPUs Used {{used_gpus}}", flush=True)
-    
-    if REQ_CPU > available_cpu:
-        return False, None, "Not enough CPU"
+        # Inject Values
+        content = content.replace("{{LIMIT_CPU}}", str(limits_cpu))
+        content = content.replace("{{LIMIT_RAM}}", str(limits_ram))
+        content = content.replace("{{LIMIT_GPU_IDS}}", str(limits_gpu_ids))
         
-    if REQ_RAM > available_ram:
-        return False, None, "Not enough RAM"
+        content = content.replace("{{REQ_CPU}}", str(self.launcher.num_cpus))
+        content = content.replace("{{REQ_RAM}}", str(self.launcher.memory))
+        content = content.replace("{{REQ_GPU}}", str(self.launcher.num_gpus))
         
-    if REQ_GPU > 0:
-        if len(available_gpus) < REQ_GPU:
-            return False, None, "Not enough GPU"
-        # Allocate specific GPUs
-        allocated_gpus = available_gpus[:REQ_GPU]
-        return True, allocated_gpus, "OK"
-    
-    return True, [], "OK"
-
-def main():
-    print(f"🔒 Requesting resources: {{REQ_CPU}} CPU, {{REQ_RAM}} GB RAM, {{REQ_GPU}} GPU", flush=True)
-    
-    # Ensure lock file exists
-    if not os.path.exists(LOCK_FILE):
-        open(LOCK_FILE, 'w').close()
+        job_name = getattr(self.launcher, "func_name", "Unknown Function")
+        # Try to find valid function name
+        if job_name == "Unknown Function" and hasattr(self.launcher, "func"):
+            try:
+                job_name = self.launcher.func.__name__
+            except Exception:
+                pass
+                
+        content = content.replace("{{JOB_NAME}}", str(job_name))
+        content = content.replace("{{USER_NAME}}", str(self.launcher.server_username))
         
-    lock_fd = open(LOCK_FILE, 'w')
-    
-    allocated_gpu_ids = []
-    
-    # Resource Acquisition Loop
-    for attempt in range(MAX_RETRIES):
-        get_lock(lock_fd)
-        try:
-            state = load_state()
-            state, dirty = clean_stale_jobs(state)
-            
-            allowed, gpus, reason = check_resources(state)
-            
-            if allowed:
-                # Register job
-                my_pid = os.getpid()
-                new_job = {{
-                    "pid": my_pid,
-                    "cpu": REQ_CPU,
-                    "ram": REQ_RAM,
-                    "gpu_ids": gpus,
-                    "start_time": time.time()
-                }}
-                state["jobs"].append(new_job)
-                save_state(state)
-                allocated_gpu_ids = gpus
-                print(f"✅ Resources acquired! Job registered (PID {{my_pid}}). GPUs: {{gpus}}", flush=True)
-                break
-            else:
-                if attempt % 6 == 0: # Log every minute
-                    print(f"⏳ Waiting for resources... Reason: {{reason}}", flush=True)
-        finally:
-            release_lock(lock_fd)
-            
-        time.sleep(RETRY_DELAY)
-    else:
-        print("❌ Timeout waiting for resources.", flush=True)
-        sys.exit(1)
+        # We need the remote project dir. 
+        # base_dir is calculated in run(), but we are in _write_desi_wrapper inside run().
+        # Actually _write_desi_wrapper is called at line 232 of desi.py
+        # It doesn't receive base_dir argument in the original code, but we can reconstruct it.
+        base_dir = f"/home/{self.launcher.server_username}/slurmray-server/{self.launcher.project_name}"
+        content = content.replace("{{PROJECT_DIR}}", str(base_dir))
         
-    # Set CUDA_VISIBLE_DEVICES if validated
-    if allocated_gpu_ids:
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, allocated_gpu_ids))
-        print(f"🔧 Set CUDA_VISIBLE_DEVICES={{os.environ['CUDA_VISIBLE_DEVICES']}}", flush=True)
-    elif REQ_GPU == 0:
-        # Hide GPUs if not requested to prevent incidental usage?
-        # Standard behavior: if 0 requested, we often leave it visible but tell Ray 0.
-        # But to be safe on shared machine:
-        os.environ["CUDA_VISIBLE_DEVICES"] = ""
-
-    # Execute Runtime
-    # Use venv Python if available, otherwise fallback to sys.executable
-    venv_python = os.path.join(os.path.dirname(__file__), "venv", "bin", "python")
-    if os.path.exists(venv_python):
-        python_cmd = venv_python
-    else:
-        python_cmd = sys.executable
-
-    try:
-        # Run the actual workload
-        # Run the actual workload with stdout/stderr streaming
-        process = subprocess.Popen(
-            [python_cmd, "spython.py"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Interleave stderr into stdout
-            text=True,
-            bufsize=1  # Line buffered
-        )
-
-        # Stream output in real-time
-        for line in process.stdout:
-            print(line, end='', flush=True)
-            
-        process.wait()
-        
-        if process.returncode != 0:
-            raise subprocess.CalledProcessError(process.returncode, process.args)
-
-    except subprocess.CalledProcessError as e:
-        # Error already printed via stdout streaming
-        sys.exit(e.returncode)
-    except Exception as e:
-        print(f"❌ Job failed: {{e}}", flush=True)
-        sys.exit(1)
-    finally:
-        # Cleanup State
-        print("🧹 Cleaning up resource registration...", flush=True)
-        get_lock(lock_fd)
-        try:
-            state = load_state()
-            # Remove my PID
-            my_pid = os.getpid()
-            state["jobs"] = [j for j in state["jobs"] if j["pid"] != my_pid]
-            save_state(state)
-            print("✅ Resources released.", flush=True)
-        finally:
-            release_lock(lock_fd)
-            lock_fd.close()
-
-if __name__ == "__main__":
-    main()
-"""
         with open(os.path.join(self.launcher.project_path, filename), "w") as f:
             f.write(content)
 
