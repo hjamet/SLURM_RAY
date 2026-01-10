@@ -241,8 +241,24 @@ class ProjectScanner:
                             )
                         # open(...)
                         elif node.func.id == "open":
+                            # Check mode detection
+                            mode = "r" # Default
+                            
+                            # Check positional args
+                            if len(node.args) > 1 and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str):
+                                mode = node.args[1].value
+                            
+                            # Check keyword args
+                            for kw in node.keywords:
+                                if kw.arg == "mode" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                                    mode = kw.value.value
+                                    break
+                            
+                            # If writing, skip warning
+                            if any(x in mode for x in ('w', 'a', 'x')):
+                                pass
                             # Check if argument is a string literal
-                            if (
+                            elif (
                                 node.args
                                 and isinstance(node.args[0], ast.Constant)
                                 and isinstance(node.args[0].value, str)

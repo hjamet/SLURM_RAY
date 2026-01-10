@@ -580,10 +580,6 @@ class RayLauncher:
                         print(f"  - {warning}")
                     print("=" * 60 + "\n")
 
-                    # Also log them
-                    for warning in scanner.dynamic_imports_warnings:
-                        self.logger.warning(f"Dynamic import warning: {warning}")
-
             except Exception as e:
                 self.logger.warning(f"Dependency detection from function failed: {e}")
 

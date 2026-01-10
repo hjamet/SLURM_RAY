@@ -242,10 +242,10 @@ def print_status_table(state, my_pos, total_waiting, used_cpu, used_ram, used_gp
     # Display allocated for running, requested for waiting
         if job["status"] == "running":
              gpu_count = len(job["gpu_ids"])
-             gpu_display = f"{gpu_count}/{len(LIMITS['gpu'])}"
+             gpu_display = str(gpu_count)
         else:
              gpu_count = job.get("req_gpu", 0)
-             gpu_display = f"{gpu_count}/{len(LIMITS['gpu'])}"
+             gpu_display = str(gpu_count)
         
         # Highlight my own job
         line = fmt.format(pid_str, user_str, status_str, start_time_str, duration_str, cpu_str, ram_str, gpu_display)
