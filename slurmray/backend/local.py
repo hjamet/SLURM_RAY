@@ -119,6 +119,22 @@ class LocalBackend(ClusterBackend):
             "{{LOCAL_MODE}}",
             local_mode,
         )
+
+        pre_import = ""
+        if  hasattr(self.launcher, "func") and self.launcher.func:
+            func_module = self.launcher.func.__module__
+            if func_module and func_module != "__main__":
+                root_pkg = func_module.split(".")[0]
+                pre_import = f"try:\n    import {root_pkg}\n    print(f'Imported {root_pkg} for dill compatibility')\nexcept ImportError:\n    pass"
+        
+        # Inject CWD to sys.path for local execution to ensure modules are found
+        # This fixes issues where local project modules or tests are shadowed by site-packages
+        # or not found because spython.py runs in a subplot with different sys.path[0]
+        cwd_injection = f"import sys\nsys.path.insert(0, '{self.launcher.pwd_path}')\n"
+        pre_import = cwd_injection + pre_import
+
+        if "{{PRE_IMPORT}}" in text:
+            text = text.replace("{{PRE_IMPORT}}", pre_import)
+
         with open(os.path.join(self.launcher.project_path, "spython.py"), "w") as f:
             f.write(text)
-
