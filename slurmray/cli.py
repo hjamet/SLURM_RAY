@@ -611,7 +611,7 @@ def display_jobs_table(jobs, cluster_type="slurm"):
                 queue_display,
                 res_display,
                 job.get("time", "N/A"),
-                job.get("pid", "N/A")
+                str(job.get("pid", "N/A"))
             )
     return table
 
