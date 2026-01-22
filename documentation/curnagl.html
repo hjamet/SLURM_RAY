@@ -201,7 +201,7 @@
 
     <main class="container">
         <header>
-            <img src="./curnagl_banner.png" alt="Curnagl Banner" class="banner-img">
+            <img src="./curnagl_banner.png" alt="Curnagl Banner" class="banner-img" style="height: 300px; object-fit: cover; width: 100%;">
             <h1>Curnagl</h1>
             <p class="subtitle">The Core Interface for High-Performance Slurm Clusters</p>
         </header>
@@ -248,6 +248,17 @@ launcher = <span class="function">RayLauncher</span>(
         </section>
 
         <section class="section">
+            <h2>Log Locations</h2>
+            <p>
+                If something goes wrong, you can find logs in:
+                <ul style="list-style-position: inside; color: #8b949e; margin-top: 1rem;">
+                    <li><strong>Local:</strong> <code>.slogs/RayLauncher.log</code> (detailed bridge logs)</li>
+                    <li><strong>Remote:</strong> Standard Slurm output files (e.g., <code>slurm-XXXX.out</code>) located in your project directory on the cluster.</li>
+                </ul>
+            </p>
+        </section>
+
+        <section class="section">
             <h2>Argument Reference (Slurm-Specific)</h2>
             <table class="args-table">
                 <thead>
@@ -262,8 +273,14 @@ launcher = <span class="function">RayLauncher</span>(
                     <tr>
                         <td><span class="code-snippet">project_name</span></td>
                         <td>str</td>
-                        <td><strong>Required</strong>. Unique project identifier.</td>
+                        <td><strong>Required</strong>. Unique project identifier. Consistent naming allows virtual environment reuse.</td>
                         <td>None</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">cluster</span></td>
+                        <td>str</td>
+                        <td>Must be <code>"curnagl"</code> (or your custom cluster IP/hostname).</td>
+                        <td>"curnagl"</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">node_nbr</span></td>
@@ -272,10 +289,10 @@ launcher = <span class="function">RayLauncher</span>(
                         <td>1</td>
                     </tr>
                     <tr>
-                        <td><span class="code-snippet">num_gpus</span></td>
+                        <td><span class="code-snippet">num_cpus</span></td>
                         <td>int</td>
-                        <td>Number of GPUs per node. Auto-loads CUDA/CuDNN.</td>
-                        <td>0</td>
+                        <td>Number of CPUs to use per node.</td>
+                        <td>4</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">memory</span></td>
@@ -284,16 +301,58 @@ launcher = <span class="function">RayLauncher</span>(
                         <td>20</td>
                     </tr>
                     <tr>
-                        <td><span class="code-snippet">num_cpus</span></td>
+                        <td><span class="code-snippet">num_gpus</span></td>
                         <td>int</td>
-                        <td>Number of CPUs per node.</td>
-                        <td>4</td>
+                        <td>Number of GPUs per node. Auto-loads CUDA/CuDNN modules.</td>
+                        <td>0</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">files</span></td>
+                        <td>list[str]</td>
+                        <td>Extra data/config files to sync. (Code is auto-detected).</td>
+                        <td>[]</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">modules</span></td>
                         <td>list[str]</td>
                         <td>Slurm modules to load (e.g. <code>["gcc/13.2.0"]</code>).</td>
                         <td>[]</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">max_running_time</span></td>
+                        <td>int</td>
+                        <td>Max duration in minutes.</td>
+                        <td>60</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">runtime_env</span></td>
+                        <td>dict</td>
+                        <td>Ray runtime environment configuration.</td>
+                        <td>{}</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">retention_days</span></td>
+                        <td>int</td>
+                        <td>Days to keep remote files and venvs (1-30).</td>
+                        <td>1</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">force_reinstall_venv</span></td>
+                        <td>bool</td>
+                        <td>Forces a clean re-installation of the virtual environment.</td>
+                        <td>False</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">force_reinstall_project</span></td>
+                        <td>bool</td>
+                        <td>Cleans remote project files before upload.</td>
+                        <td>False</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">asynchronous</span></td>
+                        <td>bool</td>
+                        <td>Return a tracking object immediately.</td>
+                        <td>False</td>
                     </tr>
                 </tbody>
             </table>

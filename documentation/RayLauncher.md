@@ -33,7 +33,7 @@ class RayLauncher(
     server_ssh: str = None,
     server_username: str = None,
     server_password: str = None,
-    log_file: str = "logs/RayLauncher.log",
+    log_file: str = ".slogs/RayLauncher.log",
     cluster: str = "curnagl",
     force_reinstall_venv: bool = False,
     force_reinstall_project: bool = False,

@@ -72,7 +72,7 @@ slurmray desi
 
 # 📁 Log Locations
 
-*   **Local Logs**: Detailed launcher logs are stored in `logs/RayLauncher.log`.
+*   **Local Logs**: Detailed launcher logs are stored in `.slogs/RayLauncher.log`.
 *   **Remote Execution Logs**: 
     - On **Slurm**: Standard Slurm output files in the project directory.
     - On **Desi**: Located in `slurmray-server/{project_name}/.slogs/server/`.
