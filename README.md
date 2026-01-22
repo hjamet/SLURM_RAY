@@ -2,19 +2,19 @@
 
 > **The intelligent bridge between your local terminal and High-Performance Computing (HPC) power.**
 
-SlurmRay allows you to transparently distribute your Python tasks across Slurm clusters (like Curnagl) or standalone servers. It handles environment synchronization, local package detection, and task distribution automatically, turning your local machine into a control center for massive compute resources.
+SlurmRay allows you to transparently distribute your Python tasks across Slurm clusters (like Curnagl) or standalone servers (like Desi). It handles environment synchronization, local package detection, and task distribution automatically, turning your local machine into a control center for massive compute resources.
 
-**État courant** : Version 8.1.x stabilisée. Le mode Local est maintenant durci et sert de référence de haute-fidélité pour le pré-test avant déploiement sur cluster.
+**Current State**: Version 8.1.x stabilized. Local mode is hardened and serves as a high-fidelity reference for pre-testing before cluster deployment.
 
 ---
 
-# 🚀 Scripts d'entrée principaux
+# 🚀 Main Entry Scripts
 
-| Script/Commande | Description détaillée | Usage / Exemple |
+| Script/Command | Description | Usage / Example |
 |-----------------|-----------------------|-----------------|
-| `pytest tests/test_local_complete_suite.py` | **Validation Haute-Fidélité Local** : Vérifie que le code tourne parfaitement en local avec l'isolation SlurmRay avant envoi. | `pytest tests/test_local_complete_suite.py` |
-| `pytest tests/test_desi_complete_suite.py` | **Validation Backend Desi** : Test complet sur serveur ISIPOL (CPU, GPU, Concurrence, Serialization). | `pytest tests/test_desi_complete_suite.py` |
-| `pytest tests/test_raylauncher_example_complete.py` | **Test d'Intégration** : Vérifie le flux complet de détection de dépendances et d'exécution Slurm. | `pytest tests/test_raylauncher_example_complete.py` |
+| `pytest tests/test_local_complete_suite.py` | **High-Fidelity Local Validation**: Ensures code runs perfectly in local isolation before deployment. | `pytest tests/test_local_complete_suite.py` |
+| `pytest tests/test_desi_complete_suite.py` | **Desi Backend Validation**: Complete test on Desi server (CPU, GPU, Concurrency, Serialization). | `pytest tests/test_desi_complete_suite.py` |
+| `pytest tests/test_raylauncher_example_complete.py` | **Integration Test**: Verifies full dependency detection and Slurm execution flow. | `pytest tests/test_raylauncher_example_complete.py` |
 
 ---
 
@@ -24,30 +24,61 @@ SlurmRay allows you to transparently distribute your Python tasks across Slurm c
 pip install -e .
 ```
 
-### Pré-requis
+### Prerequisites
 *   **Local**: Python 3.9+
-*   **Remote**: Accès SSH à un cluster Slurm ou un serveur avec Ray.
-*   **Configuration**: Créer un fichier `.env` à la racine (voir section Configuration).
+*   **Remote**: SSH access to a Slurm cluster or a standalone server with Ray support.
+*   **Configuration**: Create a `.env` file at the root (see Configuration section).
 
 ---
 
-# 📖 Description détaillée
+# 📖 Core Concepts
 
-### Le concept "Local-to-Cluster"
-SlurmRay orchestre le cycle de vie complet d'une tâche distante :
-1.  **Analyse AST** : Scanne automatiquement les imports pour identifier les modules locaux à uploader.
-2.  **Synchronisation Chirurgicale** : Utilise `rsync` pour ne pousser que les fichiers modifiés.
-3.  **Bridging Ray Autonome** : Alloue les nœuds, installe le venv synchronisé et déploie un cluster Ray temporaire.
-4.  **Exécution Transparente** : Retourne les résultats `dill` directement dans votre session locale.
+### Local-to-Cluster Orchestration
+SlurmRay manages the entire lifecycle of a remote task:
+1.  **AST Analysis**: Automatically scans imports to identify local modules and dependencies to upload. **You don't need to manually push your source code.**
+2.  **Surgical Synchronization**: Uses incremental transfers to push only modified files.
+3.  **Autonomous Ray Bridging**: Allocates nodes, installs the synchronized venv, and deploys a temporary Ray cluster.
+4.  **Transparent Execution**: Returns results (serialized via `dill`) directly to your local session.
 
-### Direction actuelle
-Nous nous concentrons sur la robustesse du mode `cluster='local'`. L'objectif est simple : **si le code tourne en local, il doit tourner en ligne sans modification.** Le backend local simule maintenant l'isolation totale via `spython.py` et gère les priorités de `sys.path` pour éviter les collisions avec les packages installés.
+### Pro-Tip: Venv Reuse & Project Naming
+We recommend using a consistent `project_name` for all related computations. SlurmRay computes a hash of your `requirements.txt`: if it hasn't changed, the remote virtual environment is reused instantly, drastically reducing setup time.
+
+### Automatic Cleanup
+Files and virtual environments on remote servers are automatically deleted after a retention period (defined by `retention_days`, default 7 days). This ensures the server storage remains clean.
 
 ---
 
-# 📊 Principaux résultats
+# 🖥 SlurmRay CLI
 
-| Scenario | Mode | Status | Temps Moyen |
+SlurmRay includes a powerful interactive CLI for managing your jobs on both Slurm and Desi.
+
+```bash
+# Connect to Curnagl (Slurm)
+slurmray curnagl
+
+# Connect to Desi server
+slurmray desi
+```
+
+**Features:**
+*   **Live Monitoring**: Real-time status of your running and waiting jobs.
+*   **Job Management**: Cancel jobs directly from the interface.
+*   **Dashboard Access**: Automatically sets up an SSH tunnel to the Ray Dashboard for any running job.
+
+---
+
+# 📁 Log Locations
+
+*   **Local Logs**: Detailed launcher logs are stored in `logs/RayLauncher.log`.
+*   **Remote Execution Logs**: 
+    - On **Slurm**: Standard Slurm output files in the project directory.
+    - On **Desi**: Located in `slurmray-server/{project_name}/.slogs/server/`.
+
+---
+
+# 📊 Performance Baseline
+
+| Scenario | Mode | Status | Avg Time |
 |----------|------|--------|-------------|
 | CPU Task (Simple) | Local | ✅ Pass | < 2s |
 | GPU Task (Detection) | Desi | ✅ Pass | ~15s |
@@ -56,43 +87,35 @@ Nous nous concentrons sur la robustesse du mode `cluster='local'`. L'objectif es
 
 ---
 
-# 🗺 Plan du repo
+# 🗺 Repository Structure
 
 ```text
 root/
-├── slurmray/              # Cœur du système
+├── slurmray/              # Core logic
 │   ├── backend/           # Backends (Slurm, Desi, Local)
-│   ├── assets/            # Templates (spython, desi_wrapper)
-│   ├── scanner.py         # Détection AST des dépendances
-│   └── file_sync.py       # Logique de synchro rsync
-├── scripts/               # Scripts utilitaires et maintenance
-├── tests/                 # Suites de tests complètes
-├── documentation/         # Docs HTML et Markdown
-└── README.md              # Source unique de vérité
+│   ├── assets/            # Templates & Wrappers
+│   ├── scanner.py         # AST Dependency Detection
+│   ├── RayLauncher.py     # Main API Entry Point
+│   └── cli.py             # Interactive CLI
+├── scripts/               # Maintenance & Cleanup utilities
+├── tests/                 # Comprehensive test suites
+├── documentation/         # HTML/Markdown docs
+└── README.md              # Documentation source
 ```
-
----
-
-# 🔧 Scripts exécutables secondaires & Utilitaires
-
-| Script | Rôle technique | Contexte d'exécution |
-|--------|----------------|----------------------|
-| `scripts/cleanup_desi_projects.py` | Nettoie les projets expirés sur le serveur Desi. | Cron job journalier sur ISIPOL. |
-| `tests/test_auto_detection.py` | Vérifie la détection des imports profonds. | Développement / Debug scanner. |
 
 ---
 
 # 🛤 Roadmap
 
-| Priorité | Tâche | Dépendance |
+| Priority | Task | Status |
 | :--- | :--- | :--- |
-| 🔥 **Haute** | **Global Venv Caching** : Optimiser le temps de setup en réutilisant les venvs communs. | - |
-| ⚡ **Moyenne** | **Live Dashboard** : Interface web pour monitorer les jobs et les logs en temps réel. | - |
-| 🌱 **Basse** | **Container Support** : Support natif d'Apptainer/Singularity sur Slurm. | - |
+| 🔥 **High** | **Global Venv Caching** | Optimization of setup times. |
+| ⚡ **Medium** | **Live Dashboard** | Real-time monitoring UI. |
+| 🌱 **Low** | **Container Support** | Apptainer/Singularity support on Slurm. |
 
 ---
 
-## 👥 Crédits & License
+## 👥 Credits & License
 
-Maintenu par le **DESI Department @ HEC UNIL**.
-Licence **MIT**.
+Maintained by the **DESI Department @ HEC UNIL**.
+License: **MIT**.

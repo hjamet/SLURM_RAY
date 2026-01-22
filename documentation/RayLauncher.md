@@ -30,11 +30,11 @@ class RayLauncher(
     max_running_time: int = 60,
     runtime_env: dict = {"env_vars": {}},
     server_run: bool = True,
-    server_ssh: str = None,  # Auto-detected from cluster parameter
+    server_ssh: str = None,
     server_username: str = None,
     server_password: str = None,
     log_file: str = "logs/RayLauncher.log",
-    cluster: str = "curnagl",  # 'curnagl', 'desi', 'local', or custom IP/hostname
+    cluster: str = "curnagl",
     force_reinstall_venv: bool = False,
     force_reinstall_project: bool = False,
     retention_days: int = 7,
@@ -42,81 +42,84 @@ class RayLauncher(
 )
 ```
 
-#### Arguments
+#### Detailed Arguments
 
-- **project_name** (`str`, optional): Name of the project. Defaults to None.
-- **files** (`List[str]`, optional): List of files to push to the cluster/server. This path must be **relative** to the project directory. Defaults to [].
-- **modules** (`List[str]`, optional): List of modules to load (Slurm mode only). Use `module spider` to see available modules. Ignored in Desi mode. Defaults to None.
-- **node_nbr** (`int`, optional): Number of nodes to use. For Desi mode, this is always 1 (single server). Defaults to 1.
-- **num_gpus** (`int`, optional): Number of GPUs to use. Defaults to 0.
-- **memory** (`int`, optional): Amount of RAM to use per node in GigaBytes. Defaults to 20.
-- **num_cpus** (`int`, optional): Number of CPUs to use per node. Defaults to 4.
-- **max_running_time** (`int`, optional): Maximum running time of the job in minutes. For Desi mode, this is not enforced by a scheduler. Defaults to 60.
-- **runtime_env** (`dict`, optional): Environment variables to share between all the workers. Can be useful for issues like https://github.com/ray-project/ray/issues/418. Default to empty.
-- **server_run** (`bool`, optional): If you run the launcher from your local machine, you can use this parameter to execute your function using online cluster/server ressources. Defaults to True.
-- **server_ssh** (`str`, optional): If `server_run` is set to true, the address of the server to use. Auto-detected from `cluster` parameter if not provided. Defaults to None (auto-detected).
-- **server_username** (`str`, optional): If `server_run` is set to true, the username with which you wish to connect. Credentials are automatically loaded from a `.env` file (CURNAGL_USERNAME for Curnagl/custom IP, DESI_USERNAME for Desi) if available. Priority: environment variables → explicit parameter → default ("hjamet" for Curnagl/custom IP, "henri" for Desi).
-- **server_password** (`str`, optional): If `server_run` is set to true, the password of the user to connect to the server. Credentials are automatically loaded from a `.env` file (CURNAGL_PASSWORD for Curnagl/custom IP, DESI_PASSWORD for Desi) if available. Priority: explicit parameter → environment variables → interactive prompt. CAUTION: never write your password in the code. Defaults to None.
-- **log_file** (`str`, optional): Path to the log file. Defaults to "logs/RayLauncher.log".
-- **cluster** (`str`, optional): Cluster/server to use: 'curnagl' (default, Slurm cluster), 'desi' (ISIPOL09/Desi server), 'local' (local execution), or a custom IP/hostname (for custom Slurm clusters). Defaults to "curnagl".
-- **force_reinstall_venv** (`bool`, optional): Force complete removal and recreation of virtual environment on remote server/cluster. This will delete the existing venv and reinstall all packages from requirements.txt. Use this if the venv is corrupted or you need a clean installation. Defaults to False.
-- **force_reinstall_project** (`bool`, optional): Force complete removal of the project directory (excluding logs/venv if possible, but practically cleans the project code) before uploading. Use to ensure a clean state. Defaults to False.
-- **retention_days** (`int`, optional): Number of days to retain files and venv on the cluster before automatic cleanup. Must be between 1 and 30 days. Defaults to 7.
-- **asynchronous** (`bool`, optional): If True, the call to the function returns immediately with a `FunctionReturn` object. Defaults to False.
-
+| Argument | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| **project_name** | `str` | `None` | **Required.** Name used to identify the project on the remote server. Consistent naming allows for venv reuse. |
+| **files** | `List[str]` | `[]` | List of local files/directories to synchronize. **Note:** Python source code imported by your function is automatically detected and pushed; only list non-Python files (data, configs) here. |
+| **modules** | `List[str]` | `[]` | Slurm modules to load (e.g., `['gcc/13.2.0', 'python/3.12.1']`). Ignored in Desi mode. |
+| **node_nbr** | `int` | `1` | Number of nodes to request. Fixed to 1 for Desi/Local backends. |
+| **num_gpus** | `int` | `0` | Number of GPUs to request per node. On Curnagl, this auto-loads CUDA modules. |
+| **memory** | `int` | `20` | Amount of RAM in GB to request per node. |
+| **num_cpus** | `int` | `4` | Number of CPUs to request per node. |
+| **max_running_time** | `int` | `60` | Job time limit in minutes. |
+| **runtime_env** | `dict` | `{}` | Ray runtime environment (env vars, etc.). |
+| **server_run** | `bool` | `True` | Set to `False` to force local execution. |
+| **cluster** | `str` | `'curnagl'` | Target: `'curnagl'`, `'desi'`, `'local'`, or a custom IP. |
+| **force_reinstall_venv** | `bool` | `False` | Wipes the remote venv and reinstalls all dependencies from scratch. |
+| **force_reinstall_project**| `bool` | `False` | Cleans the remote project directory before uploading. |
+| **retention_days** | `int` | `7` | Days to keep files on the server (1-30). Automatic cleanup runs daily. |
+| **asynchronous** | `bool` | `False` | If `True`, returns immediately with a `FunctionReturn` tracking object. |
 
 ### Execution
 
 To launch the job, call the instance with the function and its arguments:
 
 ```python
-result = cluster(func, args={}, cancel_old_jobs=True, serialize=True)
+result = launcher(func, args={}, cancel_old_jobs=True, serialize=True)
 ```
 
-- **func** (`Callable`): Function to execute. This function should not be remote but can use ray ressources.
-- **args** (`dict`, optional): Arguments of the function. Defaults to {}.
-- **cancel_old_jobs** (`bool`, optional): Cancel the old jobs. Defaults to True.
-- **serialize** (`bool`, optional): Serialize the function and the arguments. This should be set to False if the function is automatically called by the server. Defaults to True.
+- **func** (`Callable`): The function to run remotely.
+- **args** (`dict`): Arguments for the function.
+- **cancel_old_jobs** (`bool`): If `True`, cancels previous jobs for the same project.
+- **serialize** (`bool`): Internal use; should be `True`.
+
+### Asynchronous Mode & Tracking
+
+When `asynchronous=True`, the launcher returns a `FunctionReturn` object:
+
+```python
+job = launcher(my_function, args={"data": 123})
+
+# Check if finished
+if job.result != "Compute still in progress":
+    print(f"Final result: {job.result}")
+
+# Monitor logs in real-time
+for line in job.logs:
+    print(line, end="")
+
+# Cancel the job if needed
+job.cancel()
+```
+
+### Desi Specifics & Best Practices
+
+1.  **Automatic Dependency Detection**: SlurmRay uses an AST scanner to identify local modules imported by your task. **You do not need to push your source code manually.**
+2.  **Import Limitations**: Static imports are handled perfectly. However, **dynamic imports** (using `importlib` or `__import__`) or dynamic file paths in `open()` might not be detected. Add these manually to the `files` list if necessary.
+3.  **Venv Reuse**: Remote environments are cached. Using the same `project_name` with the same `requirements.txt` allows for near-instant job startup.
+4.  **Log Files**: On Desi, execution logs are stored remotely in `slurmray-server/{project_name}/.slogs/server/`. Use the SlurmRay CLI (`slurmray desi`) to monitor them easily.
+5.  **Ray Dashboard**: Access the Ray Dashboard by pressing `Enter` in the SlurmRay CLI and selecting "Open Dashboard". An SSH tunnel will be created automatically.
 
 ### Example (Desi Mode)
 
-> [!IMPORTANT]
-> **Key Best Practices:**
-> 1. **Do NOT push source code**: SlurmRay automatically detects and synchronizes your `src` directory and dependencies. Only list datasets, config files, or non-Python resources in the `files` argument. SlurmRay will display a warning if redundant Python files or `requirements.txt` are detected in the `files` list.
-> 2. **External Launch Script**: Keep your launch script (e.g., `scripts/launch.py`) separate from your actual project code (e.g., in `src/`).
-> 3. **Credentials in .env**: Never hardcode passwords. Store `DESI_USERNAME` and `DESI_PASSWORD` in a `.env` file at the root of your project.
-
 ```python
-# scripts/launch_desi.py
 from slurmray.RayLauncher import RayLauncher
-from src.my_project.experiment import run_experiment
+from my_package.core import run_model
 
 def main():
-    # Initialize the launcher for Desi server
     launcher = RayLauncher(
-        project_name="my_desi_experiment",
-        # Only push datasets or non-code configs. 
-        # Source code is auto-detected and synced!
-        files=["data/dataset.json", "config/params.yaml"], 
+        project_name="robust_experiment_v1",
+        cluster="desi",
         num_gpus=1,
-        cluster="desi", # Use Desi backend
-        force_reinstall_project=True, # Ensure a clean slate for the project code
+        files=["data/training_set.csv"], # Source code in 'my_package' is auto-detected!
+        retention_days=3
     )
 
-    # Launch the function
-    # The function 'run_experiment' will be executed on the Desi server
-    result = launcher(
-        run_experiment, 
-        args={
-            "epochs": 10,
-            "batch_size": 32,
-            "config_path": "config/params.yaml" # Path relative to project root
-        }
-    )
-    
-    print(f"Experiment Result: {result}")
+    result = launcher(run_model, args={"lr": 0.001})
+    print(f"Result: {result}")
 
 if __name__ == "__main__":
     main()
 ```
-

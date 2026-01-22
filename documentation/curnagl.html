@@ -191,10 +191,8 @@
 
     <nav>
         <div class="container">
-            <a
-                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/index.html">Home</a>
-            <a
-                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/desi.html">Desi</a>
+            <a href="./index.html">Home</a>
+            <a href="./desi.html">Desi</a>
             <a href="#" class="active">Curnagl</a>
         </div>
     </nav>
@@ -227,7 +225,7 @@
         <section class="section">
             <h2>Usage with RayLauncher</h2>
             <p>
-                To use the Curnagl backend, simply set <code>cluster="curnagl"</code> (or your custom cluster name) when
+                To use the Curnagl backend, simply set <code>cluster="curnagl"</code> when
                 initializing <code>RayLauncher</code>.
             </p>
 
@@ -239,12 +237,13 @@ launcher = <span class="function">RayLauncher</span>(
     cluster=<span class="string">"curnagl"</span>,  <span class="comment"># Activates Curnagl/Slurm backend</span>
     node_nbr=<span class="number">4</span>,         <span class="comment"># Number of nodes</span>
     max_running_time=<span class="number">120</span>, <span class="comment"># 2 hours</span>
-    memory=<span class="number">64</span>           <span class="comment"># 64GB per node</span>
+    memory=<span class="number">64</span>,          <span class="comment"># 64GB per node</span>
+    num_cpus=<span class="number">16</span>         <span class="comment"># 16 CPUs per node</span>
 )</code></pre>
         </section>
 
         <section class="section">
-            <h2>Argument Reference</h2>
+            <h2>Argument Reference (Slurm-Specific)</h2>
             <table class="args-table">
                 <thead>
                     <tr>
@@ -262,76 +261,55 @@ launcher = <span class="function">RayLauncher</span>(
                         <td>None</td>
                     </tr>
                     <tr>
-                        <td><span class="code-snippet">cluster</span></td>
-                        <td>str</td>
-                        <td>Must be <code>"curnagl"</code> (or custom IP).</td>
-                        <td>"curnagl"</td>
-                    </tr>
-                    <tr>
-                        <td><span class="code-snippet">files</span></td>
-                        <td>list[str]</td>
-                        <td>List of files/dirs to sync.</td>
-                        <td>[]</td>
-                    </tr>
-                    <tr>
                         <td><span class="code-snippet">node_nbr</span></td>
                         <td>int</td>
-                        <td>Number of separate physical nodes.</td>
+                        <td>Number of separate physical nodes to request.</td>
                         <td>1</td>
                     </tr>
                     <tr>
-                        <td><span class="code-snippet">use_gpu</span></td>
-                        <td>bool</td>
-                        <td>If True, requests GPU resources/modules.</td>
-                        <td>False</td>
+                        <td><span class="code-snippet">num_gpus</span></td>
+                        <td>int</td>
+                        <td>Number of GPUs per node. Auto-loads CUDA/CuDNN.</td>
+                        <td>0</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">memory</span></td>
                         <td>int</td>
                         <td>RAM per node (GB).</td>
-                        <td>64</td>
+                        <td>20</td>
                     </tr>
                     <tr>
-                        <td><span class="code-snippet">max_running_time</span></td>
+                        <td><span class="code-snippet">num_cpus</span></td>
                         <td>int</td>
-                        <td>Max duration in minutes.</td>
-                        <td>60</td>
+                        <td>Number of CPUs per node.</td>
+                        <td>4</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">modules</span></td>
                         <td>list[str]</td>
-                        <td>Slurm modules (e.g. <code>["gcc/13.2.0"]</code>).</td>
+                        <td>Slurm modules to load (e.g. <code>["gcc/13.2.0"]</code>).</td>
                         <td>[]</td>
-                    </tr>
-                    <tr>
-                        <td><span class="code-snippet">runtime_env</span></td>
-                        <td>dict</td>
-                        <td>Ray runtime env configuration.</td>
-                        <td>{...}</td>
-                    </tr>
-                    <tr>
-                        <td><span class="code-snippet">retention_days</span></td>
-                        <td>int</td>
-                        <td>Days to keep remote files.</td>
-                        <td>7</td>
                     </tr>
                 </tbody>
             </table>
         </section>
 
         <section class="section">
-            <h2>Advanced Features</h2>
+            <h2>Advanced Orchestration</h2>
             <h3>Automated Module Management</h3>
             <p>
                 The Curnagl backend keeps your environment sane. It automatically loads the optimal versions of GCC,
                 Python, and CUDA
-                that match the Desi-Labs standards, ensuring binary compatibility for compiled packages.
+                that match the Desi-Labs standards (e.g., GCC 13.2.0, Python 3.12.1), ensuring binary compatibility for compiled packages.
+            </p>
+            <h3>Transparent Dependencies</h3>
+            <p>
+                SlurmRay's AST scanner ensures that all local packages and imported scripts are pushed to the cluster's temporary workspace. No manual setup or <code>rsync</code> commands are required.
             </p>
             <h3>Job Cleanup</h3>
             <p>
-                The <code>cancel()</code> method sends a <code>scancel</code> command to the cluster, instantly
-                terminating the job
-                and freeing up your allocation priority.
+                The <code>cancel()</code> method or the SlurmRay CLI can be used to send a <code>scancel</code> command, instantly
+                terminating the job and freeing up cluster resources.
             </p>
         </section>
 

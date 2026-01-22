@@ -129,6 +129,15 @@
             padding: 0.2rem 0.4rem;
             border-radius: 4px;
         }
+
+        .info-box {
+            background: rgba(124, 77, 255, 0.1);
+            border-left: 4px solid var(--primary-color);
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 0 8px 8px 0;
+            font-size: 0.95rem;
+        }
     </style>
 </head>
 
@@ -136,12 +145,9 @@
 
     <nav>
         <div class="container">
-            <a
-                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/index.html">Home</a>
-            <a
-                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/desi.html">Desi</a>
-            <a
-                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/curnagl.html">Curnagl</a>
+            <a href="./index.html">Home</a>
+            <a href="./desi.html">Desi</a>
+            <a href="./curnagl.html">Curnagl</a>
             <a href="#" class="active">RayLauncher API</a>
         </div>
     </nav>
@@ -161,10 +167,14 @@
 
                 <h3>Constructor</h3>
                 <div class="method-sig">
-                    __init__(project_name, files=[], modules=[], node_nbr=1, use_gpu=False, memory=64,
-                    max_running_time=60, runtime_env={}, server_run=True, server_username=None, server_password=None,
-                    log_file="logs/RayLauncher.log", cluster="curnagl", force_reinstall_venv=False, retention_days=7,
-                    asynchronous=False)
+                    __init__(project_name, files=[], modules=[], node_nbr=1, num_gpus=0, memory=20, num_cpus=4,
+                    max_running_time=60, runtime_env={}, server_run=True, server_ssh=None, server_username=None, 
+                    server_password=None, log_file="logs/RayLauncher.log", cluster="curnagl", 
+                    force_reinstall_venv=False, force_reinstall_project=False, retention_days=7, asynchronous=False)
+                </div>
+
+                <div class="info-box">
+                    <strong>Auto-Detection:</strong> SlurmRay automatically detects Python source files imported by your task. Only use the <code>files</code> parameter for non-Python assets like data or configs.
                 </div>
 
                 <table class="param-table">
@@ -181,29 +191,27 @@
                             <td><code>project_name</code></td>
                             <td>str</td>
                             <td>None</td>
-                            <td><strong>Required.</strong> Unique identifier for the project. Creates
-                                <code>~/.slogs/&lt;project_name&gt;</code> on the remote server.</td>
+                            <td><strong>Required.</strong> Unique identifier for the project. Used for organization and venv reuse.</td>
                         </tr>
                         <tr>
                             <td><code>cluster</code></td>
                             <td>str</td>
                             <td>'curnagl'</td>
-                            <td>Target environment. Options: <code>'curnagl'</code>, <code>'desi'</code>,
-                                <code>'local'</code>, or a custom IP/Hostname.</td>
+                            <td>Target environment: <code>'curnagl'</code>, <code>'desi'</code>,
+                                <code>'local'</code>, or a custom IP.</td>
                         </tr>
                         <tr>
                             <td><code>files</code></td>
                             <td>List[str]</td>
                             <td>[]</td>
-                            <td>List of file/directory paths (relative to project root) to synchronize to the server.
+                            <td>List of extra local files/directories to synchronize (relative to project root).
                             </td>
                         </tr>
                         <tr>
                             <td><code>modules</code></td>
                             <td>List[str]</td>
                             <td>[]</td>
-                            <td>Slurm modules to load (e.g., <code>['gcc/13.2.0']</code>). Ignored if
-                                <code>cluster='desi'</code>.</td>
+                            <td>Slurm modules to load (e.g., <code>['gcc/13.2.0']</code>). Ignored on Desi.</td>
                         </tr>
                         <tr>
                             <td><code>node_nbr</code></td>
@@ -212,52 +220,64 @@
                             <td>Number of nodes to allocate. Forced to 1 for <code>'desi'</code>.</td>
                         </tr>
                         <tr>
-                            <td><code>use_gpu</code></td>
-                            <td>bool</td>
-                            <td>False</td>
-                            <td>If True, requests GPU resources and auto-loads CUDA/CuDNN modules on Slurm.</td>
+                            <td><code>num_gpus</code></td>
+                            <td>int</td>
+                            <td>0</td>
+                            <td>Number of GPUs to request per node. Auto-loads CUDA/CuDNN on Slurm.</td>
+                        </tr>
+                        <tr>
+                            <td><code>num_cpus</code></td>
+                            <td>int</td>
+                            <td>4</td>
+                            <td>Number of CPUs to use per node.</td>
                         </tr>
                         <tr>
                             <td><code>memory</code></td>
                             <td>int</td>
-                            <td>64</td>
-                            <td>RAM to request per node in GB. Ignored on Desi (shared).</td>
+                            <td>20</td>
+                            <td>RAM to request per node in GB.</td>
                         </tr>
                         <tr>
                             <td><code>max_running_time</code></td>
                             <td>int</td>
                             <td>60</td>
-                            <td>Maximum execution time in minutes before timeout.</td>
+                            <td>Maximum execution time in minutes.</td>
                         </tr>
                         <tr>
                             <td><code>runtime_env</code></td>
                             <td>dict</td>
                             <td>{'env_vars': {}}</td>
-                            <td>Ray runtime environment configuration (e.g. environment variables).</td>
+                            <td>Ray runtime environment configuration.</td>
                         </tr>
                         <tr>
                             <td><code>server_run</code></td>
                             <td>bool</td>
                             <td>True</td>
-                            <td>If False, forces local execution regardless of cluster setting.</td>
+                            <td>If False, forces local execution.</td>
                         </tr>
                         <tr>
                             <td><code>force_reinstall_venv</code></td>
                             <td>bool</td>
                             <td>False</td>
-                            <td>If True, deletes and recreates the remote virtualenv. Use to fix dependency issues.</td>
+                            <td>Wipe and recreate the remote virtual environment.</td>
+                        </tr>
+                        <tr>
+                            <td><code>force_reinstall_project</code></td>
+                            <td>bool</td>
+                            <td>False</td>
+                            <td>Clean the remote project directory before upload.</td>
                         </tr>
                         <tr>
                             <td><code>retention_days</code></td>
                             <td>int</td>
                             <td>7</td>
-                            <td>Number of days to keep remote files and venvs active (1-30).</td>
+                            <td>Days to keep remote files and venvs (1-30).</td>
                         </tr>
                         <tr>
                             <td><code>asynchronous</code></td>
                             <td>bool</td>
                             <td>False</td>
-                            <td>If True, <code>__call__</code> returns a <code>FunctionReturn</code> object immediately.
+                            <td>Return a <code>FunctionReturn</code> object immediately.
                             </td>
                         </tr>
                     </tbody>
@@ -288,19 +308,19 @@
                             <td><code>func</code></td>
                             <td>Callable</td>
                             <td>-</td>
-                            <td>The function to execute. Must be picklable.</td>
+                            <td>The function to execute.</td>
                         </tr>
                         <tr>
                             <td><code>args</code></td>
                             <td>dict</td>
                             <td>{}</td>
-                            <td>Keyword arguments to pass to the function.</td>
+                            <td>Keyword arguments for the function.</td>
                         </tr>
                         <tr>
                             <td><code>cancel_old_jobs</code></td>
                             <td>bool</td>
                             <td>True</td>
-                            <td>If True, cancels previous jobs for this project before starting.</td>
+                            <td>Cancels previous jobs for this project before starting.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -357,6 +377,15 @@
         </section>
 
     </main>
+
+    <footer
+        style="padding: 4rem 0; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.9rem; margin-top: 4rem;">
+        <div class="container">
+            <p>&copy; 2026 <a href="https://www.unil.ch/hec/fr/home/menuinst/faculte/departements/desi.html"
+                    target="_blank" style="color: var(--text-muted); text-decoration: underline;">DESI @ HEC UNIL</a>.
+                Powered by Ray & Slurm.</p>
+        </div>
+    </footer>
 </body>
 
 </html>

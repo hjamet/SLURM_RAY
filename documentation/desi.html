@@ -184,6 +184,14 @@
         .number {
             color: #79c0ff;
         }
+
+        .info-box {
+            background: rgba(3, 169, 244, 0.1);
+            border-left: 4px solid var(--secondary-color);
+            padding: 1.5rem;
+            margin: 2rem 0;
+            border-radius: 0 8px 8px 0;
+        }
     </style>
 </head>
 
@@ -191,11 +199,9 @@
 
     <nav>
         <div class="container">
-            <a
-                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/index.html">Home</a>
+            <a href="./index.html">Home</a>
             <a href="#" class="active">Desi</a>
-            <a
-                href="https://htmlpreview.github.io/?https://github.com/hjamet/SLURM_RAY/blob/main/documentation/curnagl.html">Curnagl</a>
+            <a href="./curnagl.html">Curnagl</a>
         </div>
     </nav>
 
@@ -217,128 +223,103 @@
                 It is optimized for rapid iteration, immediate feedback, and bypassing the
                 queue times often associated with Slurm clusters.
             </p>
+            <div class="info-box">
+                <strong>No Manual Source Push:</strong> SlurmRay automatically scans your local imports and pushes necessary code. You only need to specify data files or non-Python resources in the <code>files</code> argument.
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>Best Practices for Desi</h2>
+            <h3>1. Intelligent Project Naming</h3>
             <p>
-                While the Curnagl interface handles the heavy lifting of multi-node clusters, the Desi interface
-                provides a lightweight, agile environment
-                that feels exactly like running code on your own laptop—but with 128 cores and 500GB of RAM.
+                Use the same <code>project_name</code> for all calculations belonging to the same project. SlurmRay checks the hash of your requirements: if they haven't changed, the remote virtual environment is reused instantly, avoiding redundant installations.
+            </p>
+
+            <h3>2. Automatic Dependency Detection</h3>
+            <p>
+                While SlurmRay is smart, it has limits. Static imports are detected perfectly, but <strong>dynamic imports</strong> (e.g., <code>importlib.import_module</code>) or files accessed via dynamic paths in <code>open()</code> might be missed. If you encounter "ModuleNotFound" errors on the server, add the missing items to the <code>files</code> list manually.
+            </p>
+
+            <h3>3. Resource Monitoring with CLI</h3>
+            <p>
+                Always use the SlurmRay CLI to monitor your jobs:
+                <pre style="padding: 1rem; margin: 1rem 0;"><code>slurmray desi</code></pre>
+                This allows you to see real-time job status, cancel stalled tasks, and open the Ray Dashboard via an automated SSH tunnel.
+            </p>
+
+            <h3>4. Automatic Cleanup</h3>
+            <p>
+                To prevent server congestion, all project files and virtual environments are automatically deleted after the specified <code>retention_days</code> (default is 7 days).
             </p>
         </section>
 
         <section class="section">
             <h2>Complete Example</h2>
             <p>
-                This example demonstrates a typical workflow using the Desi backend to train a model on a remote server.
-                Notice how minimal the change is from local code.
+                Notice how the launcher automatically detects that <code>src.my_model</code> is a local dependency and pushes it.
             </p>
 
             <pre><code><span class="keyword">from</span> slurmray <span class="keyword">import</span> RayLauncher
-<span class="keyword">import</span> time
+<span class="keyword">from</span> src.my_model <span class="keyword">import</span> train
 
-<span class="comment"># 1. Define the task locally</span>
-<span class="keyword">def</span> <span class="function">train_and_evaluate</span>(seed, epochs):
-    print(f"Starting training with seed {seed}")
-    <span class="comment"># Simulate heavy work</span>
-    time.sleep(10) 
-    accuracy = 0.95 + (seed * 0.001)
-    <span class="keyword">return</span> {<span class="string">"seed"</span>: seed, <span class="string">"accuracy"</span>: accuracy}
-
-<span class="comment"># 2. Configure for Desi Server</span>
+<span class="comment"># Configure for Desi Server</span>
 launcher = <span class="function">RayLauncher</span>(
-    project_name=<span class="string">"desi_demo_v1"</span>,
+    project_name=<span class="string">"alpha_model_v1"</span>,
     cluster=<span class="string">"desi"</span>,        <span class="comment"># Activates Desi Interface</span>
-    server_username=<span class="string">"henri"</span>, <span class="comment"># Optional if set in .env</span>
-    files=[<span class="string">"data/"</span>]       <span class="comment"># Upload local data folder</span>
+    files=[<span class="string">"data/raw_data.parquet"</span>], <span class="comment"># Only data, code is auto-detected!</span>
+    num_gpus=<span class="number">1</span>,
+    memory=<span class="number">32</span>
 )
 
-<span class="comment"># 3. Execute Remote Task</span>
-print(<span class="string">"🚀 Launching task to Desi..."</span>)
-result = launcher(
-    train_and_evaluate, 
-    args={
-        <span class="string">"seed"</span>: <span class="number">42</span>, 
-        <span class="string">"epochs"</span>: <span class="number">100</span>
-    }
-)
-
-print(f"✅ Received Result: {result}")</code></pre>
+<span class="comment"># Execute Remote Task</span>
+result = launcher(train, args={<span class="string">"lr"</span>: <span class="number">0.001</span>})
+print(f"✅ Result: {result}")</code></pre>
         </section>
 
         <section class="section">
-            <h2>Detailed Argument Reference</h2>
+            <h2>Log Locations</h2>
+            <p>
+                If something goes wrong, you can find logs in:
+                <ul style="list-style-position: inside; color: #8b949e; margin-top: 1rem;">
+                    <li><strong>Local:</strong> <code>logs/RayLauncher.log</code> (detailed bridge logs)</li>
+                    <li><strong>Remote:</strong> <code>~/slurmray-server/{project_name}/.slogs/server/</code> (standard output of your task)</li>
+                </ul>
+            </p>
+        </section>
+
+        <section class="section">
+            <h2>Argument Reference (Desi-Specific)</h2>
             <table class="args-table">
                 <thead>
                     <tr>
                         <th>Argument</th>
-                        <th>Type</th>
-                        <th>Required</th>
+                        <th>Default</th>
                         <th>Description</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
                         <td><span class="code-snippet">cluster</span></td>
-                        <td>str</td>
-                        <td>Yes</td>
-                        <td>Set to <code>"desi"</code> to activate the Desi interface.</td>
-                    </tr>
-                    <tr>
-                        <td><span class="code-snippet">project_name</span></td>
-                        <td>str</td>
-                        <td>Yes</td>
-                        <td>Unique identifier for the workspace. Creates <code>~/.slogs/project_name</code> on the
-                            remote server.</td>
-                    </tr>
-                    <tr>
-                        <td><span class="code-snippet">files</span></td>
-                        <td>list[str]</td>
-                        <td>No</td>
-                        <td>List of local files/dirs to sync. Auto-sync via <code>rsync</code>.</td>
-                    </tr>
-                    <tr>
-                        <td><span class="code-snippet">server_username</span></td>
-                        <td>str</td>
-                        <td>No</td>
-                        <td>SSH username. Defaults to <code>DESI_USERNAME</code> in <code>.env</code>.</td>
-                    </tr>
-                    <tr>
-                        <td><span class="code-snippet">force_reinstall_venv</span></td>
-                        <td>bool</td>
-                        <td>No</td>
-                        <td>If <code>True</code>, wipes and reinstalls the remote venv.</td>
-                    </tr>
-                    <tr>
-                        <td><span class="code-snippet">runtime_env</span></td>
-                        <td>dict</td>
-                        <td>No</td>
-                        <td>Ray runtime environment (e.g., environment variables).</td>
+                        <td><code>"curnagl"</code></td>
+                        <td>Set to <code>"desi"</code> for standalone server execution.</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">retention_days</span></td>
-                        <td>int</td>
-                        <td>No</td>
-                        <td>Days to keep files on server (default: 7).</td>
+                        <td><code>7</code></td>
+                        <td>Days until automatic deletion of remote files (1-30).</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">force_reinstall_venv</span></td>
+                        <td><code>False</code></td>
+                        <td>Forces a clean re-installation of the virtual environment.</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">node_nbr</span></td>
-                        <td>int</td>
-                        <td>No</td>
-                        <td>Ignored (always 1).</td>
+                        <td><code>1</code></td>
+                        <td>Ignored on Desi (fixed to 1 node).</td>
                     </tr>
                 </tbody>
             </table>
-        </section>
-
-        <section class="section">
-            <h2>Why use the Desi Backend?</h2>
-            <p>
-                It is built for <strong>speed and agility</strong>.
-            </p>
-            <ul style="list-style-position: inside; color: #8b949e;">
-                <li>⚡ <strong>Zero Queue Time</strong>: Unlike Slurm, jobs on Desi-Lab servers start immediately.</li>
-                <li>🔄 <strong>Smart Sync</strong>: Changes to your code are reflected instantly on the server.</li>
-                <li>🛠 <strong>Shared Resource Management</strong>: It is polite. It shares resources with other users
-                    on the server without strict exclusivity, making it perfect for development and testing phases.</li>
-            </ul>
         </section>
 
     </main>
