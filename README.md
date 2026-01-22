@@ -1,5 +1,8 @@
 # SlurmRay v8.1.x - Autonomous Distributed Ray on Slurm
 
+> [!IMPORTANT]
+> **Bug Reports**: SlurmRay is in beta. If you find a bug, please [report it on GitHub](https://github.com/hjamet/SLURM_RAY/issues).
+
 > [!TIP]
 > **Full Documentation**: Access the complete documentation [here](https://htmlpreview.github.io/?https://raw.githubusercontent.com/hjamet/SLURM_RAY/main/documentation/index.html).
 

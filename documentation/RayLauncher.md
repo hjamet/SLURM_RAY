@@ -1,5 +1,8 @@
 # RayLauncher API Documentation
 
+> [!IMPORTANT]
+> **Bug Reports**: SlurmRay is in beta. If you find a bug, please [report it on GitHub](https://github.com/hjamet/SLURM_RAY/issues).
+
 **RayLauncher** is a module for effortlessly distributing tasks on a [Slurm](https://slurm.schedmd.com/) cluster (like Curnagl) or a standalone server (like ISIPOL09/Desi) using the [Ray](https://ray.io/) library.
 
 ## Class `RayLauncher`
