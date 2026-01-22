@@ -289,10 +289,33 @@ if not os.path.exists(LOCK_FILE):
 
 for attempt in range(max_retries):
     try:
-        # Acquire lock on the LOCK_FILE
-        # Use low-level open to avoid truncation ('w') which fails if not owner
-        fd = os.open(LOCK_FILE, os.O_RDWR | os.O_CREAT)
-        lock_fd = os.fdopen(fd, 'r+')
+    try:
+        # Robust Lock Acquisition Loop
+        lock_fd = None
+        for _ in range(3):
+            try:
+                # Try opening existing without O_CREAT
+                fd = os.open(LOCK_FILE, os.O_RDWR)
+            except OSError as e:
+                if e.errno == 2: # FileNotFoundError
+                    try:
+                        # Create exclusively
+                        fd = os.open(LOCK_FILE, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o666)
+                        os.chmod(LOCK_FILE, 0o666)
+                    except OSError as e_create:
+                        if e_create.errno == 17: # FileExistsError
+                            continue
+                        pass # proceed to retry loop or fail
+                else:
+                    pass # retry or fail
+            
+            if 'fd' in locals():
+                lock_fd = os.fdopen(fd, 'r+')
+                break
+        
+        if not lock_fd:
+            continue # Try outer retry loop
+
         try:
             fcntl.lockf(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             
@@ -302,17 +325,33 @@ for attempt in range(max_retries):
             input_jobs = json.loads(queue_json)
             state = {{"jobs": input_jobs}}
             
-            # Write to state file using low-level open to safe-guard permissions
-            # We already have the lock, so we can safely manipulate the file content
-            # Open matching the lock file fix style
-            state_fd = os.open(QUEUE_FILE, os.O_RDWR | os.O_CREAT)
-            with os.fdopen(state_fd, 'w') as f:
-                f.truncate(0) 
-                f.seek(0)
-                json.dump(state, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            
+            # Robust State File Writing Loop
+            state_fd = None
+            for _ in range(3):
+                try:
+                    sfd = os.open(QUEUE_FILE, os.O_RDWR)
+                except OSError as e:
+                    if e.errno == 2:
+                        try:
+                            sfd = os.open(QUEUE_FILE, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o666)
+                            os.chmod(QUEUE_FILE, 0o666)
+                        except OSError as e_create:
+                            if e_create.errno == 17: continue
+                            raise e_create
+                    else:
+                        raise e
+                
+                state_fd = sfd
+                break
+
+            if state_fd:
+                with os.fdopen(state_fd, 'w') as f:
+                    f.truncate(0) 
+                    f.seek(0)
+                    json.dump(state, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+
             fcntl.lockf(lock_fd, fcntl.LOCK_UN)
             success = True
             break

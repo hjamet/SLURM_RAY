@@ -49,23 +49,40 @@ def load_state():
 
 def save_state(state):
     '''Save state to JSON file'''
-    '''Save state to JSON file'''
-    # Use low-level open to avoid truncation permission errors on shared files
-    # We open with O_RDWR (read/write) | O_CREAT (create if missing)
-    # This preserves ownership and permissions if file exists
-    try:
-        fd = os.open(STATE_FILE, os.O_RDWR | os.O_CREAT)
-        # Verify we can write
-        with os.fdopen(fd, 'w') as f:
-            f.truncate(0) # Truncate content explicitly (requires write permission, but not ownership)
-            f.seek(0)
-            json.dump(state, f, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-    except IOError as e:
-        print(f"❌ Error saving state file {STATE_FILE}: {e}")
-        # Critical failure if we can't save state
-        sys.exit(1)
+    # Retry loop to handle race conditions and security restrictions
+    for _ in range(3):
+        try:
+            # Try to open existing file WITHOUT O_CREAT first
+            # This avoids the kernel security check for O_CREAT on sticky dir files owned by others
+            fd = os.open(STATE_FILE, os.O_RDWR)
+        except OSError as e:
+            if e.errno == 2: # FileNotFoundError
+                try:
+                    # Create exclusively
+                    fd = os.open(STATE_FILE, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o666)
+                    os.chmod(STATE_FILE, 0o666) # Ensure permissions are open
+                except OSError as e_create:
+                    if e_create.errno == 17: # FileExistsError (Race condition)
+                        continue # Retry loop
+                    raise e_create
+            else:
+                raise e # Real permission error or other
+
+        # Once opened, write content
+        try:
+            with os.fdopen(fd, 'w') as f:
+                f.truncate(0)
+                f.seek(0)
+                json.dump(state, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            return # Success
+        except Exception as e:
+            print(f"❌ Error writing state file {STATE_FILE}: {e}")
+            sys.exit(1)
+
+    print(f"❌ Could not open/create state file {STATE_FILE} after retries")
+    sys.exit(1)
 
 def is_pid_running(pid):
     '''Check if PID is running using /proc'''
@@ -275,25 +292,31 @@ def print_status_table(state, my_pos, total_waiting, used_cpu, used_ram, used_gp
 def main():
     print(f"🔒 Requesting resources: {REQ_CPU} CPU, {REQ_RAM} GB RAM, {REQ_GPU} GPU", flush=True)
     
-    # Ensure lock file exists with correct permissions
-    if not os.path.exists(LOCK_FILE):
+    # Robust Lock File Opening
+    lock_fd = None
+    for _ in range(3):
         try:
-            # Create exclusively to set permissions
-            with open(LOCK_FILE, 'w') as f:
-                pass
-            os.chmod(LOCK_FILE, 0o666) # Try to make it writable for all
-        except IOError:
-            pass # Maybe registered by another user shortly after check
+            # Try opening existing without O_CREAT (avoids sticky bit security check)
+            fd = os.open(LOCK_FILE, os.O_RDWR)
+        except OSError as e:
+            if e.errno == 2: # FileNotFoundError
+                try:
+                    # Create exclusively
+                    fd = os.open(LOCK_FILE, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o666)
+                    os.chmod(LOCK_FILE, 0o666)
+                except OSError as e_create:
+                    if e_create.errno == 17: # FileExistsError
+                        continue
+                    raise e_create
+            else:
+                print(f"❌ Could not open lock file {LOCK_FILE}: {e}")
+                sys.exit(1)
         
-    try:
-        # Use low-level open to avoid truncation ('w') which fails if not owner
-        # O_RDWR (read/write) | O_CREAT (create if missing)
-        # file usually exists from check above, but O_CREAT handles race
-        fd = os.open(LOCK_FILE, os.O_RDWR | os.O_CREAT)
         lock_fd = os.fdopen(fd, 'r+')
-    except IOError as e:
-        print(f"❌ Could not open lock file {LOCK_FILE}: {e}")
-        # If permission denied despite our best efforts, we cannot sync.
+        break
+
+    if not lock_fd:
+        print(f"❌ Failed to obtain lock file handle after retries")
         sys.exit(1)
     
     allocated_gpu_ids = []
