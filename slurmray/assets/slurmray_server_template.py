@@ -1,14 +1,14 @@
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 if __name__ == "__main__":
-    # Note: This template creates a RayLauncher instance that runs on the cluster.
+    # Note: This template creates a Cluster instance that runs on the cluster.
     # The function execution is handled by spython.py which loads the serialized function.
     # With the refactored API, we don't need to call cluster() here because:
     # 1. The function is already serialized (func_source.py, func.pkl, args.pkl)
     # 2. The actual execution is done via sbatch -> spython.py
-    # The RayLauncher instance here is just used to detect cluster mode and submit the job.
+    # The Cluster instance here is just used to detect cluster mode and submit the job.
     
-    cluster = RayLauncher(
+    cluster = Cluster(
         project_name="server",
         modules={{MODULES}},
         node_nbr={{NODE_NBR}},

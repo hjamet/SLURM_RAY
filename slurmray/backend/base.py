@@ -16,7 +16,7 @@ class ClusterBackend(ABC):
         Initialize the backend.
 
         Args:
-            launcher: The RayLauncher instance containing configuration
+            launcher: The Cluster instance containing configuration
         """
         self.launcher = launcher
         self.logger = launcher.logger

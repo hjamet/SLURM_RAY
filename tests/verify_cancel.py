@@ -2,7 +2,7 @@
 import time
 import os
 import dill
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 def long_sleep(x):
     import time
@@ -12,7 +12,7 @@ def long_sleep(x):
 
 def verify_cancel():
     print("Launching long task...")
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="cancel_test",
         asynchronous=True,
         cluster="local"

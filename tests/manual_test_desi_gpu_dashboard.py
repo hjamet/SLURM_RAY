@@ -1,5 +1,5 @@
 
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 import ray
 import os
 import time
@@ -58,7 +58,7 @@ def manual_test_desi_gpu():
     print("ℹ️  This test will connect to Desi, request GPU resources, and verify the environment.")
 
     # Initialize cluster
-    cluster = RayLauncher(
+    cluster = Cluster(
         project_name="test_desi_gpu_dashboard",
         files=[],
         modules=[], # Desi doesn't use modules

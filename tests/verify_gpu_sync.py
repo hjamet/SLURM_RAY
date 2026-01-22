@@ -1,7 +1,7 @@
 
 import os
 import time
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 def simple_gpu_check(job_id_suffix):
     """
@@ -37,7 +37,7 @@ def run_test():
     # Assuming user env is set up.
     
     print("Launching job 1...")
-    launcher1 = RayLauncher(
+    launcher1 = Cluster(
         project_name=project_name,
         cluster="desi", # Use Desi as we have credentials
         use_gpu=True,
@@ -52,7 +52,7 @@ def run_test():
     print("Result 1:", res1)
     
     print("\nLaunching job 2 (Should use cached environment and NOT re-upload unchanged files)...")
-    launcher2 = RayLauncher(
+    launcher2 = Cluster(
         project_name=project_name,
         cluster="desi",
         use_gpu=True,

@@ -11,7 +11,7 @@ Utilisation:
 5. Le dashboard s'ouvrira automatiquement dans votre navigateur
 """
 
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 import ray
 import os
 import time
@@ -130,7 +130,7 @@ def test_gpu_dashboard_long():
     if server_password is None:
         server_password = getpass("Enter your cluster password: ")
 
-    cluster = RayLauncher(
+    cluster = Cluster(
         project_name="test_gpu_dashboard_long",
         files=[],
         modules=[],  # Modules CUDA/CUDNN seront ajoutés automatiquement avec use_gpu=True

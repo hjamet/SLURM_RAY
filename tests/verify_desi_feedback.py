@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 # Load env vars explicitly
 load_dotenv()
 
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 from slurmray.cli import DesiManager
 
 # Dummy function to run
@@ -31,7 +31,7 @@ def main():
     
     # 2. Launch Job 1 (Consumes resources)
     print("\n🚀 Launching Job 1 (24 CPUs)...")
-    launcher1 = RayLauncher(
+    launcher1 = Cluster(
         project_name="verification_job_1",
         modules=[],
         node_nbr=1,
@@ -54,7 +54,7 @@ def main():
         
     # 3. Launch Job 2 (Should Queue properly now)
     print("\n🚀 Launching Job 2 (Requires 1 CPU, should wait)...")
-    launcher2 = RayLauncher(
+    launcher2 = Cluster(
         project_name="verification_job_2",
         modules=[],
         node_nbr=1,

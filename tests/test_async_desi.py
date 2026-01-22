@@ -1,7 +1,7 @@
 import time
 import os
 import dill
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 def remote_task(x):
     import time
@@ -20,7 +20,7 @@ def verify_desi_async():
     # We rely on .env for credentials.
     # If not present, this script will fail (interactive prompt/error).
     
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="desi_async_test",
         cluster="desi",
         asynchronous=True

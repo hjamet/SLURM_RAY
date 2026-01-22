@@ -1,5 +1,5 @@
 
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 import ray
 # import torch # Removing torch dependency for this test to be lighter if not installed
 import os
@@ -16,7 +16,7 @@ def test_desi_execution():
         print("Skipping Desi test (DESI_PASSWORD not found)")
         return
 
-    cluster = RayLauncher(
+    cluster = Cluster(
         project_name="test_desi_integration",
         files=[],
         modules=[],

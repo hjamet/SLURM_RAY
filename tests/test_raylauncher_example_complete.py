@@ -12,7 +12,7 @@ from pathlib import Path
 # Ajouter le répertoire parent au path pour les imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 import ray
 import torch
 
@@ -50,7 +50,7 @@ def test_raylauncher_example_complete():
             
             # Initialiser RayLauncher exactement comme dans l'exemple
             # Mais en mode local pour éviter les credentials
-            cluster = RayLauncher(
+            cluster = Cluster(
                 project_name="example",  # Name of the project (will create a directory with this name in the current directory)
                 files=(
                     ["documentation/RayLauncher.html"]
@@ -77,7 +77,7 @@ def test_raylauncher_example_complete():
             print("✅ Initialisation de l'exemple réussie")
             
             # Tester la sérialisation de la fonction
-            cluster._RayLauncher__serialize_func_and_args(example_func, {"x": 5})
+            cluster._Cluster__serialize_func_and_args(example_func, {"x": 5})
             
             # Vérifier que les fichiers de sérialisation ont été créés
             assert os.path.exists(os.path.join(cluster.project_path, "func.pkl")), \
@@ -128,7 +128,7 @@ def example_func(x):
 """)
             
             # Initialiser RayLauncher avec files=[] pour tester la détection automatique
-            cluster = RayLauncher(
+            cluster = Cluster(
                 project_name="example_auto",
                 files=[],  # Liste vide pour tester la détection
                 server_run=False,

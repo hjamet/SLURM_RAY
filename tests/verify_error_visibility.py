@@ -5,7 +5,7 @@ import os
 # Add project root to sys.path
 sys.path.append(os.getcwd())
 
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 def failing_task():
     print("HELLO FROM REMOTE")
@@ -14,7 +14,7 @@ def failing_task():
     raise ValueError("This is a TEST EXCEPTION to verify traceback visibility.")
 
 if __name__ == "__main__":
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="error_verification",
         cluster="desi",
         node_nbr=1,

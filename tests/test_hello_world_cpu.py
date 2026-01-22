@@ -4,7 +4,7 @@ Test hello world CPU pour vérifier que SLURM_RAY fonctionne correctement sur CP
 Ce test peut être exécuté directement ou via pytest.
 """
 
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 import ray
 import os
 from getpass import getpass
@@ -43,7 +43,7 @@ def test_hello_world_cpu():
     if server_password is None:
         server_password = getpass("Enter your cluster password: ")
 
-    cluster = RayLauncher(
+    cluster = Cluster(
         project_name="test_hello_world_cpu",
         files=[],
         modules=[],

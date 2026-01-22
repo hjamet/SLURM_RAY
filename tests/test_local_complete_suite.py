@@ -3,7 +3,7 @@ import pytest
 import os
 import time
 import sys
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 # --- Helper Functions (Tasks) ---
 
@@ -36,7 +36,7 @@ def concurrency_task(duration):
 
 def test_local_cpu_execution():
     """Verify basic CPU execution in local mode."""
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="test_local_cpu",
         cluster="local",
         num_cpus=1,
@@ -49,7 +49,7 @@ def test_local_cpu_execution():
 
 def test_local_return_values():
     """Verify complex return value serialization/deserialization in local mode."""
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="test_local_return",
         cluster="local",
         num_cpus=1,
@@ -66,7 +66,7 @@ def test_local_return_values():
 
 def test_local_error_propagation():
     """Verify that exceptions are propagated (or reported) locally."""
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="test_local_error",
         cluster="local",
         num_cpus=1
@@ -84,7 +84,7 @@ def test_local_gpu_execution():
     """Verify GPU execution (use_gpu implied by num_gpus > 0)."""
     # This should run even if no GPU is present (processed by LocalBackend),
     # but torch.cuda.is_available() will return False.
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="test_local_gpu",
         cluster="local",
         num_cpus=1,
@@ -103,7 +103,7 @@ def test_local_concurrency():
     
     print("\nSubmitting concurrent local jobs...")
     for i in range(job_count):
-        launcher = RayLauncher(
+        launcher = Cluster(
             project_name=f"test_local_conc_{i}",
             cluster="local",
             num_cpus=1,

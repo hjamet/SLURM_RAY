@@ -4,7 +4,7 @@ Test hello world GPU pour vérifier que SLURM_RAY fonctionne correctement sur GP
 Ce test peut être exécuté directement ou via pytest.
 """
 
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 import ray
 import os
 from getpass import getpass
@@ -62,7 +62,7 @@ def test_hello_world_gpu():
     if server_password is None:
         server_password = getpass("Enter your cluster password: ")
 
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="hello_world_gpu",
         func=hello_world_gpu,
         args={},

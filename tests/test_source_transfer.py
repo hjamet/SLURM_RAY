@@ -15,7 +15,7 @@ from pathlib import Path
 # Add parent directory to path to import slurmray
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 
 def test_simple_function_source_transfer():
@@ -30,7 +30,7 @@ def test_simple_function_source_transfer():
         os.makedirs(project_path)
 
         # Create cluster instance (minimal config)
-        cluster = RayLauncher(
+        cluster = Cluster(
             project_name="test_source",
             server_run=False,  # Local mode
         )
@@ -39,7 +39,7 @@ def test_simple_function_source_transfer():
         cluster.project_path = project_path
 
         # Serialize function
-        cluster._RayLauncher__serialize_func_and_args(simple_func, {"x": 5})
+        cluster._Cluster__serialize_func_and_args(simple_func, {"x": 5})
 
         # Verify files were created
         # With new strategy, dill pickle is tried first, so func.pkl should exist
@@ -85,13 +85,13 @@ def test_function_with_global_source_transfer():
         project_path = os.path.join(tmpdir, "test_project")
         os.makedirs(project_path)
 
-        cluster = RayLauncher(
+        cluster = Cluster(
             project_name="test_global",
             server_run=False,
         )
         cluster.project_path = project_path
 
-        cluster._RayLauncher__serialize_func_and_args(func_with_global, {"x": 10})
+        cluster._Cluster__serialize_func_and_args(func_with_global, {"x": 10})
 
         # With new strategy, dill pickle handles globals/closures, so func.pkl should exist
         func_pkl_path = os.path.join(project_path, "func.pkl")
@@ -131,13 +131,13 @@ def test_class_method_source_transfer():
         project_path = os.path.join(tmpdir, "test_project")
         os.makedirs(project_path)
 
-        cluster = RayLauncher(
+        cluster = Cluster(
             project_name="test_method",
             server_run=False,
         )
         cluster.project_path = project_path
 
-        cluster._RayLauncher__serialize_func_and_args(obj.method, {"x": 5})
+        cluster._Cluster__serialize_func_and_args(obj.method, {"x": 5})
 
         # With new strategy, dill pickle handles bound methods, so func.pkl should exist
         func_pkl_path = os.path.join(project_path, "func.pkl")
@@ -165,13 +165,13 @@ def test_lambda_source_transfer():
         project_path = os.path.join(tmpdir, "test_project")
         os.makedirs(project_path)
 
-        cluster = RayLauncher(
+        cluster = Cluster(
             project_name="test_lambda",
             server_run=False,
         )
         cluster.project_path = project_path
 
-        cluster._RayLauncher__serialize_func_and_args(lambda_func, {"x": 4})
+        cluster._Cluster__serialize_func_and_args(lambda_func, {"x": 4})
 
         # With new strategy, dill pickle handles lambdas, so func.pkl should exist
         func_pkl_path = os.path.join(project_path, "func.pkl")
@@ -209,14 +209,14 @@ def test_fallback_to_dill():
         project_path = os.path.join(tmpdir, "test_project")
         os.makedirs(project_path)
 
-        cluster = RayLauncher(
+        cluster = Cluster(
             project_name="test_fallback",
             server_run=False,
         )
         cluster.project_path = project_path
 
         # This should not crash, but should log a warning
-        cluster._RayLauncher__serialize_func_and_args(builtin_func, {"x": [1, 2, 3]})
+        cluster._Cluster__serialize_func_and_args(builtin_func, {"x": [1, 2, 3]})
 
         # Verify that func.pkl exists (fallback)
         func_pkl_path = os.path.join(project_path, "func.pkl")

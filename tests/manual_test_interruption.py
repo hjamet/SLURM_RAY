@@ -1,5 +1,5 @@
 import time
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 import ray
 import os
 from dotenv import load_dotenv
@@ -20,7 +20,7 @@ def main():
     print("Le script devrait capturer l'interruption et annuler le job SLURM automatiquement.")
     print("==========================================\n")
 
-    cluster = RayLauncher(
+    cluster = Cluster(
         project_name="test_interruption",
         node_nbr=1,
         use_gpu=False,

@@ -2,7 +2,7 @@
 import time
 import sys
 import os
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 def long_task(duration=30):
     import time
@@ -22,7 +22,7 @@ def main():
     # Launch 5 jobs
     for i in range(5):
         print(f"Submitting Job {i+1}/5...")
-        launcher = RayLauncher(
+        launcher = Cluster(
             project_name=f"verify_parallel_{i}",
             cluster="desi",
             num_cpus=5, # 5 * 5 = 25 > 24 CPUs available

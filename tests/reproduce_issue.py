@@ -2,7 +2,7 @@ import os
 import sys
 import shutil
 import tempfile
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 # Create a temporary directory for the project
 temp_dir = tempfile.mkdtemp()
@@ -50,7 +50,7 @@ try:
     spec.loader.exec_module(main_module)
     task_func = main_module.my_func
     
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="test_repro",
         cluster="local", # Use local to avoid actual connection, we just want to check detection
         files=[] # Empty initially

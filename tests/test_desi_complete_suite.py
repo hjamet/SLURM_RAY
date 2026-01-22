@@ -4,7 +4,7 @@ import os
 import time
 import sys
 from dotenv import load_dotenv
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 # Load environment variables
 load_dotenv()
@@ -49,7 +49,7 @@ def desi_credentials():
 
 def test_desi_cpu_execution(desi_credentials):
     """Verify basic CPU execution."""
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="test_suite_cpu",
         cluster="desi",
         num_cpus=1,
@@ -63,7 +63,7 @@ def test_desi_cpu_execution(desi_credentials):
 
 def test_desi_return_values(desi_credentials):
     """Verify complex return value serialization/deserialization."""
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="test_suite_return",
         cluster="desi",
         num_cpus=1,
@@ -83,7 +83,7 @@ def test_desi_return_values(desi_credentials):
 
 def test_desi_error_propagation(desi_credentials):
     """Verify that remote exceptions are propagated locally."""
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="test_suite_error",
         cluster="desi",
         num_cpus=1,
@@ -105,7 +105,7 @@ def test_desi_gpu_execution(desi_credentials):
     """Verify GPU execution (use_gpu=True)."""
     # Note: efficient checking relies on the cluster actually having GPUs available
     # and the job being scheduled. 
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="test_suite_gpu",
         cluster="desi",
         num_cpus=1,
@@ -132,7 +132,7 @@ def test_desi_concurrency(desi_credentials):
     
     print("\nSubmitting concurrent jobs...")
     for i in range(job_count):
-        launcher = RayLauncher(
+        launcher = Cluster(
             project_name=f"test_suite_conc_{i}",
             cluster="desi",
             num_cpus=1,

@@ -122,7 +122,7 @@ class SlurmBackend(RemoteMixin):
                     pass
 
     # =========================================================================
-    # Private methods extracted from RayLauncher
+    # Private methods extracted from Cluster
     # =========================================================================
 
     def _write_python_script(self):

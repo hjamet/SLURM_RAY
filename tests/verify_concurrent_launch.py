@@ -2,7 +2,7 @@
 import multiprocessing
 import time
 import os
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 def dummy_task(x):
     import time
@@ -14,7 +14,7 @@ def launch_job(job_id):
     project_name = f"slurmray_verify_concurrent_{job_id}"
     
     # Use Desi cluster to test the Tunnel fix
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name=project_name,
         cluster="desi",
         use_gpu=False,

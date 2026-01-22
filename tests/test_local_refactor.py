@@ -1,5 +1,5 @@
 
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 import ray
 import os
 import shutil
@@ -13,7 +13,7 @@ def test_local_execution():
     if os.path.exists(f".slogs/{project_name}"):
         shutil.rmtree(f".slogs/{project_name}")
 
-    cluster = RayLauncher(
+    cluster = Cluster(
         project_name=project_name,
         files=[],
         modules=[],

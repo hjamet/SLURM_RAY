@@ -22,7 +22,7 @@ The launcher automatically selects the appropriate backend based on the `cluster
 ### Initialization
 
 ```python
-class RayLauncher(
+class Cluster(
     project_name: str = None,
     files: List[str] = [],
     modules: List[str] = [],
@@ -36,7 +36,7 @@ class RayLauncher(
     server_ssh: str = None,
     server_username: str = None,
     server_password: str = None,
-    log_file: str = ".slogs/RayLauncher.log",
+    log_file: str = ".slogs/Cluster.log",
     cluster: str = "curnagl",
     force_reinstall_venv: bool = False,
     force_reinstall_project: bool = False,
@@ -108,7 +108,7 @@ job.cancel()
 ### Example (Desi Mode)
 
 ```python
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 from my_package.core import run_model
 
 def main():

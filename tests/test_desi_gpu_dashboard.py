@@ -5,7 +5,7 @@ import concurrent.futures
 import threading
 import os
 import sys
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 
 def job_func(x):
@@ -27,7 +27,7 @@ def job_func(x):
 
 def test_desi_gpu_dashboard():
     print("Initializing RayLauncher for Desi...")
-    cluster = RayLauncher(
+    cluster = Cluster(
         project_name="test_desi_gpu",
         files=[],
         node_nbr=1,  # Always 1

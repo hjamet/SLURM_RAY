@@ -2,7 +2,7 @@ import os
 import sys
 import logging
 from slurmray.scanner import ProjectScanner
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

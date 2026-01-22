@@ -1,5 +1,5 @@
 import time
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 import ray
 import os
 from dotenv import load_dotenv
@@ -18,7 +18,7 @@ def main():
     print("Si le job démarre tout de suite, vous ne verrez peut-être pas le message.")
     print("========================================\n")
 
-    cluster = RayLauncher(
+    cluster = Cluster(
         project_name="test_queue_display",
         node_nbr=1,
         use_gpu=False,

@@ -1,6 +1,6 @@
 
 import subprocess
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 def check_gpu_info():
     print("Checking NVIDIA Driver info...")
@@ -14,7 +14,7 @@ def check_gpu_info():
     return "Done"
 
 if __name__ == "__main__":
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="desi_driver_check",
         cluster="desi",
         use_gpu=True, # Need GPU allocation implication if any, though Desi is shared

@@ -22,7 +22,7 @@ from slurmray.backend.desi import DesiBackend
 dill.settings["recurse"] = True
 
 
-class RayLauncher:
+class Cluster:
     """A class that automatically connects RAY workers and executes the function requested by the user.
 
     Official tool from DESI @ HEC UNIL.
@@ -102,7 +102,7 @@ class RayLauncher:
         server_ssh: str = None,  # Auto-detected from cluster parameter
         server_username: str = None,
         server_password: str = None,
-        log_file: str = ".slogs/RayLauncher.log",
+        log_file: str = ".slogs/Cluster.log",
         cluster: str = "curnagl",  # 'curnagl', 'desi', 'local', or custom IP/hostname
         force_reinstall_venv: bool = False,
         force_reinstall_project: bool = False,
@@ -125,7 +125,7 @@ class RayLauncher:
             server_ssh (str, optional): If `server_run` is set to true, the address of the server to use. Auto-detected from `cluster` parameter if not provided. Defaults to None (auto-detected).
             server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect. Credentials are automatically loaded from a `.env` file (CURNAGL_USERNAME for Curnagl/custom IP, DESI_USERNAME for Desi) if available. Priority: environment variables → explicit parameter → default ("hjamet" for Curnagl/custom IP, "henri" for Desi).
             server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. Credentials are automatically loaded from a `.env` file (CURNAGL_PASSWORD for Curnagl/custom IP, DESI_PASSWORD for Desi) if available. Priority: explicit parameter → environment variables → interactive prompt. CAUTION: never write your password in the code. Defaults to None.
-            log_file (str, optional): Path to the log file. Defaults to ".slogs/RayLauncher.log".
+            log_file (str, optional): Path to the log file. Defaults to ".slogs/Cluster.log".
             cluster (str, optional): Cluster/server to use: 'curnagl' (default, Slurm cluster), 'desi' (ISIPOL09/Desi server), 'local' (local execution), or a custom IP/hostname (for custom Slurm clusters). Defaults to "curnagl".
             force_reinstall_venv (bool, optional): Force complete removal and recreation of virtual environment on remote server/cluster. This will delete the existing venv and reinstall all packages from requirements.txt. Use this if the venv is corrupted or you need a clean installation. Defaults to False.
             force_reinstall_project (bool, optional): Force complete removal of the project directory (excluding logs/venv if possible, but practically cleans the project code) before uploading. Use to ensure a clean state. Defaults to False.
@@ -356,7 +356,7 @@ class RayLauncher:
             os.makedirs(log_dir)
 
         # Configure the logger
-        self.logger = logging.getLogger(f"RayLauncher-{self.project_name}")
+        self.logger = logging.getLogger(f"Cluster-{self.project_name}")
         self.logger.setLevel(logging.INFO)
 
         # Remove existing handlers to avoid duplication if instantiated multiple times
@@ -1127,7 +1127,7 @@ if __name__ == "__main__":
         )
         return result
 
-    cluster = RayLauncher(
+    cluster = Cluster(
         project_name="example",  # Name of the project (will create a directory with this name in the current directory)
         files=["documentation/RayLauncher.html"],  # List of files to push to the server
         num_gpus=1,  # If you need GPU, you can set it to > 0

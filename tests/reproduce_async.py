@@ -3,7 +3,7 @@ import time
 import os
 import sys
 import dill
-from slurmray.RayLauncher import RayLauncher
+from slurmray import Cluster
 
 # Define a function to be executed asynchronously
 def long_task(x):
@@ -20,7 +20,7 @@ def verify_async():
     # Initialize launcher in local mode for testing
     # Note: 'local' mode in RayLauncher usually means running locally but still using the wrapper structure.
     # We might need to handle 'local' mode carefully if it just uses subprocess.
-    launcher = RayLauncher(
+    launcher = Cluster(
         project_name="async_test_repro",
         asynchronous=True,
         cluster="local",
