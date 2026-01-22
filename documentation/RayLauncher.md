@@ -59,7 +59,7 @@ class RayLauncher(
 | **cluster** | `str` | `'curnagl'` | Target: `'curnagl'`, `'desi'`, `'local'`, or a custom IP. |
 | **force_reinstall_venv** | `bool` | `False` | Wipes the remote venv and reinstalls all dependencies from scratch. |
 | **force_reinstall_project**| `bool` | `False` | Cleans the remote project directory before uploading. |
-| **retention_days** | `int` | `7` | Days to keep files on the server (1-30). Automatic cleanup runs daily. |
+| **retention_days** | `int` | `1` | Days to keep files on the server (1-30). Automatic cleanup runs daily. |
 | **asynchronous** | `bool` | `False` | If `True`, returns immediately with a `FunctionReturn` tracking object. |
 
 ### Execution

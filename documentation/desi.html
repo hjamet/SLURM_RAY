@@ -51,10 +51,22 @@
 
         .banner-img {
             width: 100%;
-            max-width: 800px;
+            max-width: 1100px;
+            height: 300px;
+            object-fit: cover;
             border-radius: 20px;
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
             margin-bottom: 3rem;
+        }
+
+        .args-table tr.inapplicable {
+            color: #f85149;
+            opacity: 0.7;
+        }
+
+        .args-table tr.inapplicable .code-snippet {
+            color: #f85149;
+            border: 1px solid rgba(248, 81, 73, 0.3);
         }
 
         h1 {
@@ -249,7 +261,7 @@
 
             <h3>4. Automatic Cleanup</h3>
             <p>
-                To prevent server congestion, all project files and virtual environments are automatically deleted after the specified <code>retention_days</code> (default is 7 days).
+                To prevent server congestion, all project files and virtual environments are automatically deleted after the specified <code>retention_days</code> (default is 1 day).
             </p>
         </section>
 
@@ -289,6 +301,7 @@ print(f"✅ Result: {result}")</code></pre>
 
         <section class="section">
             <h2>Argument Reference (Desi-Specific)</h2>
+            <p>Please provide precise resource requirements (CPU, RAM, GPU) to help optimize the queue for other users.</p>
             <table class="args-table">
                 <thead>
                     <tr>
@@ -299,14 +312,49 @@ print(f"✅ Result: {result}")</code></pre>
                 </thead>
                 <tbody>
                     <tr>
+                        <td><span class="code-snippet">project_name</span></td>
+                        <td><code>None</code></td>
+                        <td><strong>Required.</strong> Consistent naming allows virtual environment reuse.</td>
+                    </tr>
+                    <tr>
                         <td><span class="code-snippet">cluster</span></td>
                         <td><code>"curnagl"</code></td>
                         <td>Set to <code>"desi"</code> for standalone server execution.</td>
                     </tr>
                     <tr>
+                        <td><span class="code-snippet">num_cpus</span></td>
+                        <td><code>4</code></td>
+                        <td>Number of CPUs to reserve. <strong>Please be precise to optimize scheduling.</strong></td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">memory</span></td>
+                        <td><code>20</code></td>
+                        <td>RAM in GB to reserve. <strong>Please be precise to optimize scheduling.</strong></td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">num_gpus</span></td>
+                        <td><code>0</code></td>
+                        <td>Number of GPUs to reserve. <strong>Please be precise to optimize scheduling.</strong></td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">files</span></td>
+                        <td><code>[]</code></td>
+                        <td>Extra data/config files to sync. (Code is auto-detected).</td>
+                    </tr>
+                    <tr>
                         <td><span class="code-snippet">retention_days</span></td>
-                        <td><code>7</code></td>
-                        <td>Days until automatic deletion of remote files (1-30).</td>
+                        <td><code>1</code></td>
+                        <td>Days until automatic deletion of project and venv (1-30).</td>
+                    </tr>
+                    <tr class="inapplicable">
+                        <td><span class="code-snippet">node_nbr</span></td>
+                        <td><code>1</code></td>
+                        <td>Inapplicable: Desi is a single-node server.</td>
+                    </tr>
+                    <tr class="inapplicable">
+                        <td><span class="code-snippet">modules</span></td>
+                        <td><code>[]</code></td>
+                        <td>Inapplicable: Desi does not use a module system.</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">force_reinstall_venv</span></td>
@@ -314,9 +362,14 @@ print(f"✅ Result: {result}")</code></pre>
                         <td>Forces a clean re-installation of the virtual environment.</td>
                     </tr>
                     <tr>
-                        <td><span class="code-snippet">node_nbr</span></td>
-                        <td><code>1</code></td>
-                        <td>Ignored on Desi (fixed to 1 node).</td>
+                        <td><span class="code-snippet">force_reinstall_project</span></td>
+                        <td><code>False</code></td>
+                        <td>Cleans project files on the server before upload.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="code-snippet">asynchronous</span></td>
+                        <td><code>False</code></td>
+                        <td>If True, returns a tracking object immediately.</td>
                     </tr>
                 </tbody>
             </table>

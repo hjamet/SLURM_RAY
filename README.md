@@ -1,5 +1,8 @@
 # SlurmRay v8.1.x - Autonomous Distributed Ray on Slurm
 
+> [!TIP]
+> **Full Documentation**: Access the complete documentation [here](https://htmlpreview.github.io/?https://raw.githubusercontent.com/hjamet/SLURM_RAY/main/documentation/index.html).
+
 > **The intelligent bridge between your local terminal and High-Performance Computing (HPC) power.**
 
 SlurmRay allows you to transparently distribute your Python tasks across Slurm clusters (like Curnagl) or standalone servers (like Desi). It handles environment synchronization, local package detection, and task distribution automatically, turning your local machine into a control center for massive compute resources.
@@ -44,7 +47,7 @@ SlurmRay manages the entire lifecycle of a remote task:
 We recommend using a consistent `project_name` for all related computations. SlurmRay computes a hash of your `requirements.txt`: if it hasn't changed, the remote virtual environment is reused instantly, drastically reducing setup time.
 
 ### Automatic Cleanup
-Files and virtual environments on remote servers are automatically deleted after a retention period (defined by `retention_days`, default 7 days). This ensures the server storage remains clean.
+Files and virtual environments on remote servers are automatically deleted after a retention period (defined by `retention_days`, default 1 day). This ensures the server storage remains clean.
 
 ---
 
