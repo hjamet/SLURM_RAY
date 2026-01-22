@@ -297,7 +297,7 @@
             <h2 class="section-title">Quick Start</h2>
             <p>Transform a local script into a distributed task in seconds:</p>
 
-            <pre><code><span class="keyword">from</span> slurmray <span class="keyword">import</span> RayLauncher
+            <pre><code><span class="keyword">from</span> slurmray <span class="keyword">import</span> Cluster
 
 <span class="comment"># 1. Define your logic</span>
 <span class="keyword">def</span> <span class="function">compute_heavy_pi</span>(n):
@@ -305,7 +305,7 @@
     <span class="keyword">return</span> <span class="blue">3.1415926535</span>
 
 <span class="comment"># 2. Configure the bridge</span>
-launcher = <span class="function">RayLauncher</span>(
+launcher = <span class="function">Cluster</span>(
     project_name=<span class="string">"pi_calc"</span>,
     cluster=<span class="string">"curnagl"</span>,
     node_nbr=<span class="blue">4</span>,
@@ -313,7 +313,7 @@ launcher = <span class="function">RayLauncher</span>(
 )
 
 <span class="comment"># 3. Execute!</span>
-result = launcher(compute_heavy_pi, args={<span class="string">"n"</span>: <span class="blue">10**8</span>})</code></pre>
+result = cluster(compute_heavy_pi, args={<span class="string">"n"</span>: <span class="blue">10**8</span>})</code></pre>
         </section>
 
         <section id="api" class="section">

@@ -70,7 +70,7 @@ class Cluster(
 To launch the job, call the instance with the function and its arguments:
 
 ```python
-result = launcher(func, args={}, cancel_old_jobs=True, serialize=True)
+result = cluster(func, args={}, cancel_old_jobs=True, serialize=True)
 ```
 
 - **func** (`Callable`): The function to run remotely.
@@ -83,7 +83,7 @@ result = launcher(func, args={}, cancel_old_jobs=True, serialize=True)
 When `asynchronous=True`, the launcher returns a `FunctionReturn` object:
 
 ```python
-job = launcher(my_function, args={"data": 123})
+job = cluster(my_function, args={"data": 123})
 
 # Check if finished
 if job.result != "Compute still in progress":
@@ -112,7 +112,7 @@ from slurmray import Cluster
 from my_package.core import run_model
 
 def main():
-    launcher = RayLauncher(
+    cluster = Cluster(
         project_name="robust_experiment_v1",
         cluster="desi",
         num_gpus=1,
@@ -120,7 +120,7 @@ def main():
         retention_days=3
     )
 
-    result = launcher(run_model, args={"lr": 0.001})
+    result = cluster(run_model, args={"lr": 0.001})
     print(f"Result: {result}")
 
 if __name__ == "__main__":

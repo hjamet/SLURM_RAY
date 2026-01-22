@@ -240,7 +240,7 @@
             <pre><code><span class="keyword">from</span> slurmray <span class="keyword">import</span> RayLauncher
 
 <span class="comment"># Initialize SlurmRay for Curnagl Cluster</span>
-launcher = <span class="function">RayLauncher</span>(
+launcher = <span class="function">Cluster</span>(
     project_name=<span class="string">"genomic_analysis_v4"</span>,
     cluster=<span class="string">"curnagl"</span>,  <span class="comment"># Activates Curnagl/Slurm backend</span>
     node_nbr=<span class="number">4</span>,         <span class="comment"># Number of nodes</span>

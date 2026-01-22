@@ -279,7 +279,7 @@ DESI_PASSWORD=your_password</code></pre>
 <span class="keyword">from</span> src.my_model <span class="keyword">import</span> train
 
 <span class="comment"># Configure for Desi Server</span>
-launcher = <span class="function">RayLauncher</span>(
+launcher = <span class="function">Cluster</span>(
     project_name=<span class="string">"alpha_model_v1"</span>,
     cluster=<span class="string">"desi"</span>,
     num_cpus=<span class="number">8</span>,             <span class="comment"># Request 8 cores</span>
@@ -289,7 +289,7 @@ launcher = <span class="function">RayLauncher</span>(
 )
 
 <span class="comment"># Blocks until the result is returned</span>
-result = launcher(train, args={<span class="string">"lr"</span>: <span class="number">0.001</span>})
+result = cluster(train, args={<span class="string">"lr"</span>: <span class="number">0.001</span>})
 print(f"✅ Result: {result}")</code></pre>
 
             <h3>2. Asynchronous Monitoring</h3>
@@ -301,7 +301,7 @@ print(f"✅ Result: {result}")</code></pre>
             <pre><code><span class="keyword">from</span> slurmray <span class="keyword">import</span> RayLauncher
 <span class="keyword">import</span> time
 
-launcher = <span class="function">RayLauncher</span>(project_name=<span class="string">"async_test"</span>, cluster=<span class="string">"desi"</span>, asynchronous=<span class="keyword">True</span>)
+launcher = <span class="function">Cluster</span>(project_name=<span class="string">"async_test"</span>, cluster=<span class="string">"desi"</span>, asynchronous=<span class="keyword">True</span>)
 
 <span class="comment"># Returns a FunctionReturn object immediately</span>
 job = launcher(heavy_task)
