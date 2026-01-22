@@ -208,8 +208,10 @@
 </head>
 
 <body>
-    <div style="background: #f85149; color: white; text-align: center; padding: 0.8rem; font-weight: bold; font-size: 1.1rem;">
-        🚀 SlurmRay is in Beta. Found a bug? <a href="https://github.com/hjamet/SLURM_RAY/issues" target="_blank" style="color: white; text-decoration: underline;">Report it on GitHub</a>
+    <div
+        style="background: #f85149; color: white; text-align: center; padding: 0.8rem; font-weight: bold; font-size: 1.1rem;">
+        🚀 SlurmRay is in Beta. Found a bug? <a href="https://github.com/hjamet/SLURM_RAY/issues" target="_blank"
+            style="color: white; text-decoration: underline;">Report it on GitHub</a>
     </div>
 
     <nav>
@@ -222,7 +224,8 @@
 
     <main class="container">
         <header>
-            <img src="./desi_banner.png" alt="Desi Banner" class="banner-img" style="height: 300px; object-fit: cover; width: 100%;">
+            <img src="./desi_banner.png" alt="Desi Banner" class="banner-img"
+                style="height: 300px; object-fit: cover; width: 100%;">
             <h1>Desi</h1>
             <p class="subtitle">The Future of Standalone Server Orchestration</p>
         </header>
@@ -230,26 +233,34 @@
         <section class="section">
             <h2>Overview</h2>
             <p>
-                The <strong>Desi Interface</strong> is specifically designed for the private standalone server of the department (ISIPOL09). 
+                The <strong>Desi Interface</strong> is specifically designed for the private standalone server of the
+                department (ISIPOL09).
                 It is a powerful machine equipped with:
-                <ul style="list-style-position: inside; color: var(--text-muted); margin-bottom: 1.5rem;">
-                    <li><strong>2x NVIDIA GeForce RTX 3090</strong> (24 GB VRAM each)</li>
-                    <li><strong>125 GB of RAM</strong></li>
-                    <li><strong>24 CPUs</strong></li>
-                </ul>
-                Using <code>cluster="desi"</code> is equivalent to pointing to the IP <code>"130.223.73.209"</code>.
+            <ul style="list-style-position: inside; color: var(--text-muted); margin-bottom: 1.5rem;">
+                <li><strong>2x NVIDIA GeForce RTX 3090</strong> (24 GB VRAM each)</li>
+                <li><strong>125 GB of RAM</strong></li>
+                <li><strong>24 CPUs</strong></li>
+            </ul>
+            Using <code>cluster="desi"</code> is equivalent to pointing to the IP <code>"130.223.73.209"</code>.
             </p>
             <div class="info-box" style="background: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107;">
-                <strong>🌐 Network Requirement:</strong> You must be connected to the <strong>UNIL network</strong> (on-campus or via <a href="https://www.unil.ch/ci/fr/home/menuinst/catalogue-de-services/reseau-et-telephonie/acces-hors-campus-vpn.html" target="_blank" style="color: #ffc107; text-decoration: underline;">VPN</a>) to access the Desi server.
+                <strong>🌐 Network Requirement:</strong> You must be connected to the <strong>UNIL network</strong>
+                (on-campus or via <a
+                    href="https://www.unil.ch/ci/fr/home/menuinst/catalogue-de-services/reseau-et-telephonie/acces-hors-campus-vpn.html"
+                    target="_blank" style="color: #ffc107; text-decoration: underline;">VPN</a>) to access the Desi
+                server.
             </div>
             <div class="info-box">
-                <strong>No Manual Source Push:</strong> SlurmRay automatically scans your local imports and pushes necessary code. You only need to specify data files or non-Python resources in the <code>files</code> argument.
+                <strong>No Manual Source Push:</strong> SlurmRay automatically scans your local imports and pushes
+                necessary code. You only need to specify data files or non-Python resources in the <code>files</code>
+                argument.
             </div>
         </section>
 
         <section class="section">
             <h2>Authentication</h2>
-            <p>To use Desi, you must provide your credentials. The recommended way is to add them to your <code>.env</code> file at the project root:</p>
+            <p>To use Desi, you must provide your credentials. The recommended way is to add them to your
+                <code>.env</code> file at the project root:</p>
             <pre style="padding: 1rem;"><code>DESI_USERNAME=your_username
 DESI_PASSWORD=your_password</code></pre>
             <p>Alternatively, you can set them as environment variables.</p>
@@ -257,10 +268,11 @@ DESI_PASSWORD=your_password</code></pre>
 
         <section class="section">
             <h2>Examples</h2>
-            
+
             <h3>1. Standard Synchronous Execution</h3>
             <p>
-                Notice how we specify the required resources. <strong>Please be precise</strong> to optimize the scheduling for other users.
+                Notice how we specify the required resources. <strong>Please be precise</strong> to optimize the
+                scheduling for other users.
             </p>
 
             <pre><code><span class="keyword">from</span> slurmray <span class="keyword">import</span> RayLauncher
@@ -282,7 +294,8 @@ print(f"✅ Result: {result}")</code></pre>
 
             <h3>2. Asynchronous Monitoring</h3>
             <p>
-                The asynchronous mode returns a tracking object immediately. You can check the <code>result</code> property, which will return <code>"Compute still in progress"</code> until the task is finished.
+                The asynchronous mode returns a tracking object immediately. You can check the <code>result</code>
+                property, which will return <code>"Compute still in progress"</code> until the task is finished.
             </p>
 
             <pre><code><span class="keyword">from</span> slurmray <span class="keyword">import</span> RayLauncher
@@ -305,24 +318,31 @@ print(f"✅ Done: {job.result}")</code></pre>
             <h2>Best Practices for Desi</h2>
             <h3>1. Intelligent Project Naming</h3>
             <p>
-                Use the same <code>project_name</code> for all calculations belonging to the same project. SlurmRay checks the hash of your requirements: if they haven't changed, the remote virtual environment is reused instantly, avoiding redundant installations.
+                Use the same <code>project_name</code> for all calculations belonging to the same project. SlurmRay
+                checks the hash of your requirements: if they haven't changed, the remote virtual environment is reused
+                instantly, avoiding redundant installations.
             </p>
 
             <h3>2. Automatic Dependency Detection</h3>
             <p>
-                While SlurmRay is smart, it has limits. Static imports are detected perfectly, but <strong>dynamic imports</strong> (e.g., <code>importlib.import_module</code>) or files accessed via dynamic paths in <code>open()</code> might be missed. If you encounter "ModuleNotFound" errors on the server, add the missing items to the <code>files</code> list manually.
+                While SlurmRay is smart, it has limits. Static imports are detected perfectly, but <strong>dynamic
+                    imports</strong> (e.g., <code>importlib.import_module</code>) or files accessed via dynamic paths in
+                <code>open()</code> might be missed. If you encounter "ModuleNotFound" errors on the server, add the
+                missing items to the <code>files</code> list manually.
             </p>
 
             <h3>3. Resource Monitoring with CLI</h3>
             <p>
                 Always use the SlurmRay CLI to monitor your jobs:
-                <pre style="padding: 1rem; margin: 1rem 0;"><code>slurmray desi</code></pre>
-                This allows you to see real-time job status, cancel stalled tasks, and open the Ray Dashboard via an automated SSH tunnel.
+            <pre style="padding: 1rem; margin: 1rem 0;"><code>slurmray desi</code></pre>
+            This allows you to see real-time job status, cancel stalled tasks, and open the Ray Dashboard via an
+            automated SSH tunnel.
             </p>
 
             <h3>4. Automatic Cleanup</h3>
             <p>
-                To prevent server congestion, all project files and virtual environments are automatically deleted after the specified <code>retention_days</code> (default is 1 day).
+                To prevent server congestion, all project files and virtual environments are automatically deleted after
+                the specified <code>retention_days</code> (default is 1 day).
             </p>
         </section>
 
@@ -330,16 +350,18 @@ print(f"✅ Done: {job.result}")</code></pre>
             <h2>Log Locations</h2>
             <p>
                 If something goes wrong, you can find logs in:
-                <ul style="list-style-position: inside; color: #8b949e; margin-top: 1rem;">
-                    <li><strong>Local:</strong> <code>.slogs/RayLauncher.log</code> (detailed bridge logs)</li>
-                    <li><strong>Remote:</strong> <code>~/slurmray-server/{project_name}/.slogs/server/</code> (standard output of your task)</li>
-                </ul>
+            <ul style="list-style-position: inside; color: #8b949e; margin-top: 1rem;">
+                <li><strong>Local:</strong> <code>.slogs/RayLauncher.log</code> (detailed bridge logs)</li>
+                <li><strong>Remote:</strong> <code>~/slurmray-server/{project_name}/.slogs/server/</code> (standard
+                    output of your task)</li>
+            </ul>
             </p>
         </section>
 
         <section class="section">
             <h2>Argument Reference (Desi-Specific)</h2>
-            <p><strong>Merci de renseigner précisément ce dont vous avez besoin pour ce job (CPU, RAM, GPU), car cela optimise la queue pour les autres utilisateurs.</strong></p>
+            <p><strong>Merci de renseigner précisément ce dont vous avez besoin pour ce job (CPU, RAM, GPU), car cela
+                    optimise la queue pour les autres utilisateurs.</strong></p>
             <table class="args-table">
                 <thead>
                     <tr>
@@ -356,7 +378,7 @@ print(f"✅ Done: {job.result}")</code></pre>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">cluster</span></td>
-                        <td><code>"curnagl"</code></td>
+                        <td><code>"desi"</code></td>
                         <td>Set to <code>"desi"</code> for standalone server execution.</td>
                     </tr>
                     <tr>

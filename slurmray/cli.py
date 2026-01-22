@@ -289,8 +289,10 @@ if not os.path.exists(LOCK_FILE):
 
 for attempt in range(max_retries):
     try:
-        # Acquire lock on the LOCK_FILE, not the queue file directly
-        lock_fd = open(LOCK_FILE, 'w')
+        # Acquire lock on the LOCK_FILE
+        # Use low-level open to avoid truncation ('w') which fails if not owner
+        fd = os.open(LOCK_FILE, os.O_RDWR | os.O_CREAT)
+        lock_fd = os.fdopen(fd, 'r+')
         try:
             fcntl.lockf(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             
@@ -300,7 +302,13 @@ for attempt in range(max_retries):
             input_jobs = json.loads(queue_json)
             state = {{"jobs": input_jobs}}
             
-            with open(QUEUE_FILE, 'w') as f:
+            # Write to state file using low-level open to safe-guard permissions
+            # We already have the lock, so we can safely manipulate the file content
+            # Open matching the lock file fix style
+            state_fd = os.open(QUEUE_FILE, os.O_RDWR | os.O_CREAT)
+            with os.fdopen(state_fd, 'w') as f:
+                f.truncate(0) 
+                f.seek(0)
                 json.dump(state, f, indent=2)
                 f.flush()
                 os.fsync(f.fileno())

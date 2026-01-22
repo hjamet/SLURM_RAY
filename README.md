@@ -10,7 +10,7 @@
 
 SlurmRay allows you to transparently distribute your Python tasks across Slurm clusters (like Curnagl) or standalone servers (like Desi). It handles environment synchronization, local package detection, and task distribution automatically, turning your local machine into a control center for massive compute resources.
 
-**Current State**: Version 8.1.x stabilized. Local mode is hardened and serves as a high-fidelity reference for pre-testing before cluster deployment.
+**Current State**: Version 8.1.x stabilized. Local mode is hardened. Multi-user concurrency on shared resources (Desi) is now robustly handled using atomic lock operations.
 
 ---
 

@@ -49,8 +49,23 @@ def load_state():
 
 def save_state(state):
     '''Save state to JSON file'''
-    with open(STATE_FILE, 'w') as f:
-        json.dump(state, f, indent=2)
+    '''Save state to JSON file'''
+    # Use low-level open to avoid truncation permission errors on shared files
+    # We open with O_RDWR (read/write) | O_CREAT (create if missing)
+    # This preserves ownership and permissions if file exists
+    try:
+        fd = os.open(STATE_FILE, os.O_RDWR | os.O_CREAT)
+        # Verify we can write
+        with os.fdopen(fd, 'w') as f:
+            f.truncate(0) # Truncate content explicitly (requires write permission, but not ownership)
+            f.seek(0)
+            json.dump(state, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+    except IOError as e:
+        print(f"❌ Error saving state file {STATE_FILE}: {e}")
+        # Critical failure if we can't save state
+        sys.exit(1)
 
 def is_pid_running(pid):
     '''Check if PID is running using /proc'''
@@ -260,21 +275,25 @@ def print_status_table(state, my_pos, total_waiting, used_cpu, used_ram, used_gp
 def main():
     print(f"🔒 Requesting resources: {REQ_CPU} CPU, {REQ_RAM} GB RAM, {REQ_GPU} GPU", flush=True)
     
-    # Ensure lock file exists
+    # Ensure lock file exists with correct permissions
     if not os.path.exists(LOCK_FILE):
         try:
-            open(LOCK_FILE, 'w').close()
+            # Create exclusively to set permissions
+            with open(LOCK_FILE, 'w') as f:
+                pass
             os.chmod(LOCK_FILE, 0o666) # Try to make it writable for all
         except IOError:
-            pass # Maybe registered by another user
+            pass # Maybe registered by another user shortly after check
         
     try:
-        lock_fd = open(LOCK_FILE, 'w')
+        # Use low-level open to avoid truncation ('w') which fails if not owner
+        # O_RDWR (read/write) | O_CREAT (create if missing)
+        # file usually exists from check above, but O_CREAT handles race
+        fd = os.open(LOCK_FILE, os.O_RDWR | os.O_CREAT)
+        lock_fd = os.fdopen(fd, 'r+')
     except IOError as e:
         print(f"❌ Could not open lock file {LOCK_FILE}: {e}")
-        # Build robustness: fall back to a user-local lock file? 
-        # No, for global resource management we need a shared file.
-        # Assuming permissions are set correctly on the server (/tmp is usually rwxrwxrwt).
+        # If permission denied despite our best efforts, we cannot sync.
         sys.exit(1)
     
     allocated_gpu_ids = []

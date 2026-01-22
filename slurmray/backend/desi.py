@@ -591,28 +591,38 @@ class DesiBackend(RemoteMixin):
         if "RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO" not in runtime_env["env_vars"]:
             runtime_env["env_vars"]["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
 
-        # Generate a random port to avoid conflicts and allow concurrency
-        dashboard_port = random.randint(15000, 45000)
-        self.logger.info(f"Using random dashboard port: {dashboard_port}")
+        # Pre-import logic for dill compatibility AND Dynamic Port Selection
+        # We inject code to find a free port on the remote machine for the dashboard
+        pre_import = "import socket\nimport random\n"
+        pre_import += "try:\n"
+        pre_import += "    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:\n"
+        pre_import += "        s.bind(('', 0))\n"
+        pre_import += "        _dynamic_dashboard_port = s.getsockname()[1]\n"
+        pre_import += "    print(f'🔧 Dynamic Dashboard Port: {_dynamic_dashboard_port}')\n"
+        pre_import += "except Exception as e:\n"
+        pre_import += "    print(f'⚠️ Failed to find dynamic port: {e}')\n"
+        pre_import += "    _dynamic_dashboard_port = 8265\n\n"
 
-        local_mode = f"\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port={dashboard_port},\nruntime_env = {runtime_env},\n"
-
-        text = text.replace(
-            "{{LOCAL_MODE}}",
-            local_mode,
-        )
-
-        # Pre-import logic for dill compatibility
-        pre_import = ""
         if hasattr(self.launcher, "func") and self.launcher.func:
             func_module = self.launcher.func.__module__
             self.logger.info(f"DEBUG: Detected func_module: {func_module}")
             if func_module and func_module != "__main__":
                 root_pkg = func_module.split(".")[0]
                 self.logger.info(f"DEBUG: injecting pre-import for {root_pkg}")
-                pre_import = f"try:\n    import {root_pkg}\n    print(f'Imported {root_pkg} for dill compatibility')\nexcept ImportError as e:\n    print(f'Pre-import of {root_pkg} failed: {{e}}')\n"
+                pre_import += f"try:\n    import {root_pkg}\n    print(f'Imported {root_pkg} for dill compatibility')\nexcept ImportError as e:\n    print(f'Pre-import of {root_pkg} failed: {{e}}')\n"
         
         text = text.replace("{{PRE_IMPORT}}", pre_import)
+
+        # Use user-specific temp directory by default if not set
+        user_temp_dir = f"/tmp/ray_{self.launcher.server_username}"
+        
+        # We use the variable _dynamic_dashboard_port which is defined in the injected code above
+        local_mode = f"\n\tinclude_dashboard=True,\n\tdashboard_host='0.0.0.0',\n\tdashboard_port=_dynamic_dashboard_port,\n\t_temp_dir='{user_temp_dir}',\nruntime_env = {runtime_env},\n"
+
+        text = text.replace(
+            "{{LOCAL_MODE}}",
+            local_mode,
+        )
 
         with open(os.path.join(self.launcher.project_path, "spython.py"), "w") as f:
             f.write(text)
