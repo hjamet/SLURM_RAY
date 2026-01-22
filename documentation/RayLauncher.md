@@ -123,3 +123,9 @@ def main():
 if __name__ == "__main__":
     main()
 ```
+
+## 🐛 Bug Reports & Support
+
+SlurmRay is currently in **beta**. If you identify a bug, please report it on the [GitHub Issues](https://github.com/hjamet/SLURM_RAY/issues) page.
+
+For urgent matters, you can reach out directly to **Henri Jamet** at [henri.jamet@unil.ch](mailto:henri.jamet@unil.ch).

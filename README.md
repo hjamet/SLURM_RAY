@@ -117,5 +117,7 @@ root/
 
 ## 👥 Credits & License
 
+**Bugs & Support**: This library is currently in **beta**. If you encounter any bugs, please report them on the [GitHub Issues](https://github.com/hjamet/SLURM_RAY/issues) page. For urgent resolution, you can contact Henri Jamet directly at [henri.jamet@unil.ch](mailto:henri.jamet@unil.ch).
+
 Maintained by the **DESI Department @ HEC UNIL**.
 License: **MIT**.
