@@ -47,7 +47,7 @@ SlurmRay manages the entire lifecycle of a remote task:
 4.  **Transparent Execution**: Returns results (serialized via `dill`) directly to your local session.
 
 ### Pro-Tip: Venv Reuse & Project Naming
-We recommend using a consistent `project_name` for all related computations. SlurmRay computes a hash of your `requirements.txt`: if it hasn't changed, the remote virtual environment is reused instantly, drastically reducing setup time.
+SlurmRay automatically detects your project name from the git root (v8.6.0+). This ensures that all computations within the same repository share the same remote virtual environment, drastically reducing setup time. We recommend relying on this auto-detection rather than manually specifying `project_name`.
 
 ### Automatic Cleanup
 Files and virtual environments on remote servers are automatically deleted after a retention period (defined by `retention_days`, default 1 day). This ensures the server storage remains clean.

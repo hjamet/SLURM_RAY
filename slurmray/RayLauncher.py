@@ -142,6 +142,13 @@ class Cluster:
         else:
             load_dotenv()
 
+        # Create the project directory if not exists (needed for pwd_path)
+        self.pwd_path = os.getcwd()
+        self.module_path = os.path.dirname(os.path.abspath(__file__))
+
+        # --- Resolve Project Name ---
+        self.project_name = self._resolve_project_name(project_name)
+
         # Normalize cluster parameter
         cluster_lower = cluster.lower()
 
@@ -206,7 +213,7 @@ class Cluster:
             self.server_password = None
 
         # Save the other parameters
-        self.project_name = project_name
+        # self.project_name is already set
         self.files = files if files is not None else []
         self.modules = modules if modules is not None else []
         self.node_nbr = node_nbr
@@ -269,13 +276,12 @@ class Cluster:
         }  # Skip 'self'
 
         self.__setup_logger()
-
-        # Create the project directory if not exists (needed for pwd_path)
-        self.pwd_path = os.getcwd()
-        self.module_path = os.path.dirname(os.path.abspath(__file__))
+        
+        # We need to recreate project_path because project_name might have changed or been set now
         self.project_path = os.path.join(self.pwd_path, ".slogs", self.project_name)
         if not os.path.exists(self.project_path):
             os.makedirs(self.project_path)
+
 
         # Detect local Python version
         self.local_python_version = self._detect_local_python_version()
@@ -407,14 +413,51 @@ class Cluster:
         )
         return version_str
 
+    def _resolve_project_name(self, explicit_name: str) -> str:
+        """Resolve the project name with smart detection.
+
+        Priority:
+        1. Auto-detected name (from .git root or cwd)
+        2. Explicit name (if matches auto-detected, or if user ignores warning)
+        
+        If explicit name is DIFFERENT from auto-detected name, we issue a WARNING.
+        """
+        # 1. Detect from context
+        detected_name = None
+        current_dir = self.pwd_path # Using self.pwd_path which is os.getcwd()
+        
+        # Traverse up to find .git
+        head = current_dir
+        while head and head != "/":
+            if os.path.exists(os.path.join(head, ".git")):
+                detected_name = os.path.basename(head)
+                break
+            head = os.path.dirname(head)
+        
+        # Fallback to current directory name if no git found
+        if detected_name is None:
+            detected_name = os.path.basename(current_dir)
+            
+        # 2. Logic for explicit name
+        if explicit_name is not None:
+            if explicit_name != detected_name:
+                # Warning
+                print("\n" + "=" * 60)
+                print("⚠️  PROJECT NAME WARNING  ⚠️")
+                print("=" * 60)
+                print(f"You specified project_name='{explicit_name}', but SlurmRay detected '{detected_name}'.")
+                print(f"Since v8.6.0, SlurmRay automatically detects the project name from your git root.")
+                print(f"Using the same project name across runs ensures virtual environment reuse.")
+                print(f"Recommendation: Remove 'project_name' argument to use '{detected_name}' automatically.")
+                print("=" * 60 + "\n")
+            return explicit_name
+            
+        return detected_name
+
     def _validate_arguments(self):
         """Validate arguments and warn about inconsistencies"""
-        # Validate project_name is not None (required for project-based organization on cluster)
-        if self.project_name is None:
-            raise ValueError(
-                "project_name cannot be None. A project name is required for cluster execution."
-            )
-
+        # project_name is now auto-resolved, so it's never None unless something went wrong in resolution (which shouldn't happen)
+        
         if self.cluster_type == "desi":
             # server_ssh is already set correctly in __init__
             pass

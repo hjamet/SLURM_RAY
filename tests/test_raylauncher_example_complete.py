@@ -129,13 +129,17 @@ def example_func(x):
             
             # Initialiser RayLauncher avec files=[] pour tester la détection automatique
             cluster = Cluster(
-                project_name="example_auto",
+                # project_name="example_auto", # Removed to test auto-detection
                 files=[],  # Liste vide pour tester la détection
                 server_run=False,
                 cluster="local",
             )
             
             # La détection automatique devrait avoir ajouté des fichiers
+            # Project name should be the directory name (tmpdir basename)
+            expected_name = os.path.basename(tmpdir)
+            assert cluster.project_name == expected_name, f"Project name should be {expected_name}, got {cluster.project_name}"
+            
             print(f"✅ Fichiers détectés automatiquement : {cluster.files}")
             
             # Vérifier que la détection n'a pas causé d'erreur

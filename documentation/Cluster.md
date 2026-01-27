@@ -23,7 +23,7 @@ The launcher automatically selects the appropriate backend based on the `cluster
 
 ```python
 class Cluster(
-    project_name: str = None,
+    project_name: str = None,  # Optional (auto-detected)
     files: List[str] = [],
     modules: List[str] = [],
     node_nbr: int = 1,
@@ -49,7 +49,7 @@ class Cluster(
 
 | Argument | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| **project_name** | `str` | `None` | **Required.** Name used to identify the project on the remote server. Consistent naming allows for venv reuse. |
+| **project_name** | `str` | `None` | **Optional.** Name used to identify the project on the remote server. SlurmRay automatically detects it from your git root (or falls back to current directory name). Consistent naming allows for venv reuse. |
 | **files** | `List[str]` | `[]` | List of local files/directories to synchronize. **Note:** Python source code imported by your function is automatically detected and pushed; only list non-Python files (data, configs) here. |
 | **modules** | `List[str]` | `[]` | Slurm modules to load (e.g., `['gcc/13.2.0', 'python/3.12.1']`). Ignored in Desi mode. |
 | **node_nbr** | `int` | `1` | Number of nodes to request. Fixed to 1 for Desi/Local backends. |
@@ -113,7 +113,7 @@ from my_package.core import run_model
 
 def main():
     cluster = Cluster(
-        project_name="robust_experiment_v1",
+        # project_name="robust_experiment_v1", # Optional! Detected automatically (e.g., 'slurmray')
         cluster="desi",
         num_gpus=1,
         files=["data/training_set.csv"], # Source code in 'my_package' is auto-detected!

@@ -8,13 +8,8 @@ def simple_func(x):
     return x * 2
 
 def test_local_execution():
-    project_name = "test_local_refactor"
-    # Cleanup previous run
-    if os.path.exists(f".slogs/{project_name}"):
-        shutil.rmtree(f".slogs/{project_name}")
-
     cluster = Cluster(
-        project_name=project_name,
+        # project_name="test_local_refactor", # Removed to test auto-detection
         files=[],
         modules=[],
         node_nbr=1,
@@ -26,6 +21,13 @@ def test_local_execution():
         server_username="user",
         server_password="password",
     )
+    
+    # Check if auto-detection worked (should be git root 'SLURM_RAY' or cwd)
+    print(f"Detected project name: {cluster.project_name}")
+    
+    # Cleanup previous run (now using the detected name)
+    if os.path.exists(f".slogs/{cluster.project_name}"):
+        shutil.rmtree(f".slogs/{cluster.project_name}")
     
     print(f"Cluster backend type: {type(cluster.backend)}")
     assert "LocalBackend" in str(type(cluster.backend))

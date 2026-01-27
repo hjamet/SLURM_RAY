@@ -44,7 +44,7 @@ def test_hello_world_cpu():
         server_password = getpass("Enter your cluster password: ")
 
     cluster = Cluster(
-        project_name="test_hello_world_cpu",
+        # project_name="test_hello_world_cpu", # Auto-detected (e.g. SLURM_RAY)
         files=[],
         modules=[],
         node_nbr=1,
