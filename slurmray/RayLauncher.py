@@ -280,7 +280,7 @@ class Cluster:
         # We need to recreate project_path because project_name might have changed or been set now
         self.project_path = os.path.join(self.pwd_path, ".slogs", self.project_name)
         if not os.path.exists(self.project_path):
-            os.makedirs(self.project_path)
+            os.makedirs(self.project_path, exist_ok=True)
 
 
         # Detect local Python version
@@ -359,7 +359,7 @@ class Cluster:
         # Create the log directory if not exists
         log_dir = os.path.dirname(self.log_file)
         if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir)
+            os.makedirs(log_dir, exist_ok=True)
 
         # Configure the logger
         self.logger = logging.getLogger(f"Cluster-{self.project_name}")
