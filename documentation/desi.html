@@ -280,7 +280,7 @@ DESI_PASSWORD=your_password</code></pre>
 
 <span class="comment"># Configure for Desi Server</span>
 launcher = <span class="function">Cluster</span>(
-    project_name=<span class="string">"alpha_model_v1"</span>,
+    <span class="comment"># project_name="alpha_model_v1", # Optional (auto-detected)</span>
     cluster=<span class="string">"desi"</span>,
     num_cpus=<span class="number">8</span>,             <span class="comment"># Request 8 cores</span>
     memory=<span class="number">32</span>,               <span class="comment"># Request 32GB RAM</span>
@@ -301,7 +301,8 @@ print(f"✅ Result: {result}")</code></pre>
             <pre><code><span class="keyword">from</span> slurmray <span class="keyword">import</span> RayLauncher
 <span class="keyword">import</span> time
 
-launcher = <span class="function">Cluster</span>(project_name=<span class="string">"async_test"</span>, cluster=<span class="string">"desi"</span>, asynchronous=<span class="keyword">True</span>)
+launcher = <span class="function">Cluster</span>(<span class="comment"># project_name="async_test", # Optional</span> 
+                   cluster=<span class="string">"desi"</span>, asynchronous=<span class="keyword">True</span>)
 
 <span class="comment"># Returns a FunctionReturn object immediately</span>
 job = launcher(heavy_task)
@@ -318,7 +319,7 @@ print(f"✅ Done: {job.result}")</code></pre>
             <h2>Best Practices for Desi</h2>
             <h3>1. Intelligent Project Naming</h3>
             <p>
-                Use the same <code>project_name</code> for all calculations belonging to the same project. SlurmRay
+                Use the same <code>project_name</code> (or rely on auto-detection) for all calculations belonging to the same project. SlurmRay
                 checks the hash of your requirements: if they haven't changed, the remote virtual environment is reused
                 instantly, avoiding redundant installations.
             </p>
@@ -374,7 +375,7 @@ print(f"✅ Done: {job.result}")</code></pre>
                     <tr>
                         <td><span class="code-snippet">project_name</span></td>
                         <td><code>None</code></td>
-                        <td><strong>Required.</strong> Consistent naming allows virtual environment reuse.</td>
+                        <td><strong>Optional.</strong> Auto-detected from git root or cwd. Consistent naming allows virtual environment reuse.</td>
                     </tr>
                     <tr>
                         <td><span class="code-snippet">cluster</span></td>

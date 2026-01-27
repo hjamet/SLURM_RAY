@@ -142,8 +142,10 @@
 </head>
 
 <body>
-    <div style="background: #f85149; color: white; text-align: center; padding: 0.8rem; font-weight: bold; font-size: 1.1rem;">
-        🚀 SlurmRay is in Beta. Found a bug? <a href="https://github.com/hjamet/SLURM_RAY/issues" target="_blank" style="color: white; text-decoration: underline;">Report it on GitHub</a>
+    <div
+        style="background: #f85149; color: white; text-align: center; padding: 0.8rem; font-weight: bold; font-size: 1.1rem;">
+        🚀 SlurmRay is in Beta. Found a bug? <a href="https://github.com/hjamet/SLURM_RAY/issues" target="_blank"
+            style="color: white; text-decoration: underline;">Report it on GitHub</a>
     </div>
 
     <nav>
@@ -170,14 +172,15 @@
 
                 <h3>Constructor</h3>
                 <div class="method-sig">
-                    __init__(project_name, files=[], modules=[], node_nbr=1, num_gpus=0, memory=20, num_cpus=4,
-                    max_running_time=60, runtime_env={}, server_run=True, server_ssh=None, server_username=None, 
-                    server_password=None, log_file=".slogs/Cluster.log", cluster="curnagl", 
+                    __init__(project_name=None, files=[], modules=[], node_nbr=1, num_gpus=0, memory=20, num_cpus=4,
+                    max_running_time=60, runtime_env={}, server_run=True, server_ssh=None, server_username=None,
+                    server_password=None, log_file=".slogs/Cluster.log", cluster="curnagl",
                     force_reinstall_venv=False, force_reinstall_project=False, retention_days=1, asynchronous=False)
                 </div>
 
                 <div class="info-box">
-                    <strong>Auto-Detection:</strong> SlurmRay automatically detects Python source files imported by your task. Only use the <code>files</code> parameter for non-Python assets like data or configs.
+                    <strong>Auto-Detection:</strong> SlurmRay automatically detects Python source files imported by your
+                    task. Only use the <code>files</code> parameter for non-Python assets like data or configs.
                 </div>
 
                 <table class="param-table">
@@ -194,14 +197,16 @@
                             <td><code>project_name</code></td>
                             <td>str</td>
                             <td>None</td>
-                            <td><strong>Required.</strong> Unique identifier for the project. Used for organization and venv reuse.</td>
+                            <td><strong>Optional.</strong> Auto-detected from git root or cwd. Used for organization and
+                                venv reuse.</td>
                         </tr>
                         <tr>
                             <td><code>cluster</code></td>
                             <td>str</td>
                             <td>'curnagl'</td>
                             <td>Target environment: <code>'curnagl'</code>, <code>'desi'</code>,
-                                <code>'local'</code>, or a custom IP.</td>
+                                <code>'local'</code>, or a custom IP.
+                            </td>
                         </tr>
                         <tr>
                             <td><code>files</code></td>
@@ -328,7 +333,8 @@
                     </tbody>
                 </table>
                 <p style="margin-top: 1rem;"><strong>Returns:</strong> The result of the function, or a
-                    <code>FunctionReturn</code> object if <code>asynchronous=True</code>.</p>
+                    <code>FunctionReturn</code> object if <code>asynchronous=True</code>.
+                </p>
             </div>
 
             <div class="api-card">
