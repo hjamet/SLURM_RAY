@@ -690,7 +690,6 @@ fi
 # Create venv if it doesn't exist
 if [ ! -d "venv" ]; then
     echo "📦 Creating virtual environment..."
-"""
 
     # Create venv using uv (robust against system python issues)
     # We use the local python version to ensure consistency
