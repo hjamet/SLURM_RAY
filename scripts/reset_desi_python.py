@@ -1,38 +1,36 @@
 
 import os
 import sys
-from slurmray.backend.desi import DesiBackend
-from dataclasses import dataclass
+from dotenv import load_dotenv
+from slurmray.RayLauncher import Cluster
 
-import logging
-# Mock Launcher to satisfy DesiBackend
-@dataclass
-class MockLauncher:
-    project_name: str = "maintenance_reset"
-    project_path: str = os.getcwd()
-    local_python_version: str = "3.12.1"
-    logger: logging.Logger = logging.getLogger("Mock")
-    
-# Setup Logging
-logging.basicConfig(level=logging.INFO)
-    
+# Load env vars
+load_dotenv()
+
 def reset_python():
     print("🛠️  RESETTING PYTHON 3.12.1 ON DESI")
     
-    # Initialize Backend
-    launcher = MockLauncher()
-    backend = DesiBackend(launcher)
+    # Initialize Launcher (handles credentials, logging, etc.)
+    # We specify backend="desi"
+    try:
+        launcher = Cluster(
+            project_name="maintenance_reset",
+            cluster="desi"
+        )
+    except Exception as e:
+        print(f"❌ Launcher init failed: {e}")
+        return
+
+    backend = launcher.backend
     
     print("🔌 Connecting...")
     try:
-        backend.connect()
+        backend._connect()
     except Exception as e:
         print(f"❌ Connection failed: {e}")
         return
 
     # Command to uninstall
-    # We use full path to pyenv as seen in previous logs: /opt/pyenv/bin/pyenv
-    # We execute it blindly
     print("🗑️  Uninstalling Python 3.12.1...")
     cmd = "/opt/pyenv/bin/pyenv uninstall -f 3.12.1"
     
@@ -45,14 +43,14 @@ def reset_python():
     if err:
         print(f"STDERR: {err}")
         
-    # Verify it's gone
+    # Verify
     print("🔍 Verifying removal...")
     stdin, stdout, stderr = backend.ssh_client.exec_command("/opt/pyenv/bin/pyenv versions")
     versions = stdout.read().decode()
     if "3.12.1" not in versions:
         print("✅ Python 3.12.1 successfully removed.")
     else:
-        print("⚠️  Python 3.12.1 might still be present (or partially removed).")
+        print("⚠️  Python 3.12.1 might still be present.")
         print(versions)
 
 if __name__ == "__main__":
