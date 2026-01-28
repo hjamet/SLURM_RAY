@@ -22,17 +22,15 @@ SlurmRay allows you to transparently distribute your Python tasks across Slurm c
 - **Robust Venv**: Uses `uv venv` to safely create environments even on broken system Pythons.
 - **Precision Logging**: Explicitly reports *why* a venv is reused or rebuilt (Hash Match vs Missing).
 
-# Installation
+# Main Entry Scripts
 
 | Script/Command | Description | Usage / Example |
 |-----------------|-----------------------|-----------------|
-| `pytest tests/test_local_complete_suite.py` | **High-Fidelity Local Validation**: Ensures code runs perfectly in local isolation before deployment. | `pytest tests/test_local_complete_suite.py` |
-| `pytest tests/test_desi_complete_suite.py` | **Desi Backend Validation**: Complete test on Desi server (CPU, GPU, Concurrency, Serialization). | `pytest tests/test_desi_complete_suite.py` |
-| `pytest tests/test_raylauncher_example_complete.py` | **Integration Test**: Verifies full dependency detection and Slurm execution flow. | `pytest tests/test_raylauncher_example_complete.py` |
+| `slurmray curnagl` | Connect to Curnagl cluster via CLI | `slurmray curnagl` |
+| `slurmray desi` | Connect to Desi server via CLI | `slurmray desi` |
+| `pytest tests/...` | Run test suites | `pytest tests/test_local_complete_suite.py` |
 
----
-
-# 🛠 Installation
+# Installation
 
 ```bash
 pip install -e .
@@ -41,56 +39,9 @@ pip install -e .
 ### Prerequisites
 *   **Local**: Python 3.9+
 *   **Remote**: SSH access to a Slurm cluster or a standalone server with Ray support.
-*   **Configuration**: Create a `.env` file at the root (see Configuration section).
+*   **Configuration**: Create a `.env` file at the root.
 
----
-
-# 📖 Core Concepts
-
-### Local-to-Cluster Orchestration
-SlurmRay manages the entire lifecycle of a remote task:
-1.  **AST Analysis**: Automatically scans imports to identify local modules and dependencies to upload. **You don't need to manually push your source code.**
-2.  **Surgical Synchronization**: Uses incremental transfers to push only modified files.
-3.  **Autonomous Ray Bridging**: Allocates nodes, installs the synchronized venv, and deploys a temporary Ray cluster.
-4.  **Transparent Execution**: Returns results (serialized via `dill`) directly to your local session.
-
-### Pro-Tip: Venv Reuse & Project Naming
-SlurmRay automatically detects your project name from the git root (v8.6.0+). This ensures that all computations within the same repository share the same remote virtual environment, drastically reducing setup time. We recommend relying on this auto-detection rather than manually specifying `project_name`.
-
-### Automatic Cleanup
-Files and virtual environments on remote servers are automatically deleted after a retention period (defined by `retention_days`, default 1 day). This ensures the server storage remains clean.
-
----
-
-# 🖥 SlurmRay CLI
-
-SlurmRay includes a powerful interactive CLI for managing your jobs on both Slurm and Desi.
-
-```bash
-# Connect to Curnagl (Slurm)
-slurmray curnagl
-
-# Connect to Desi server
-slurmray desi
-```
-
-**Features:**
-*   **Live Monitoring**: Real-time status of your running and waiting jobs.
-*   **Job Management**: Cancel jobs directly from the interface.
-*   **Dashboard Access**: Automatically sets up an SSH tunnel to the Ray Dashboard for any running job.
-
----
-
-# 📁 Log Locations
-
-*   **Local Logs**: Detailed launcher logs are stored in `.slogs/Cluster.log`.
-*   **Remote Execution Logs**: 
-    - On **Slurm**: Standard Slurm output files in the project directory.
-    - On **Desi**: Located in `slurmray-server/{project_name}/.slogs/server/`.
-
----
-
-# 📊 Performance Baseline
+# Key Results (Performance Baseline)
 
 | Scenario | Mode | Status | Avg Time |
 |----------|------|--------|-------------|
@@ -99,9 +50,7 @@ slurmray desi
 | Dependency Detection | Slurm | ✅ Pass | < 1s |
 | Concurrent Launch (3 jobs) | Local | ✅ Pass | ~5s |
 
----
-
-# 🗺 Repository Structure
+# Repository Map
 
 ```text
 root/
@@ -109,17 +58,27 @@ root/
 │   ├── backend/           # Backends (Slurm, Desi, Local)
 │   ├── assets/            # Templates & Wrappers
 │   ├── scanner.py         # AST Dependency Detection
+│   ├── file_sync.py       # File Synchronization Logic
 │   ├── RayLauncher.py     # Main API Entry Point
 │   └── cli.py             # Interactive CLI
 ├── scripts/               # Maintenance & Cleanup utilities
 ├── tests/                 # Comprehensive test suites
 ├── documentation/         # HTML/Markdown docs
+├── install.sh             # Installation Helper
 └── README.md              # Documentation source
 ```
 
----
+# Utility Scripts (`scripts/`)
 
-# 🛤 Roadmap
+| Script | Rôle technique | Contexte d'exécution |
+|--------|----------------|----------------------|
+| `diagnose_uv.py` | Validates `uv` based environment handling | Local/Remote |
+| `diagnose_ray_segfault.py` | Diagnoses 3.12.1 Segfaults on Desi | Remote |
+| `check_desi_locks.py` | Inspects lock files on Desi | Local (connects to Remote) |
+| `check_desi_resources.py` | Checks CPU/GPU availability | Local (connects to Remote) |
+| `cleanup_desi_projects.py` | Removes old projects/venvs | Maintenance |
+
+# Roadmap
 
 | Priority | Task | Status |
 | :--- | :--- | :--- |
@@ -127,11 +86,9 @@ root/
 | ⚡ **Medium** | **Live Dashboard** | Real-time monitoring UI. |
 | 🌱 **Low** | **Container Support** | Apptainer/Singularity support on Slurm. |
 
----
-
 ## 👥 Credits & License
 
-**Bugs & Support**: This library is currently in **beta**. If you encounter any bugs, please report them on the [GitHub Issues](https://github.com/hjamet/SLURM_RAY/issues) page. For urgent resolution, you can contact Henri Jamet directly at [henri.jamet@unil.ch](mailto:henri.jamet@unil.ch).
+**Bugs & Support**: This library is currently in **beta**. If you encounter any bugs, please report them on the [GitHub Issues](https://github.com/hjamet/SLURM_RAY/issues) page.
 
 Maintained by the **DESI Department @ HEC UNIL**.
 License: **MIT**.
