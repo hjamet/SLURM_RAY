@@ -10,11 +10,19 @@
 
 SlurmRay allows you to transparently distribute your Python tasks across Slurm clusters (like Curnagl) or standalone servers (like Desi). It handles environment synchronization, local package detection, and task distribution automatically, turning your local machine into a control center for massive compute resources.
 
-**Current State**: Version 8.1.x stabilized. Local mode is hardened. Multi-user concurrency on shared resources (Desi) is now robustly handled using atomic lock operations. CLI stability improved.
+**Current State**: Version 8.7.1 (Jan 28). **INFRASTRUCTURE UPDATE**: Switched to `uv venv` for robust environment creation (bypassing broken system `ensurepip`).
 
----
+### ⚠️ Infrastructure Warning (Jan 28 2026)
+> **Python 3.12.1 on Desi** is currently unstable (Ray Segfaults).
+> While the new `uv` integration fixes the installation issues, runtime crashes (Exit 245) have been observed.
+> **Recommendation**: Use **Python 3.11.6** for critical workloads until the Ray binary incompatibility is resolved.
 
-# 🚀 Main Entry Scripts
+## 🌟 Key Features (SlurmRay v8.7.1)
+- **Zero-Config Launch**: No `project_name` required. Auto-git detection.
+- **Robust Venv**: Uses `uv venv` to safely create environments even on broken system Pythons.
+- **Precision Logging**: Explicitly reports *why* a venv is reused or rebuilt (Hash Match vs Missing).
+
+# Installation
 
 | Script/Command | Description | Usage / Example |
 |-----------------|-----------------------|-----------------|

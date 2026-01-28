@@ -116,7 +116,14 @@ class DesiBackend(RemoteMixin):
                     )
                     venv_exists = stdout.read().decode("utf-8").strip() == "exists"
                     if venv_exists:
+                        self.logger.info("✅ Venv Reusable: Requirements Hash matches and 'venv' folder exists.")
                         should_recreate_venv = False
+                    else:
+                        self.logger.info("ℹ️ Venv Reinstall Triggered: Requirements Hash matches but 'venv' folder is missing.")
+                else:
+                    self.logger.info(f"ℹ️ Venv Reinstall Triggered: Requirements Hash mismatch.")
+                    self.logger.debug(f"    Local Hash: {current_hash}")
+                    self.logger.debug(f"    Remote Hash: {remote_hash}")
 
             # --- FORCE REINSTALL PROJECT LOGIC ---
             if self.launcher.force_reinstall_project:
@@ -647,6 +654,11 @@ class DesiBackend(RemoteMixin):
             pyenv_setup = ""
             use_pyenv = False
 
+        # Prepare uv arguments
+        uv_python_arg = ""
+        if hasattr(self.launcher, "local_python_version") and self.launcher.local_python_version:
+             uv_python_arg = f"--python {self.launcher.local_python_version}"
+
         content = f"""#!/bin/bash
 # Desi Runner Script
 set -e  # Exit immediately if a command exits with a non-zero status
@@ -680,14 +692,12 @@ if [ ! -d "venv" ]; then
     echo "📦 Creating virtual environment..."
 """
 
-        if use_pyenv:
-            content += f"""    {pyenv_setup} && {python3_cmd} -m venv venv
-"""
-        else:
-            content += f"""    {python3_cmd} -m venv venv
-"""
-
-        content += f"""else
+    # Create venv using uv (robust against system python issues)
+    # We use the local python version to ensure consistency
+    echo "📦 Creating virtual environment using uv..."
+    uv venv venv {uv_python_arg}
+    
+else
     echo "✅ Using existing virtual environment"
     VENV_EXISTED=true
 fi
