@@ -108,6 +108,7 @@ class Cluster:
         force_reinstall_project: bool = False,
         retention_days: int = 1,
         asynchronous: bool = False,
+        strict_versions: bool = True,
     ):
         """Initialize the launcher
 
@@ -131,6 +132,7 @@ class Cluster:
             force_reinstall_project (bool, optional): Force complete removal of the project directory (excluding logs/venv if possible, but practically cleans the project code) before uploading. Use to ensure a clean state. Defaults to False.
             retention_days (int, optional): Number of days to retain files and venv on the cluster before automatic cleanup. Must be between 1 and 30 days. Defaults to 1.
             asynchronous (bool, optional): If True, the call to the function returns immediately with a FunctionReturn object. Defaults to False.
+            strict_versions (bool, optional): If True, strictly enforces local package versions on the remote environment. If False, removes version constraints to allow remote pip to resolve best compatible versions (useful when Python versions differ). Defaults to True.
         """
         # Load environment variables from .env file
         # Load environment variables from .env file
@@ -265,6 +267,7 @@ class Cluster:
         self.force_reinstall_venv = force_reinstall_venv
         self.force_reinstall_project = force_reinstall_project
         self.asynchronous = asynchronous
+        self.strict_versions = strict_versions
 
         # Track which parameters were explicitly passed (for warnings)
         import inspect

@@ -42,6 +42,7 @@ class Cluster(
     force_reinstall_project: bool = False,
     retention_days: int = 7,
     asynchronous: bool = False,
+    strict_versions: bool = True,
 )
 ```
 
@@ -64,6 +65,7 @@ class Cluster(
 | **force_reinstall_project**| `bool` | `False` | Cleans the remote project directory before uploading. |
 | **retention_days** | `int` | `1` | Days to keep files on the server (1-30). Automatic cleanup runs daily. |
 | **asynchronous** | `bool` | `False` | If `True`, returns immediately with a `FunctionReturn` tracking object. |
+| **strict_versions** | `bool` | `True` | **New in v8.8.1.** If `True`, enforces exact local versions on remote. Set to `False` to maintain compatibility if local/remote Python versions differ significantly. |
 
 ### Execution
 

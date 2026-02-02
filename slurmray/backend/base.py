@@ -741,9 +741,18 @@ class ClusterBackend(ABC):
 
             # Remove versions constraints to allow remote pip to resolve compatible versions for its Python version
             # This is critical when local is Python 3.12+ and remote is older (e.g. 3.8)
-            lines = [
-                line.split("==")[0].split(" @ ")[0].strip() + "\n" for line in lines
-            ]
+            # Only apply if strict_versions is False
+            if not self.launcher.strict_versions:
+                if self.logger:
+                    self.logger.warning(
+                        "⚠️ strict_versions=False: Removing version constraints from requirements.txt to improve compatibility across Python versions."
+                    )
+                lines = [
+                    line.split("==")[0].split(" @ ")[0].strip() + "\n" for line in lines
+                ]
+            else:
+                if self.logger:
+                    self.logger.info("🔒 strict_versions=True: Keeping version constraints.")
 
             # Add pinned dill version to ensure serialization compatibility
             lines.append(f"dill=={dill_version}\n")
