@@ -7,16 +7,30 @@
 #
 # IMPORTANT: set_start_method() must be called BEFORE any library imports
 # multiprocessing (directly or indirectly via torch, sentence-transformers, etc.)
-# Otherwise, the method gets "frozen" and force=True won't help.
+#
+# ADDITIONAL FIX: Some libraries (e.g., sentence-transformers) explicitly call
+# `multiprocessing.get_context("spawn")` which bypasses set_start_method().
+# We monkey-patch get_context() to force 'fork' on Linux.
 # ============================================================================
 import multiprocessing
 import platform
 
 if platform.system() == "Linux":
+    # Set default start method to fork
     try:
         multiprocessing.set_start_method("fork", force=True)
     except RuntimeError:
         pass  # Already set
+    
+    # Monkey-patch get_context to force 'fork' even when 'spawn' is explicitly requested
+    # This fixes libraries like sentence-transformers that hardcode: ctx = mp.get_context("spawn")
+    _original_get_context = multiprocessing.get_context
+    def _forced_fork_context(method=None):
+        if method == "spawn":
+            # Force fork instead of spawn on Linux
+            return _original_get_context("fork")
+        return _original_get_context(method)
+    multiprocessing.get_context = _forced_fork_context
 
 # Now safe to import everything else
 import os
