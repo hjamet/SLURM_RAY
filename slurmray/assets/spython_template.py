@@ -71,6 +71,31 @@ except Exception as e:
     sys.stderr.flush()
     sys.exit(1)
 
+# ============================================================================
+# RAY MULTIPROCESSING PATCH - ALWAYS ENABLED
+# ============================================================================
+# Replace standard multiprocessing with ray.util.multiprocessing.
+# This allows libraries that internally use multiprocessing.Pool (e.g., ColBERT)
+# to work seamlessly within the Ray cluster context, avoiding spawn bootstrap errors.
+# See: https://docs.ray.io/en/latest/ray-more-libs/multiprocessing.html
+# ============================================================================
+print("🔄 SlurmRay: Patching multiprocessing with ray.util.multiprocessing...")
+from ray.util import multiprocessing as ray_mp
+
+# Patch standard multiprocessing module
+sys.modules['multiprocessing'] = ray_mp
+print("   ✅ multiprocessing patched with Ray")
+
+# Also patch torch.multiprocessing if available
+try:
+    import torch.multiprocessing
+    torch.multiprocessing.Pool = ray_mp.Pool
+    # No-op set_start_method since Ray handles this internally
+    torch.multiprocessing.set_start_method = lambda *a, **kw: None
+    print("   ✅ torch.multiprocessing patched")
+except ImportError:
+    pass  # torch not installed, skip
+
 # Load the function
 # Read the serialization method used
 serialization_method = "dill_pickle"  # Default

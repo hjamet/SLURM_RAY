@@ -1,4 +1,4 @@
-# SlurmRay v8.11.3 - Autonomous Distributed Ray on Slurm
+# SlurmRay v8.12.0 - Autonomous Distributed Ray on Slurm
 
 > [!IMPORTANT]
 > **Bug Reports**: SlurmRay is in beta. If you find a bug, please [report it on GitHub](https://github.com/hjamet/SLURM_RAY/issues).
@@ -10,20 +10,20 @@
 
 SlurmRay allows you to transparently distribute your Python tasks across Slurm clusters (like Curnagl) or standalone servers (like Desi). It handles environment synchronization, local package detection, and task distribution automatically, turning your local machine into a control center for massive compute resources.
 
-**Current State**: Version 8.11.3 (Feb 04). **Multiprocessing Fix**: Forces `fork` start method on Linux for compatibility with FlagEmbedding and torch.DataLoader.
+**Current State**: Version 8.12.0 (Feb 05). **Ray Multiprocessing Patch**: Automatically replaces `multiprocessing` with `ray.util.multiprocessing` for seamless distributed execution.
 
 > [!NOTE]
-> **Multiprocessing Fix (v8.11.x)**: The remote execution wrapper forces `multiprocessing.set_start_method('fork')` on Linux. This resolves spawn bootstrap errors for most libraries (FlagEmbedding, torch.DataLoader).
+> **Ray Multiprocessing Patch (v8.12.0)**: The remote execution wrapper now **always** patches `multiprocessing` and `torch.multiprocessing` with `ray.util.multiprocessing`. This allows libraries using `multiprocessing.Pool` (e.g., ColBERT) to work seamlessly within SlurmRay without spawn bootstrap errors.
 >
-> **Known Limitation**: `sentence-transformers.start_multi_process_pool()` explicitly uses `spawn` context and cannot be patched (fork+CUDA causes "Cannot re-initialize CUDA in forked subprocess"). Use sequential encoding instead.
+> **Previous Limitation Resolved**: `sentence-transformers.start_multi_process_pool()` and similar patterns now work natively via Ray's distributed Pool.
 
 ### ⚠️ Infrastructure Warning (Jan 28 2026)
 > **Python 3.12.1 on Desi** is currently unstable (Ray Segfaults).
 > While the new `uv` integration fixes the installation issues, runtime crashes (Exit 245) have been observed.
 > **Recommendation**: Use **Python 3.11.6** for critical workloads until the Ray binary incompatibility is resolved.
 
-## 🌟 Key Features (SlurmRay v8.11.3)
-- **Multiprocessing-Safe Execution**: Forces `fork` start method on Linux to prevent spawn bootstrap failures.
+## 🌟 Key Features (SlurmRay v8.12.0)
+- **Ray Multiprocessing Patch**: Transparently replaces `multiprocessing.Pool` with `ray.util.multiprocessing.Pool` for distributed execution.
 - **Zero-Config Launch**: No `project_name` required. Auto-git detection.
 - **Robust Venv**: Uses `uv venv` to safely create environments even on broken system Pythons.
 - **Precision Logging**: Explicitly reports *why* a venv is reused or rebuilt (Hash Match vs Missing).
@@ -55,6 +55,7 @@ pip install -e .
 | GPU Task (Detection) | Desi | ✅ Pass | ~15s |
 | Dependency Detection | Slurm | ✅ Pass | < 1s |
 | Concurrent Launch (3 jobs) | Local | ✅ Pass | ~5s |
+| **Multiprocessing Patch** | Local | ✅ Pass | ~30s |
 
 # Repository Map
 
