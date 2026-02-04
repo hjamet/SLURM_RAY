@@ -1,5 +1,21 @@
 import os
 import sys
+import platform
+import multiprocessing
+
+# MULTIPROCESSING FIX: Force 'fork' start method on Linux
+# On Python 3.11+ Linux, the default multiprocessing start method is 'spawn'.
+# The 'spawn' method requires the main module to have a proper `if __name__ == '__main__':` guard.
+# When SlurmRay executes a function via dill pickle (spython.py), the code runs outside
+# of a `__main__` context, causing 'spawn' to fail when it tries to re-import the module.
+# This affects libraries using multiprocessing internally: FlagEmbedding, sentence-transformers,
+# torch.multiprocessing, etc.
+# Solution: Force 'fork' mode which doesn't require the `__main__` guard (safe on Linux).
+if platform.system() == "Linux":
+    try:
+        multiprocessing.set_start_method("fork", force=True)
+    except RuntimeError:
+        pass  # Already set
 
 # Suppress Ray FutureWarning about accelerator visible devices
 os.environ.setdefault("RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO", "0")

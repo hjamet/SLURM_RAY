@@ -1,4 +1,4 @@
-# SlurmRay v8.8.x - Autonomous Distributed Ray on Slurm
+# SlurmRay v8.11.0 - Autonomous Distributed Ray on Slurm
 
 > [!IMPORTANT]
 > **Bug Reports**: SlurmRay is in beta. If you find a bug, please [report it on GitHub](https://github.com/hjamet/SLURM_RAY/issues).
@@ -10,14 +10,18 @@
 
 SlurmRay allows you to transparently distribute your Python tasks across Slurm clusters (like Curnagl) or standalone servers (like Desi). It handles environment synchronization, local package detection, and task distribution automatically, turning your local machine into a control center for massive compute resources.
 
-**Current State**: Version 8.8.0 (Jan 28). **INFRASTRUCTURE UPDATE**: Switched to `uv venv` for robust environment creation (bypassing broken system `ensurepip`).
+**Current State**: Version 8.11.0 (Feb 04). **v8.11.0 FIX**: Resolved multiprocessing spawn failure affecting libraries using `multiprocessing` internally (FlagEmbedding, sentence-transformers, torch.multiprocessing).
+
+> [!NOTE]
+> **Multiprocessing Fix (v8.11.0)**: The remote execution wrapper (`spython.py`) now forces `multiprocessing.set_start_method('fork')` on Linux. This resolves the `RuntimeError: An attempt has been made to start a new process before the current process has finished its bootstrapping phase` error that occurred when libraries like FlagEmbedding or sentence-transformers used multiprocessing internally.
 
 ### ⚠️ Infrastructure Warning (Jan 28 2026)
 > **Python 3.12.1 on Desi** is currently unstable (Ray Segfaults).
 > While the new `uv` integration fixes the installation issues, runtime crashes (Exit 245) have been observed.
 > **Recommendation**: Use **Python 3.11.6** for critical workloads until the Ray binary incompatibility is resolved.
 
-## 🌟 Key Features (SlurmRay v8.8.0)
+## 🌟 Key Features (SlurmRay v8.11.0)
+- **Multiprocessing-Safe Execution**: Forces `fork` start method on Linux to prevent spawn bootstrap failures.
 - **Zero-Config Launch**: No `project_name` required. Auto-git detection.
 - **Robust Venv**: Uses `uv venv` to safely create environments even on broken system Pythons.
 - **Precision Logging**: Explicitly reports *why* a venv is reused or rebuilt (Hash Match vs Missing).
