@@ -1,21 +1,30 @@
-import os
-import sys
-import platform
-import multiprocessing
-
-# MULTIPROCESSING FIX: Force 'fork' start method on Linux
+# ============================================================================
+# CRITICAL: MULTIPROCESSING FIX - MUST BE FIRST BEFORE ANY OTHER IMPORTS
+# ============================================================================
 # On Python 3.11+ Linux, the default multiprocessing start method is 'spawn'.
-# The 'spawn' method requires the main module to have a proper `if __name__ == '__main__':` guard.
-# When SlurmRay executes a function via dill pickle (spython.py), the code runs outside
-# of a `__main__` context, causing 'spawn' to fail when it tries to re-import the module.
-# This affects libraries using multiprocessing internally: FlagEmbedding, sentence-transformers,
-# torch.multiprocessing, etc.
-# Solution: Force 'fork' mode which doesn't require the `__main__` guard (safe on Linux).
+# The 'spawn' method requires `if __name__ == '__main__':` guard, which doesn't
+# exist in SlurmRay's dill-deserialized execution context.
+#
+# IMPORTANT: set_start_method() must be called BEFORE any library imports
+# multiprocessing (directly or indirectly via torch, sentence-transformers, etc.)
+# Otherwise, the method gets "frozen" and force=True won't help.
+# ============================================================================
+import multiprocessing
+import platform
+
 if platform.system() == "Linux":
     try:
         multiprocessing.set_start_method("fork", force=True)
     except RuntimeError:
         pass  # Already set
+
+# Now safe to import everything else
+import os
+import sys
+
+# Environment variables for ML libraries that respect them
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")  # Hugging Face tokenizers
+os.environ.setdefault("OMP_NUM_THREADS", "1")  # OpenMP threading
 
 # Suppress Ray FutureWarning about accelerator visible devices
 os.environ.setdefault("RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO", "0")
