@@ -1,4 +1,4 @@
-# SlurmRay v8.11.2 - Autonomous Distributed Ray on Slurm
+# SlurmRay v8.11.3 - Autonomous Distributed Ray on Slurm
 
 > [!IMPORTANT]
 > **Bug Reports**: SlurmRay is in beta. If you find a bug, please [report it on GitHub](https://github.com/hjamet/SLURM_RAY/issues).
@@ -10,20 +10,19 @@
 
 SlurmRay allows you to transparently distribute your Python tasks across Slurm clusters (like Curnagl) or standalone servers (like Desi). It handles environment synchronization, local package detection, and task distribution automatically, turning your local machine into a control center for massive compute resources.
 
-**Current State**: Version 8.11.2 (Feb 04). **v8.11.2 FIX**: Complete multiprocessing spawn fix via monkey-patching `get_context()` for libraries like sentence-transformers that explicitly request spawn context.
+**Current State**: Version 8.11.3 (Feb 04). **Multiprocessing Fix**: Forces `fork` start method on Linux for compatibility with FlagEmbedding and torch.DataLoader.
 
 > [!NOTE]
-> **Multiprocessing Fix (v8.11.2)**: The remote execution wrapper (`spython.py`) now:
-> 1. Forces `multiprocessing.set_start_method('fork')` before any imports
-> 2. **Monkey-patches `multiprocessing.get_context()`** to return fork context even when libraries explicitly request spawn (fixes sentence-transformers `start_multi_process_pool()`)
-> 3. Sets `TOKENIZERS_PARALLELISM=false` and `OMP_NUM_THREADS=1`
+> **Multiprocessing Fix (v8.11.x)**: The remote execution wrapper forces `multiprocessing.set_start_method('fork')` on Linux. This resolves spawn bootstrap errors for most libraries (FlagEmbedding, torch.DataLoader).
+>
+> **Known Limitation**: `sentence-transformers.start_multi_process_pool()` explicitly uses `spawn` context and cannot be patched (fork+CUDA causes "Cannot re-initialize CUDA in forked subprocess"). Use sequential encoding instead.
 
 ### ⚠️ Infrastructure Warning (Jan 28 2026)
 > **Python 3.12.1 on Desi** is currently unstable (Ray Segfaults).
 > While the new `uv` integration fixes the installation issues, runtime crashes (Exit 245) have been observed.
 > **Recommendation**: Use **Python 3.11.6** for critical workloads until the Ray binary incompatibility is resolved.
 
-## 🌟 Key Features (SlurmRay v8.11.2)
+## 🌟 Key Features (SlurmRay v8.11.3)
 - **Multiprocessing-Safe Execution**: Forces `fork` start method on Linux to prevent spawn bootstrap failures.
 - **Zero-Config Launch**: No `project_name` required. Auto-git detection.
 - **Robust Venv**: Uses `uv venv` to safely create environments even on broken system Pythons.

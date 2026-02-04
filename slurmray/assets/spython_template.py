@@ -1,36 +1,27 @@
 # ============================================================================
-# CRITICAL: MULTIPROCESSING FIX - MUST BE FIRST BEFORE ANY OTHER IMPORTS
+# MULTIPROCESSING FIX - MUST BE FIRST BEFORE ANY OTHER IMPORTS
 # ============================================================================
 # On Python 3.11+ Linux, the default multiprocessing start method is 'spawn'.
 # The 'spawn' method requires `if __name__ == '__main__':` guard, which doesn't
 # exist in SlurmRay's dill-deserialized execution context.
 #
-# IMPORTANT: set_start_method() must be called BEFORE any library imports
-# multiprocessing (directly or indirectly via torch, sentence-transformers, etc.)
+# This fix sets the default start method to 'fork', which works for most cases
+# (FlagEmbedding, torch.DataLoader with num_workers, etc.)
 #
-# ADDITIONAL FIX: Some libraries (e.g., sentence-transformers) explicitly call
-# `multiprocessing.get_context("spawn")` which bypasses set_start_method().
-# We monkey-patch get_context() to force 'fork' on Linux.
+# KNOWN LIMITATION: Libraries that explicitly call `mp.get_context("spawn")`
+# (e.g., sentence-transformers.start_multi_process_pool()) will still use spawn.
+# This cannot be monkey-patched because fork+CUDA causes:
+# "RuntimeError: Cannot re-initialize CUDA in forked subprocess"
+# Workaround: Use sequential encoding or ensure CUDA is not initialized before fork.
 # ============================================================================
 import multiprocessing
 import platform
 
 if platform.system() == "Linux":
-    # Set default start method to fork
     try:
         multiprocessing.set_start_method("fork", force=True)
     except RuntimeError:
         pass  # Already set
-    
-    # Monkey-patch get_context to force 'fork' even when 'spawn' is explicitly requested
-    # This fixes libraries like sentence-transformers that hardcode: ctx = mp.get_context("spawn")
-    _original_get_context = multiprocessing.get_context
-    def _forced_fork_context(method=None):
-        if method == "spawn":
-            # Force fork instead of spawn on Linux
-            return _original_get_context("fork")
-        return _original_get_context(method)
-    multiprocessing.get_context = _forced_fork_context
 
 # Now safe to import everything else
 import os
