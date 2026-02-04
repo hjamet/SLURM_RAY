@@ -1174,7 +1174,6 @@ if __name__ == "__main__":
         return result
 
     cluster = Cluster(
-        project_name="example",  # Name of the project (will create a directory with this name in the current directory)
         files=["documentation/RayLauncher.html"],  # List of files to push to the server
         num_gpus=1,  # If you need GPU, you can set it to > 0
         runtime_env={

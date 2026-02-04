@@ -1277,10 +1277,7 @@ if [ -f requirements.txt ]; then
             echo "✅ All dependencies already installed (requirements.txt is empty)"
         else
             echo "⚠️  requirements.txt is empty, skipping dependency installation"
-        fi
     fi
-else
-    echo "⚠️  No requirements.txt found, skipping dependency installation"
 else
     echo "⚠️  No requirements.txt found, skipping dependency installation"
 fi
@@ -1291,7 +1288,7 @@ uv pip list --format=freeze > remote_lock.txt
 # Filter out slurmray/ray/dill from lock to match local filtering logic if needed? 
 # No, we want exact environment match. But local lock (from uv pip freeze) might include them.
 # Let's just hash it.
-REMOTE_HASH=$(sha256sum remote_lock.txt | awk '{print $1}')
+REMOTE_HASH=$(sha256sum remote_lock.txt | awk '{{print $1}}')
 echo "REMOTE_LOCK_HASH: $REMOTE_HASH"
 
 
