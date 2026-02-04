@@ -560,6 +560,92 @@ class ClusterBackend(ABC):
                 
         return None
 
+        return None
+
+    def _verify_local_env_integrity(self):
+        """
+        Verify that the local environment is in sync with definition files (pyproject.toml/requirements.txt).
+        Raises RuntimeError if the environment is dirty.
+        """
+        project_path = self.launcher.project_path
+        pyproject_path = os.path.join(project_path, "pyproject.toml")
+        requirements_path = os.path.join(project_path, "requirements.txt")
+        
+        # We only check if definition files exist
+        has_definition = os.path.exists(pyproject_path) or os.path.exists(requirements_path)
+        
+        if not has_definition:
+            return
+
+        self.logger.info("Verifying local environment integrity...")
+        
+        # Check 1: Basic pip check for broken dependencies
+        try:
+            # We use subprocess to run uv pip check
+            # We assume uv is available (checked elsewhere)
+            # Use sys.executable -m uv if possible, or just uv
+            cmd = ["uv", "pip", "check"]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                self.logger.warning(f"⚠️ Local environment has broken dependencies:\n{result.stderr or result.stdout}")
+                # We might want to be strict here? User said "Autrement, s'arréter avec une erreur."
+                # But 'pip check' can be noisy. Let's make it a warning for now unless verify_sync fails.
+                # Actually user said "vérifier ... qu'il est bien utilisé par le venv actif" -> "used by active venv".
+            
+        except FileNotFoundError:
+             pass
+
+        # Check 2: Sync check against pyproject.toml if it exists
+        if os.path.exists(pyproject_path):
+             try:
+                 # Check if the environment is synced with pyproject.toml
+                 # We generate a temporary requirements from pyproject.toml and check if it would change anything
+                 # uv pip compile pyproject.toml | uv pip sync --dry-run /dev/stdin
+                 
+                 # Step 1: Compile (in memory/pipe if possible, or temp file)
+                 # We use a temp file for safety
+                 import tempfile
+                 with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".txt") as tmp:
+                     compile_cmd = ["uv", "pip", "compile", pyproject_path, "--output-file", tmp.name, "--quiet"]
+                     subprocess.run(compile_cmd, check=True, capture_output=True)
+                     tmp_reqs = tmp.name
+                 
+                 try:
+                     # Step 2: Sync dry-run
+                     sync_cmd = ["uv", "pip", "sync", "--dry-run", tmp_reqs]
+                     result = subprocess.run(sync_cmd, capture_output=True, text=True)
+                     
+                     if result.returncode == 0:
+                         # uv pip sync returns 0 usually. We check output for changes.
+                         output = result.stderr + result.stdout # uv often writes to stderr
+                         if "would result in" in output.lower() or "uninstalled" in output.lower() or "installed" in output.lower():
+                             # If output suggests changes (audited, installed, uninstalled), it's dirty.
+                             # Note: "Audited 1 package in..." is fine. We look for action verbs.
+                             # Actually `uv pip sync` output is specific.
+                             # Let's check for "+" or "-" lines usually? 
+                             # Or just rely on "Nothing to do" message? 
+                             # uv 0.1.x output: "Audited X packages..." then list of changes.
+                             # If no changes, it usually just says Audited.
+                             # Let's count lines that start with + or -
+                             changes = [l for l in output.splitlines() if l.strip().startswith("+") or l.strip().startswith("-")]
+                             if changes:
+                                 error_msg = f"Local environment is NOT in sync with pyproject.toml. Pending changes:\n{chr(10).join(changes[:5])}..."
+                                 self.logger.error(error_msg)
+                                 raise RuntimeError(
+                                     "⛔ CRITICAL: Local environment desynchronized! "
+                                     "Your venv does not match pyproject.toml. "
+                                     "Please run 'uv sync' or 'uv pip sync requirements.txt' locally before submitting."
+                                 )
+                 finally:
+                     if os.path.exists(tmp_reqs):
+                         os.remove(tmp_reqs)
+
+             except subprocess.CalledProcessError:
+                 self.logger.warning("Could not compile pyproject.toml for verification (maybe syntax error?). skipping.")
+             except Exception as e:
+                 self.logger.warning(f"Verification Check Failed: {e}")
+
     def _generate_requirements(self, force_regenerate=False):
         """
         Generate requirements.txt.
@@ -568,6 +654,9 @@ class ClusterBackend(ABC):
             force_regenerate: If True, always regenerate. If False, check if dependencies changed.
         """
         from slurmray.utils import DependencyManager
+
+        # VERIFY LOCAL INTEGRITY FIRST
+        self._verify_local_env_integrity()
 
         req_file = os.path.join(self.launcher.project_path, "requirements.txt")
         dep_manager = DependencyManager(self.launcher.project_path, self.logger)

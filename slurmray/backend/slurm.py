@@ -776,7 +776,8 @@ class SlurmBackend(RemoteMixin):
         tunnel = None
         output_lines = []
 
-        # Read output line by line to capture job ID
+        # Read output line by line to capture job ID and Lock Hash
+        remote_lock_hash = None
         while True:
             line = stdout.readline()
             if not line:
@@ -786,6 +787,10 @@ class SlurmBackend(RemoteMixin):
             # Double output: console + log file
             print(line, end="")
             self.logger.info(line.strip())
+            
+            # Capture Lock Hash
+            if "REMOTE_LOCK_HASH: " in line:
+                remote_lock_hash = line.split("REMOTE_LOCK_HASH: ")[1].strip()
 
             # Try to extract job ID from output (format: "Submitted batch job 12345")
             if not job_id:
@@ -796,6 +801,104 @@ class SlurmBackend(RemoteMixin):
                     self.logger.info(f"Job ID detected: {job_id}")
 
         exit_status = stdout.channel.recv_exit_status()
+        
+        # Verify Lock Hash
+        if exit_status == 0 and remote_lock_hash:
+            self.logger.info("Verifying environment parity...")
+            # Compute local lock hash
+            try:
+                local_freeze = self._run_uv_freeze()
+                # We need to simulate the remote state? 
+                # Remote lock includes EVERYTHING installed.
+                # Local lock includes EVERYTHING installed.
+                # If they match, we are good.
+                import hashlib
+                # Normalize line endings and sorting? uv pip freeze is sorted?
+                # Let's simple hash the string, but better to normalize lines.
+                local_lines = sorted([l.strip() for l in local_freeze.strip().splitlines() if l.strip()])
+                # We might want to filter out specific things that differ OS-wise?
+                # But strict check means strict check.
+                # The user asked for "Si les lock diffèrent".
+                # Let's re-hash the content exactly as we did on remote? 
+                # Remote did: uv pip list --format=freeze > remote_lock.txt -> sha256sum
+                # sha256sum includes newlines.
+                # Let's replicate exact remote logic locally:
+                # 1. run uv freeze > temp
+                # 2. sha256sum temp
+                
+                # NOTE: line endings might differ (LF vs CRLF). 
+                # But we are on Linux (User OS).
+                
+                # HOWEVER: Remote might have different platform specific packages (nvidia-*)?
+                # If so, strict lock check WILL fail.
+                # The user requirement: "affiche une erreur ... si les lock diffèrent"
+                # If the cluster has different specific packages (e.g. torch+cu118 vs local torch+cpu), this IS a diff.
+                # But that might be intended? 
+                # SlurmRay ops: "If it works locally, it MUST work on the cluster." -> implied Parity.
+                # But typically hardware libs differ.
+                # Let's implement strict check as requested. 
+                
+                local_hash = hashlib.sha256(local_freeze.encode('utf-8')).hexdigest()
+                
+                # Wait, remote used sha256sum command which is NOT just content hash (it hashes file bytes).
+                # Python's hashlib of string might differ if encoding/newlines differ.
+                # Let's rely on content comparision if possible? No we only have hash.
+                # Let's try to match logic. 
+                # Local side:
+                # cmd = "uv pip list --format=freeze | sha256sum"
+                # result = subprocess.run(cmd, shell=True, capture_output=True)
+                # local_hash_sum = result.stdout.split()[0]
+                
+                pass # Logic continues below
+                
+            except Exception as e:
+                self.logger.warning(f"Could not compute local lock hash: {e}")
+                
+            # Actually implementing the check logic:
+            try:
+                # Generate local freeze exactly as remote does
+                local_freeze = self._run_uv_freeze()
+                # Simulate "echo content > file; sha256sum file" behavior
+                # sha256sum on Linux adds a newline at EOF if echoed? 
+                # remote: `uv ... > file`. `uv` output usually ends with newline.
+                
+                # Let's do a more robust verification:
+                # Filter out obvious platform differences if needed? 
+                # User said: "raise un issue sur le repo slurmray si les lock diffèrent"
+                # This implies strict equality is expected.
+                
+                # Local calculation
+                import hashlib
+                local_bytes = local_freeze.encode('utf-8')
+                # sha256sum is equivalent to hashlib.sha256(content).hexdigest() IF content matches exactly
+                local_calc_hash = hashlib.sha256(local_bytes).hexdigest()
+                
+                # CHECK: Does remote `sha256sum` output match this?
+                # remote `uv pip list` -> file. 
+                # If I do `uv pip list ... | sha256sum` locally, it should match.
+                
+                # Let's run the exact pipeline locally to be safe about CLI behavior
+                cmd = "uv pip list --format=freeze | sha256sum"
+                res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if res.returncode == 0:
+                    local_hash_cli = res.stdout.strip().split()[0]
+                    
+                    if local_hash_cli != remote_lock_hash:
+                         self.logger.error(f"❌ LOCK MISMATCH! Local: {local_hash_cli} != Remote: {remote_lock_hash}")
+                         self.logger.error("Environment parity check FAILED.")
+                         raise RuntimeError(
+                             "⛔ CRITICAL: Remote environment lock differs from local lock!\n"
+                             "This indicates that the cluster environment is NOT identical to your local setup.\n"
+                             "Please please raise an issue on the SlurmRay repository with your reproduction steps."
+                         )
+                    else:
+                         self.logger.info("✅ Environment Parity Verified (Locks match)")
+                
+            except Exception as e:
+                # Don't block if local check computation fails, but log it
+                if "CRITICAL" in str(e): raise e
+                self.logger.warning(f"Parity check skipped due to computation error: {e}")
+
 
         # Check if script failed - fail-fast immediately
         if exit_status != 0:
@@ -1137,8 +1240,6 @@ if [ -f requirements.txt ]; then
         # Install packages that need installation
         if [ -s /tmp/to_install.txt ]; then
             > /tmp/install_errors.txt  # Track errors
-            while IFS= read -r line; do
-                pkg_name=$(echo "$line" | sed 's/[<>=!].*//' | sed 's/\\[.*\\]//' | sed 's/[[:space:]]*//')
                 if uv pip install --quiet "$line" >/dev/null 2>&1; then
                     echo "  ✅ $pkg_name"
                 else
@@ -1180,7 +1281,19 @@ if [ -f requirements.txt ]; then
     fi
 else
     echo "⚠️  No requirements.txt found, skipping dependency installation"
+else
+    echo "⚠️  No requirements.txt found, skipping dependency installation"
 fi
+
+# GENERATE REMOTE LOCK HASH FOR VERIFICATION
+echo "🔒 Generating remote lockfile..."
+uv pip list --format=freeze > remote_lock.txt
+# Filter out slurmray/ray/dill from lock to match local filtering logic if needed? 
+# No, we want exact environment match. But local lock (from uv pip freeze) might include them.
+# Let's just hash it.
+REMOTE_HASH=$(sha256sum remote_lock.txt | awk '{print $1}')
+echo "REMOTE_LOCK_HASH: $REMOTE_HASH"
+
 
 # Fix torch bug (https://github.com/pytorch/pytorch/issues/111469)
 PYTHON_VERSION=$({python3_cmd} -c 'import sys; print(f"{{sys.version_info.major}}.{{sys.version_info.minor}}")')
