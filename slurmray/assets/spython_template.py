@@ -82,9 +82,16 @@ except Exception as e:
 print("🔄 SlurmRay: Patching multiprocessing with ray.util.multiprocessing...")
 from ray.util import multiprocessing as ray_mp
 
+# Add shim for multiprocessing.reduction (required by torch.multiprocessing.reductions)
+# torch.multiprocessing.reductions does `from multiprocessing import reduction` at line 5,
+# but ray.util.multiprocessing doesn't expose this attribute.
+# We shim it from the original multiprocessing module to satisfy the import.
+import multiprocessing.reduction as _mp_reduction
+ray_mp.reduction = _mp_reduction
+
 # Patch standard multiprocessing module
 sys.modules['multiprocessing'] = ray_mp
-print("   ✅ multiprocessing patched with Ray")
+print("   ✅ multiprocessing patched with Ray (reduction shim included)")
 
 # Also patch torch.multiprocessing if available
 try:
