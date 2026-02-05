@@ -72,26 +72,46 @@ except Exception as e:
     sys.exit(1)
 
 # ============================================================================
-# RAY MULTIPROCESSING PATCH - ALWAYS ENABLED
+# RAY MULTIPROCESSING PATCH - PROXY MODULE APPROACH (v9.0.2)
 # ============================================================================
-# Replace standard multiprocessing with ray.util.multiprocessing.
-# This allows libraries that internally use multiprocessing.Pool (e.g., ColBERT)
-# to work seamlessly within the Ray cluster context, avoiding spawn bootstrap errors.
-# See: https://docs.ray.io/en/latest/ray-more-libs/multiprocessing.html
+# Instead of replacing multiprocessing entirely with ray.util.multiprocessing
+# (which only exposes Pool, JoinableQueue, TimeoutError), we create a proxy
+# module that inherits ALL attributes from the original multiprocessing but
+# overrides only Pool with Ray's distributed version.
+#
+# This fixes ImportError for Queue, Process, Lock, etc. from libraries like
+# sentence-transformers, torch.multiprocessing.reductions, and others.
 # ============================================================================
-print("🔄 SlurmRay: Patching multiprocessing with ray.util.multiprocessing...")
+print("🔄 SlurmRay: Patching multiprocessing.Pool with Ray (proxy module)...")
+
+# Import the original multiprocessing BEFORE we patch sys.modules
+import multiprocessing as _original_mp
 from ray.util import multiprocessing as ray_mp
 
-# Add shim for multiprocessing.reduction (required by torch.multiprocessing.reductions)
-# torch.multiprocessing.reductions does `from multiprocessing import reduction` at line 5,
-# but ray.util.multiprocessing doesn't expose this attribute.
-# We shim it from the original multiprocessing module to satisfy the import.
-import multiprocessing.reduction as _mp_reduction
-ray_mp.reduction = _mp_reduction
+# Create a proxy module class that passes through to original multiprocessing
+# but overrides Pool with Ray's distributed Pool
+class _MultiprocessingProxy:
+    """Proxy module that wraps multiprocessing, overriding only Pool with Ray's version."""
+    
+    def __init__(self, original_mp, ray_mp):
+        self._original_mp = original_mp
+        self._ray_mp = ray_mp
+    
+    def __getattr__(self, name):
+        # Override Pool with Ray's distributed Pool
+        if name == 'Pool':
+            return self._ray_mp.Pool
+        # Everything else comes from original multiprocessing
+        return getattr(self._original_mp, name)
+    
+    def __dir__(self):
+        # Expose all original multiprocessing attributes
+        return dir(self._original_mp)
 
-# Patch standard multiprocessing module
-sys.modules['multiprocessing'] = ray_mp
-print("   ✅ multiprocessing patched with Ray (reduction shim included)")
+# Create and install the proxy
+_mp_proxy = _MultiprocessingProxy(_original_mp, ray_mp)
+sys.modules['multiprocessing'] = _mp_proxy
+print("   ✅ multiprocessing.Pool patched with Ray (all other attrs preserved)")
 
 # Also patch torch.multiprocessing if available
 try:

@@ -1,4 +1,4 @@
-# SlurmRay v9.0.1 - Autonomous Distributed Ray on Slurm
+# SlurmRay v9.0.2 - Autonomous Distributed Ray on Slurm
 
 > [!IMPORTANT]
 > **Bug Reports**: SlurmRay is in beta. If you find a bug, please [report it on GitHub](https://github.com/hjamet/SLURM_RAY/issues).
@@ -10,19 +10,19 @@
 
 SlurmRay allows you to transparently distribute your Python tasks across Slurm clusters (like Curnagl) or standalone servers (like Desi). It handles environment synchronization, local package detection, and task distribution automatically, turning your local machine into a control center for massive compute resources.
 
-**Current State**: Version 9.0.1 (Feb 05). **Ray Multiprocessing Patch**: Automatically replaces `multiprocessing` with `ray.util.multiprocessing` for seamless distributed execution, with `reduction` shim for PyTorch compatibility.
+**Current State**: Version 9.0.2 (Feb 05). **Ray Multiprocessing Patch**: Proxy module approach—inherits all `multiprocessing` attributes, overrides only `Pool` with Ray's distributed version.
 
 > [!NOTE]
-> **Ray Multiprocessing Patch (v9.0.1)**: The remote execution wrapper **always** patches `multiprocessing` and `torch.multiprocessing` with `ray.util.multiprocessing`. Includes `reduction` shim to fix `ImportError: cannot import name 'reduction'` from `torch.multiprocessing.reductions`.
+> **Ray Multiprocessing Patch (v9.0.2)**: Uses a **proxy module** that preserves all `multiprocessing` attributes (`Queue`, `Process`, `Lock`, `reduction`, etc.) while overriding only `Pool` with Ray's distributed version. Fixes all `ImportError` issues from v9.0.0-9.0.1.
 >
-> **Previous Limitation Resolved**: `sentence-transformers.start_multi_process_pool()` and similar patterns now work natively via Ray's distributed Pool.
+> **Libraries Supported**: `sentence-transformers`, `ColBERT`, `torch.multiprocessing`, and any library using standard `multiprocessing`.
 
 ### ⚠️ Infrastructure Warning (Jan 28 2026)
 > **Python 3.12.1 on Desi** is currently unstable (Ray Segfaults).
 > While the new `uv` integration fixes the installation issues, runtime crashes (Exit 245) have been observed.
 > **Recommendation**: Use **Python 3.11.6** for critical workloads until the Ray binary incompatibility is resolved.
 
-## 🌟 Key Features (SlurmRay v9.0.1)
+## 🌟 Key Features (SlurmRay v9.0.2)
 - **Ray Multiprocessing Patch**: Transparently replaces `multiprocessing.Pool` with `ray.util.multiprocessing.Pool` for distributed execution.
 - **Zero-Config Launch**: No `project_name` required. Auto-git detection.
 - **Robust Venv**: Uses `uv venv` to safely create environments even on broken system Pythons.
