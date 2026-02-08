@@ -169,14 +169,19 @@ class RemoteMixin(ClusterBackend):
         remote_hashes = sync_manager.fetch_remote_hashes(ssh_client, remote_hash_file)
 
         # Determine which files need uploading
-        files_to_upload = sync_manager.get_files_to_upload(local_files, remote_hashes)
+        files_to_upload, total_tracked = sync_manager.get_files_to_upload(
+            local_files, remote_hashes
+        )
 
         if not files_to_upload:
-            self.logger.info("✅ All local files are up to date, no upload needed.")
+            self.logger.info(
+                f"✅ All {total_tracked} tracked files are up to date, no upload needed."
+            )
             return
 
         self.logger.info(
-            f"📤 Uploading {len(files_to_upload)} modified/new file(s) out of {len(local_files)} total..."
+            f"📤 Uploading {len(files_to_upload)} modified/new file(s) "
+            f"out of {total_tracked} tracked files..."
         )
 
         # Upload files
@@ -187,20 +192,19 @@ class RemoteMixin(ClusterBackend):
 
             # Handle directories (packages)
             if os.path.isdir(abs_path):
-                # Upload all Python files in the directory recursively
+                # Upload all files in the directory recursively
                 for root, dirs, files in os.walk(abs_path):
                     # Skip __pycache__
                     dirs[:] = [d for d in dirs if d != "__pycache__"]
                     for file in files:
-                        if file.endswith(".py"):
-                            file_path = os.path.join(root, file)
-                            file_rel = os.path.relpath(
-                                file_path, self.launcher.pwd_path
-                            )
-                            self._push_file_wrapper(
-                                file_rel, sftp, remote_base_dir, ssh_client
-                            )
-                            uploaded_files.append(file_rel)
+                        file_path = os.path.join(root, file)
+                        file_rel = os.path.relpath(
+                            file_path, self.launcher.pwd_path
+                        )
+                        self._push_file_wrapper(
+                            file_rel, sftp, remote_base_dir, ssh_client
+                        )
+                        uploaded_files.append(file_rel)
             else:
                 # Single file
                 self._push_file_wrapper(rel_path, sftp, remote_base_dir, ssh_client)

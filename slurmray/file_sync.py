@@ -7,6 +7,7 @@ import os
 import json
 import hashlib
 import logging
+import tempfile
 from typing import Dict, Set, List, Tuple
 from pathlib import Path
 
@@ -173,10 +174,10 @@ class LocalFileSyncManager:
 
     def get_files_to_upload(
         self, local_files: List[str], remote_hashes: Dict[str, Dict[str, any]] = None
-    ) -> List[str]:
+    ) -> Tuple[List[str], int]:
         """
         Compare local and remote hashes to determine which files need uploading.
-        Returns list of relative paths to files that need uploading.
+        Returns (list of relative paths needing upload, total tracked files count).
         """
         if remote_hashes is None:
             remote_hashes = self.hash_manager.load_remote_hashes()
@@ -204,7 +205,7 @@ class LocalFileSyncManager:
         # Save updated local hashes
         self.hash_manager.save_local_hashes(local_hashes)
 
-        return files_to_upload
+        return files_to_upload, len(local_hashes)
 
     def update_remote_hashes(
         self,
@@ -250,30 +251,58 @@ class LocalFileSyncManager:
     def save_remote_hashes_to_server(
         self, ssh_client, remote_hash_file_path: str, hashes: Dict[str, Dict[str, any]]
     ):
-        """Save remote file hashes to the server via SSH."""
+        """
+        Save remote file hashes to the server via SFTP.
+        Uses SFTP put instead of heredoc to avoid truncation on large payloads.
+        """
+        local_tmp = None
         try:
             # Create JSON content
             content = json.dumps(hashes, indent=2)
+            content_bytes = content.encode("utf-8")
 
-            # Write to temporary file first, then move (atomic operation)
-            temp_path = remote_hash_file_path + ".tmp"
+            # Write to local temp file first
+            with tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".json", delete=False
+            ) as tmp:
+                tmp.write(content_bytes)
+                local_tmp = tmp.name
+
+            # Ensure remote directory exists
+            remote_dir = os.path.dirname(remote_hash_file_path)
             stdin, stdout, stderr = ssh_client.exec_command(
-                f"mkdir -p '{os.path.dirname(remote_hash_file_path)}'"
+                f"mkdir -p '{remote_dir}'"
             )
             stdout.channel.recv_exit_status()
 
-            # Write content via echo (simple but works)
-            stdin, stdout, stderr = ssh_client.exec_command(
-                f"cat > '{temp_path}' << 'EOF'\n{content}\nEOF"
-            )
-            exit_status = stdout.channel.recv_exit_status()
-            if exit_status == 0:
-                # Move temp file to final location
-                stdin, stdout, stderr = ssh_client.exec_command(
-                    f"mv '{temp_path}' '{remote_hash_file_path}'"
-                )
-                stdout.channel.recv_exit_status()
+            # Upload via SFTP (robust against large payloads)
+            sftp = ssh_client.open_sftp()
+            try:
+                sftp.put(local_tmp, remote_hash_file_path)
+
+                # Verify file size matches
+                remote_stat = sftp.stat(remote_hash_file_path)
+                if remote_stat.st_size != len(content_bytes):
+                    if self.logger:
+                        self.logger.warning(
+                            f"⚠️ Hash file size mismatch! "
+                            f"Expected: {len(content_bytes)} bytes, "
+                            f"Remote: {remote_stat.st_size} bytes. "
+                            f"File sync may be unreliable."
+                        )
+                else:
+                    if self.logger:
+                        self.logger.debug(
+                            f"Hash file saved: {len(hashes)} entries, "
+                            f"{len(content_bytes)} bytes"
+                        )
+            finally:
+                sftp.close()
+
         except Exception as e:
             if self.logger:
                 self.logger.warning(f"Failed to save remote hashes to server: {e}")
+        finally:
+            if local_tmp and os.path.exists(local_tmp):
+                os.unlink(local_tmp)
 
