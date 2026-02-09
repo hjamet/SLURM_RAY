@@ -109,6 +109,7 @@ class Cluster:
         retention_days: int = 1,
         asynchronous: bool = False,
         strict_versions: bool = True,
+        force_sync: bool = False,
     ):
         """Initialize the launcher
 
@@ -133,6 +134,7 @@ class Cluster:
             retention_days (int, optional): Number of days to retain files and venv on the cluster before automatic cleanup. Must be between 1 and 30 days. Defaults to 1.
             asynchronous (bool, optional): If True, the call to the function returns immediately with a FunctionReturn object. Defaults to False.
             strict_versions (bool, optional): If True, strictly enforces local package versions on the remote environment. If False, removes version constraints to allow remote pip to resolve best compatible versions (useful when Python versions differ). Defaults to True.
+            force_sync (bool, optional): Force re-upload of all files, ignoring the local/remote hash cache. Use this if you want to ensure a clean state or if sync issues occur. Defaults to False.
         """
         # Load environment variables from .env file
         # Load environment variables from .env file
@@ -268,6 +270,7 @@ class Cluster:
         self.force_reinstall_project = force_reinstall_project
         self.asynchronous = asynchronous
         self.strict_versions = strict_versions
+        self.force_sync = force_sync
 
         # Track which parameters were explicitly passed (for warnings)
         import inspect

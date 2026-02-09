@@ -47,9 +47,14 @@ class FileHashManager:
         Compute hashes for multiple files and directories.
         For directories, recursively computes hashes for all files within.
         Returns dict: {rel_path: {"hash": "...", "mtime": ..., "size": ...}}
+        
+        Optimized: uses local cache to avoid recomputing hashes for unchanged files.
         """
         hashes = {}
         files_to_process = set()  # Use set to avoid duplicates
+        
+        # Load previous local hashes to optimize computation
+        previous_hashes = self.load_local_hashes()
         
         for file_path in file_paths:
             # Convert to absolute path
@@ -100,10 +105,21 @@ class FileHashManager:
                 if rel_path.startswith(".."):
                     continue
                 
+                # Performance Optimization: Check mtime and size before recomputing hash
+                stat = os.stat(abs_path)
+                prev_info = previous_hashes.get(rel_path)
+                
+                if (prev_info and 
+                    prev_info.get("mtime") == stat.st_mtime and 
+                    prev_info.get("size") == stat.st_size and
+                    prev_info.get("hash")):
+                    # File likely unchanged, reuse hash
+                    hashes[rel_path] = prev_info
+                    continue
+
                 # Compute hash and metadata
                 file_hash = self.compute_file_hash(abs_path)
                 if file_hash:
-                    stat = os.stat(abs_path)
                     hashes[rel_path] = {
                         "hash": file_hash,
                         "mtime": stat.st_mtime,
@@ -247,6 +263,59 @@ class LocalFileSyncManager:
             if self.logger:
                 self.logger.debug(f"Could not fetch remote hashes: {e}")
         return {}
+
+    def verify_remote_hashes_existence(
+        self, ssh_client, remote_base_dir: str, remote_hashes: Dict[str, Dict[str, any]]
+    ) -> Dict[str, Dict[str, any]]:
+        """
+        Verify that files in remote_hashes actually exist on the server.
+        Removes entries for files that are missing.
+        Uses a single find command for efficiency.
+        """
+        if not remote_hashes:
+            return {}
+
+        try:
+            # Use find to list all files in project root (excluding .venv and .slogs)
+            # This is much faster than individual stat calls
+            cmd = (
+                f"find '{remote_base_dir}' -type f "
+                f"! -path '*/.venv/*' ! -path '*/.slogs/*' "
+                f"-printf '%P\\n'"
+            )
+            stdin, stdout, stderr = ssh_client.exec_command(cmd)
+            
+            existing_files = set()
+            for line in stdout:
+                file_rel = line.strip()
+                if file_rel:
+                    existing_files.add(file_rel)
+            
+            exit_status = stdout.channel.recv_exit_status()
+            if exit_status != 0:
+                # If find fails, we don't prune anything to be safe
+                return remote_hashes
+
+            # Keep only items that still exist on server
+            pruned_hashes = {}
+            removed_count = 0
+            for rel_path, info in remote_hashes.items():
+                if rel_path in existing_files:
+                    pruned_hashes[rel_path] = info
+                else:
+                    removed_count += 1
+            
+            if removed_count > 0 and self.logger:
+                self.logger.info(
+                    f"Found {removed_count} missing files on cluster. Cache invalidated for these files."
+                )
+            
+            return pruned_hashes
+
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to verify remote files existence: {e}")
+            return remote_hashes
 
     def save_remote_hashes_to_server(
         self, ssh_client, remote_hash_file_path: str, hashes: Dict[str, Dict[str, any]]

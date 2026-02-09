@@ -166,7 +166,19 @@ class RemoteMixin(ClusterBackend):
         )
 
         # Fetch remote hashes
-        remote_hashes = sync_manager.fetch_remote_hashes(ssh_client, remote_hash_file)
+        # If force_sync is enabled, we start with an empty dict to force re-upload
+        if getattr(self.launcher, "force_sync", False):
+            self.logger.info("🔄 Force sync enabled: ignoring remote hash cache.")
+            remote_hashes = {}
+        else:
+            remote_hashes = sync_manager.fetch_remote_hashes(ssh_client, remote_hash_file)
+            
+            # CRITICAL: Verify that files tracked in remote_hashes actually exist on server.
+            # This fixes the bug where manual deletion on cluster is ignored.
+            if remote_hashes:
+                remote_hashes = sync_manager.verify_remote_hashes_existence(
+                    ssh_client, remote_base_dir, remote_hashes
+                )
 
         # Determine which files need uploading
         files_to_upload, total_tracked = sync_manager.get_files_to_upload(
