@@ -180,15 +180,47 @@ class RemoteMixin(ClusterBackend):
                     ssh_client, remote_base_dir, remote_hashes
                 )
 
-        # Determine which files need uploading
-        files_to_upload, total_tracked = sync_manager.get_files_to_upload(
+        # Determine which files need uploading and which need deleting
+        files_to_upload, files_to_delete, total_tracked = sync_manager.get_files_to_upload(
             local_files, remote_hashes
         )
 
-        if not files_to_upload:
+        # Delete stale files on remote (renamed/deleted locally)
+        if files_to_delete:
             self.logger.info(
-                f"✅ All {total_tracked} tracked files are up to date, no upload needed."
+                f"🗑️ Removing {len(files_to_delete)} stale file(s) from cluster..."
             )
+            for rel_path in files_to_delete:
+                remote_path = os.path.join(remote_base_dir, rel_path)
+                try:
+                    stdin, stdout, stderr = ssh_client.exec_command(
+                        f"rm -f '{remote_path}'"
+                    )
+                    stdout.channel.recv_exit_status()
+                    self.logger.debug(f"Deleted remote file: {rel_path}")
+                except Exception as e:
+                    self.logger.debug(f"Failed to delete {rel_path}: {e}")
+            # Clean up remote hash cache
+            sync_manager.cleanup_remote_hashes(files_to_delete, remote_hashes)
+
+        if not files_to_upload:
+            if files_to_delete:
+                self.logger.info(
+                    f"✅ {len(files_to_delete)} stale file(s) removed. "
+                    f"All {total_tracked} tracked files are up to date."
+                )
+            else:
+                self.logger.info(
+                    f"✅ All {total_tracked} tracked files are up to date, no upload needed."
+                )
+            # Still need to save updated remote hashes if deletions occurred
+            if files_to_delete:
+                remote_hash_file = os.path.join(
+                    remote_base_dir, ".slogs", ".remote_file_hashes.json"
+                )
+                sync_manager.save_remote_hashes_to_server(
+                    ssh_client, remote_hash_file, remote_hashes
+                )
             return
 
         self.logger.info(

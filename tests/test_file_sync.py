@@ -133,7 +133,7 @@ class TestLocalFileSyncManager:
 
     def test_first_sync_uploads_everything(self):
         """With empty remote_hashes, all files should be flagged for upload."""
-        files_to_upload, total = self.sync_manager.get_files_to_upload(
+        files_to_upload, files_to_delete, total = self.sync_manager.get_files_to_upload(
             ["src", "config.yaml"], remote_hashes={}
         )
         # src/ has 3 .py files + config.yaml at root = 4 files total
@@ -141,6 +141,7 @@ class TestLocalFileSyncManager:
         assert len(files_to_upload) == 4, (
             f"Expected 4 files to upload, got {len(files_to_upload)}"
         )
+        assert len(files_to_delete) == 0
 
     def test_no_upload_when_hashes_match(self):
         """After simulating a full sync, no files should need upload."""
@@ -149,12 +150,13 @@ class TestLocalFileSyncManager:
         remote_hashes = dict(local_hashes)  # Deep-ish copy of current state
 
         # Second pass: compare against remote
-        files_to_upload, total = self.sync_manager.get_files_to_upload(
+        files_to_upload, files_to_delete, total = self.sync_manager.get_files_to_upload(
             ["src", "config.yaml"], remote_hashes=remote_hashes
         )
         assert len(files_to_upload) == 0, (
             f"Expected 0 files, got {files_to_upload}"
         )
+        assert len(files_to_delete) == 0
         assert total == 4
 
     def test_detects_modified_file(self):
@@ -167,13 +169,14 @@ class TestLocalFileSyncManager:
         self._write("src/pkg/main.py", "def main_v2(): pass  # updated!")
 
         # Second dispatch
-        files_to_upload, total = self.sync_manager.get_files_to_upload(
+        files_to_upload, files_to_delete, total = self.sync_manager.get_files_to_upload(
             ["src", "config.yaml"], remote_hashes=remote_hashes
         )
         assert "src/pkg/main.py" in files_to_upload, (
             f"Modified file not detected! Got: {files_to_upload}"
         )
         assert len(files_to_upload) == 1
+        assert len(files_to_delete) == 0
 
     def test_detects_new_file(self):
         """Newly added file should be detected as 'new'."""
@@ -183,10 +186,11 @@ class TestLocalFileSyncManager:
         # Add a new file
         self._write("src/pkg/sub/new_module.py", "def new(): pass")
 
-        files_to_upload, total = self.sync_manager.get_files_to_upload(
+        files_to_upload, files_to_delete, total = self.sync_manager.get_files_to_upload(
             ["src", "config.yaml"], remote_hashes=remote_hashes
         )
         assert "src/pkg/sub/new_module.py" in files_to_upload
+        assert len(files_to_delete) == 0
         assert total == 5  # 4 original + 1 new
 
     def test_detects_deeply_nested_modification(self):
@@ -197,19 +201,21 @@ class TestLocalFileSyncManager:
         # Modify deep file
         self._write("src/pkg/sub/helper.py", "def help_v2(): return 42")
 
-        files_to_upload, total = self.sync_manager.get_files_to_upload(
+        files_to_upload, files_to_delete, total = self.sync_manager.get_files_to_upload(
             ["src"], remote_hashes=remote_hashes
         )
         assert "src/pkg/sub/helper.py" in files_to_upload
         assert len(files_to_upload) == 1
+        assert len(files_to_delete) == 0
 
     def test_returns_correct_tuple_format(self):
-        """get_files_to_upload should return (list, int) tuple."""
+        """get_files_to_upload should return (list, list, int) tuple."""
         result = self.sync_manager.get_files_to_upload(["src"], remote_hashes={})
         assert isinstance(result, tuple), f"Expected tuple, got {type(result)}"
-        assert len(result) == 2
-        assert isinstance(result[0], list)
-        assert isinstance(result[1], int)
+        assert len(result) == 3
+        assert isinstance(result[0], list)  # files_to_upload
+        assert isinstance(result[1], list)  # files_to_delete
+        assert isinstance(result[2], int)   # total
 
     def test_update_remote_hashes_records_uploaded(self):
         """update_remote_hashes should record hashes for uploaded files."""
@@ -227,10 +233,11 @@ class TestLocalFileSyncManager:
         local_files = ["src", "config.yaml"]
 
         # --- Dispatch 1: fresh sync ---
-        files_to_upload_1, total_1 = self.sync_manager.get_files_to_upload(
+        files_to_upload_1, files_to_delete_1, total_1 = self.sync_manager.get_files_to_upload(
             local_files, remote_hashes={}
         )
         assert len(files_to_upload_1) == 4  # All new
+        assert len(files_to_delete_1) == 0
         assert total_1 == 4
 
         # Simulate successful upload → update remote hashes
@@ -239,32 +246,94 @@ class TestLocalFileSyncManager:
         assert len(remote_hashes) == 4
 
         # --- Dispatch 2: nothing changed ---
-        files_to_upload_2, total_2 = self.sync_manager.get_files_to_upload(
+        files_to_upload_2, files_to_delete_2, total_2 = self.sync_manager.get_files_to_upload(
             local_files, remote_hashes=remote_hashes
         )
         assert len(files_to_upload_2) == 0
+        assert len(files_to_delete_2) == 0
         assert total_2 == 4
 
         # --- Modify a file ---
         self._write("src/pkg/main.py", "def main_v3(): return 'SYNC OK'")
 
         # --- Dispatch 3: detect modification ---
-        files_to_upload_3, total_3 = self.sync_manager.get_files_to_upload(
+        files_to_upload_3, files_to_delete_3, total_3 = self.sync_manager.get_files_to_upload(
             local_files, remote_hashes=remote_hashes
         )
         assert files_to_upload_3 == ["src/pkg/main.py"], (
             f"Expected only main.py, got {files_to_upload_3}"
         )
+        assert len(files_to_delete_3) == 0
         assert total_3 == 4
 
         # Simulate upload → update
         self.sync_manager.update_remote_hashes(files_to_upload_3, remote_hashes)
 
         # --- Dispatch 4: stable again ---
-        files_to_upload_4, _ = self.sync_manager.get_files_to_upload(
+        files_to_upload_4, files_to_delete_4, _ = self.sync_manager.get_files_to_upload(
             local_files, remote_hashes=remote_hashes
         )
         assert len(files_to_upload_4) == 0
+        assert len(files_to_delete_4) == 0
+
+    def test_detects_renamed_file(self):
+        """Renamed file should appear in files_to_delete (old) and files_to_upload (new)."""
+        local_files = ["src", "config.yaml"]
+
+        # Simulate first sync
+        local_hashes = self.hash_manager.compute_hashes(local_files)
+        remote_hashes = dict(local_hashes)
+
+        # Rename: src/pkg/main.py -> src/pkg/core_main.py
+        os.remove(os.path.join(self.project_root, "src/pkg/main.py"))
+        self._write("src/pkg/core_main.py", "def main(): pass")
+
+        files_to_upload, files_to_delete, total = self.sync_manager.get_files_to_upload(
+            local_files, remote_hashes=remote_hashes
+        )
+        assert "src/pkg/main.py" in files_to_delete, (
+            f"Old filename should be in files_to_delete! Got: {files_to_delete}"
+        )
+        assert "src/pkg/core_main.py" in files_to_upload, (
+            f"New filename should be in files_to_upload! Got: {files_to_upload}"
+        )
+
+    def test_detects_deleted_file(self):
+        """Deleted file should appear in files_to_delete."""
+        local_files = ["src", "config.yaml"]
+
+        # Simulate first sync
+        local_hashes = self.hash_manager.compute_hashes(local_files)
+        remote_hashes = dict(local_hashes)
+
+        # Delete a file locally
+        os.remove(os.path.join(self.project_root, "src/pkg/sub/helper.py"))
+
+        files_to_upload, files_to_delete, total = self.sync_manager.get_files_to_upload(
+            local_files, remote_hashes=remote_hashes
+        )
+        assert "src/pkg/sub/helper.py" in files_to_delete, (
+            f"Deleted file not detected! Got: {files_to_delete}"
+        )
+        assert len(files_to_upload) == 0
+        assert total == 3  # 4 - 1 deleted
+
+    def test_cleanup_remote_hashes(self):
+        """cleanup_remote_hashes should remove deleted entries from cache."""
+        remote_hashes = {
+            "src/pkg/main.py": {"hash": "abc", "mtime": 1.0, "size": 10},
+            "src/pkg/old.py": {"hash": "def", "mtime": 2.0, "size": 20},
+            "config.yaml": {"hash": "ghi", "mtime": 3.0, "size": 30},
+        }
+
+        self.sync_manager.cleanup_remote_hashes(
+            ["src/pkg/old.py"], remote_hashes
+        )
+
+        assert "src/pkg/old.py" not in remote_hashes
+        assert "src/pkg/main.py" in remote_hashes
+        assert "config.yaml" in remote_hashes
+        assert len(remote_hashes) == 2
 
 
 if __name__ == "__main__":

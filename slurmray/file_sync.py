@@ -190,10 +190,11 @@ class LocalFileSyncManager:
 
     def get_files_to_upload(
         self, local_files: List[str], remote_hashes: Dict[str, Dict[str, any]] = None
-    ) -> Tuple[List[str], int]:
+    ) -> Tuple[List[str], List[str], int]:
         """
-        Compare local and remote hashes to determine which files need uploading.
-        Returns (list of relative paths needing upload, total tracked files count).
+        Compare local and remote hashes to determine which files need uploading
+        and which remote files should be deleted (renamed/removed locally).
+        Returns (files_to_upload, files_to_delete, total_tracked_count).
         """
         if remote_hashes is None:
             remote_hashes = self.hash_manager.load_remote_hashes()
@@ -201,7 +202,7 @@ class LocalFileSyncManager:
         # Compute current local hashes
         local_hashes = self.hash_manager.compute_hashes(local_files)
 
-        # Compare hashes
+        # Compare hashes: detect new and modified files
         files_to_upload = []
         for rel_path, local_info in local_hashes.items():
             remote_info = remote_hashes.get(rel_path)
@@ -218,10 +219,18 @@ class LocalFileSyncManager:
                 if self.logger:
                     self.logger.debug(f"File modified: {rel_path} (hash changed)")
 
+        # Detect files that exist remotely but not locally (renamed/deleted)
+        files_to_delete = []
+        for rel_path in remote_hashes:
+            if rel_path not in local_hashes:
+                files_to_delete.append(rel_path)
+                if self.logger:
+                    self.logger.debug(f"File deleted locally: {rel_path}")
+
         # Save updated local hashes
         self.hash_manager.save_local_hashes(local_hashes)
 
-        return files_to_upload, len(local_hashes)
+        return files_to_upload, files_to_delete, len(local_hashes)
 
     def update_remote_hashes(
         self,
@@ -243,6 +252,22 @@ class LocalFileSyncManager:
                 remote_hashes[rel_path] = local_hashes[rel_path]
 
         # Save updated remote hashes
+        self.hash_manager.save_remote_hashes(remote_hashes)
+
+    def cleanup_remote_hashes(
+        self,
+        deleted_files: List[str],
+        remote_hashes: Dict[str, Dict[str, any]] = None,
+    ):
+        """
+        Remove deleted files from remote hash cache.
+        """
+        if remote_hashes is None:
+            remote_hashes = self.hash_manager.load_remote_hashes()
+
+        for rel_path in deleted_files:
+            remote_hashes.pop(rel_path, None)
+
         self.hash_manager.save_remote_hashes(remote_hashes)
 
     def fetch_remote_hashes(self, ssh_client, remote_hash_file_path: str) -> Dict[str, Dict[str, any]]:

@@ -1,4 +1,4 @@
-# SlurmRay v9.0.4 - Autonomous Distributed Ray on Slurm
+# SlurmRay v9.2.0 - Autonomous Distributed Ray on Slurm
 
 > [!IMPORTANT]
 > **Bug Reports**: SlurmRay is in beta. If you find a bug, please [report it on GitHub](https://github.com/hjamet/SLURM_RAY/issues).
@@ -10,7 +10,7 @@
 
 SlurmRay allows you to transparently distribute your Python tasks across Slurm clusters (like Curnagl) or standalone servers (like Desi). It handles environment synchronization, local package detection, and task distribution automatically, turning your local machine into a control center for massive compute resources.
 
-**Current State**: Version 9.0.4 (Feb 09). **Smart Hash Synchronization**: Introduces `mtime`/`size` based local caching (speeding up repeated launches) and a remote existence check (fixing the "ModuleNotFoundError" bug when files are manually deleted on the cluster).
+**Current State**: Version 9.2.0 (Feb 09). **Smart Hash Synchronization** with **rename/delete detection**: The incremental sync now detects files that were renamed or deleted locally and removes stale copies from the cluster, preventing `ModuleNotFoundError` caused by ghost files.
 
 > [!NOTE]
 > **Ray Multiprocessing Patch (v9.0.2)**: Uses a **proxy module** that preserves all `multiprocessing` attributes (`Queue`, `Process`, `Lock`, `reduction`, etc.) while overriding only `Pool` with Ray's distributed version. Fixes all `ImportError` issues from v9.0.0-9.0.1.
@@ -22,8 +22,8 @@ SlurmRay allows you to transparently distribute your Python tasks across Slurm c
 > While the new `uv` integration fixes the installation issues, runtime crashes (Exit 245) have been observed.
 > **Recommendation**: Use **Python 3.11.6** for critical workloads until the Ray binary incompatibility is resolved.
 
-## 🌟 Key Features (SlurmRay v9.0.4)
-- **Smart Hash Sync**: Uses local `mtime`/`size` cache for instant scans and verifies remote file existence on every launch to guarantee synchronization even if files are manually deleted on the cluster.
+## 🌟 Key Features (SlurmRay v9.2.0)
+- **Smart Hash Sync with Delete Detection**: Uses local `mtime`/`size` cache for instant scans, verifies remote file existence, and **automatically removes stale files on the cluster** when files are renamed or deleted locally.
 - **Ray Multiprocessing Patch**: Transparently replaces `multiprocessing.Pool` with `ray.util.multiprocessing.Pool` for distributed execution.
 - **Local Wheel Packages Auto-Upload**: Reads `[tool.hatch.build.targets.wheel].packages` from your `pyproject.toml` and automatically uploads declared local packages (e.g. vendored libraries) to the cluster. Excludes them from `requirements.txt` to prevent failed PyPI installs.
 - **Zero-Config Launch**: No `project_name` required. Auto-git detection.
