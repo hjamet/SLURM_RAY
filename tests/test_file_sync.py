@@ -363,6 +363,60 @@ class TestLocalFileSyncManager:
         )
         assert total == 1  # Only 1 file in the dependency graph
 
+    def test_recovery_after_destructive_sync(self):
+        """Files deleted on remote can be recovered by expanding local_files
+        to include parent directories of tracked files.
+
+        Simulates the directory expansion fix in _sync_local_files_incremental:
+        if remote_hashes tracks pkg/main.py, scanning the parent directory
+        discovers ALL sibling files for re-upload.
+        """
+        all_files = ["src", "config.yaml"]
+
+        # Simulate first sync with ALL files
+        local_hashes = self.hash_manager.compute_hashes(all_files)
+        remote_hashes = dict(local_hashes)
+        assert len(remote_hashes) == 4
+
+        # Simulate v9.3.0 destructive cleanup: remote_hashes cleaned to 1 file
+        # (as if cleanup_remote_hashes removed everything except main.py)
+        remote_hashes = {
+            "src/pkg/main.py": local_hashes["src/pkg/main.py"],
+        }
+
+        # With partial local_files (dill graph), only main.py is seen → 0 uploads
+        partial_files = ["src/pkg/main.py"]
+        up, dl, total = self.sync_manager.get_files_to_upload(
+            partial_files, remote_hashes=remote_hashes
+        )
+        assert len(up) == 0, "Baseline: partial graph sees nothing to upload"
+
+        # With directory expansion (simulates the fix in remote.py):
+        # Extract parent dirs from remote_hashes keys and add to local_files
+        import os as _os
+        synced_dirs = set()
+        for rel_path in remote_hashes:
+            parent = _os.path.dirname(rel_path)
+            while parent:
+                synced_dirs.add(parent)
+                parent = _os.path.dirname(parent)
+
+        expanded_files = list(partial_files)
+        for d in synced_dirs:
+            abs_d = _os.path.join(self.project_root, d)
+            if d not in expanded_files and _os.path.isdir(abs_d):
+                expanded_files.append(d)
+
+        # Now all 3 sibling files are discovered and flagged for upload
+        up, dl, total = self.sync_manager.get_files_to_upload(
+            expanded_files, remote_hashes=remote_hashes
+        )
+        assert len(up) >= 2, (
+            f"Expanded scope should detect missing files for upload! Got: {up}"
+        )
+        assert "src/pkg/sub/helper.py" in up, f"Missing sibling file! Got: {up}"
+        assert "src/pkg/__init__.py" in up, f"Missing __init__.py! Got: {up}"
+
 
 if __name__ == "__main__":
     import pytest
