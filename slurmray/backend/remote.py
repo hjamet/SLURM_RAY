@@ -146,15 +146,14 @@ class RemoteMixin(ClusterBackend):
     ):
         """
         Mirror-sync local files to the remote server.
-        Uploads ALL local files and removes orphans on the remote.
-        No hash caching — always correct, self-healing.
+        Uploads ALL local files unconditionally — no cache, no deletion.
         """
-        from slurmray.file_sync import list_local_files, list_remote_files
+        from slurmray.file_sync import list_local_files
 
         if ssh_client is None:
             ssh_client = self.ssh_client
 
-        # 1. List all local files to sync
+        # List all local files to sync
         local_file_set = list_local_files(
             self.launcher.pwd_path, local_files, self.logger
         )
@@ -165,29 +164,9 @@ class RemoteMixin(ClusterBackend):
 
         self.logger.info(f"📤 Uploading {len(local_file_set)} file(s) to cluster...")
 
-        # 2. Upload ALL files
         for rel_path in sorted(local_file_set):
             self._push_file_wrapper(rel_path, sftp, remote_base_dir, ssh_client)
 
         self.logger.info(f"✅ Uploaded {len(local_file_set)} file(s).")
 
-        # 3. List remote files and delete orphans
-        remote_file_set = list_remote_files(ssh_client, remote_base_dir, self.logger)
-        orphans = remote_file_set - local_file_set
-
-        if orphans:
-            self.logger.info(
-                f"🗑️ Removing {len(orphans)} orphan file(s) from cluster..."
-            )
-            for rel_path in sorted(orphans):
-                remote_path = os.path.join(remote_base_dir, rel_path)
-                try:
-                    stdin, stdout, stderr = ssh_client.exec_command(
-                        f"rm -f '{remote_path}'"
-                    )
-                    stdout.channel.recv_exit_status()
-                    self.logger.debug(f"Deleted orphan: {rel_path}")
-                except Exception as e:
-                    self.logger.debug(f"Failed to delete {rel_path}: {e}")
-            self.logger.info(f"✅ Cleanup complete.")
 

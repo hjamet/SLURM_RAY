@@ -118,18 +118,6 @@ class TestListLocalFiles(unittest.TestCase):
         result = list_local_files(self.project_root, ["src"])
         assert "src/pkg/sub/helper.py" not in result
 
-    def test_mirror_sync_scenario(self):
-        """Full mirror scenario: local_files ∩ remote → orphans detected."""
-        # Simulate: local has 4 files
-        local = list_local_files(self.project_root, ["src", "config.yaml"])
-        assert len(local) == 4
-
-        # Simulate: remote has 5 files (including a stale one)
-        remote = local | {"src/pkg/embedding.py"}  # stale ghost
-
-        orphans = remote - local
-        assert orphans == {"src/pkg/embedding.py"}
-
 
 if __name__ == "__main__":
     import pytest
