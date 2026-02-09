@@ -219,13 +219,19 @@ class LocalFileSyncManager:
                 if self.logger:
                     self.logger.debug(f"File modified: {rel_path} (hash changed)")
 
-        # Detect files that exist remotely but not locally (renamed/deleted)
+        # Detect files that exist remotely but were truly deleted/renamed locally.
+        # CRITICAL: We check the actual local filesystem, not just local_hashes.
+        # local_hashes only contains the current dependency graph (a subset of all
+        # project files). A file absent from local_hashes may still exist on disk
+        # — it's just not part of the current job's dependencies.
         files_to_delete = []
         for rel_path in remote_hashes:
             if rel_path not in local_hashes:
-                files_to_delete.append(rel_path)
-                if self.logger:
-                    self.logger.debug(f"File deleted locally: {rel_path}")
+                abs_path = os.path.join(self.project_root, rel_path)
+                if not os.path.exists(abs_path):
+                    files_to_delete.append(rel_path)
+                    if self.logger:
+                        self.logger.debug(f"File deleted locally: {rel_path}")
 
         # Save updated local hashes
         self.hash_manager.save_local_hashes(local_hashes)

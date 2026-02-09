@@ -335,6 +335,34 @@ class TestLocalFileSyncManager:
         assert "config.yaml" in remote_hashes
         assert len(remote_hashes) == 2
 
+    def test_partial_dependency_graph_does_not_delete_existing_files(self):
+        """Files existing locally but outside the dependency graph must NOT be deleted.
+
+        Reproduces the v9.3.0 regression: dill's dependency graph only includes
+        a subset of project files (e.g. dense.py), but other files (base.py,
+        colbert.py, etc.) exist on disk and on the cluster. They must survive.
+        """
+        all_files = ["src", "config.yaml"]
+
+        # Simulate first sync with ALL files
+        local_hashes = self.hash_manager.compute_hashes(all_files)
+        remote_hashes = dict(local_hashes)
+        assert len(remote_hashes) == 4  # All 4 files tracked remotely
+
+        # Second sync with a PARTIAL dependency graph (only main.py)
+        # This simulates dill only detecting one file as a dependency
+        partial_files = ["src/pkg/main.py"]
+
+        files_to_upload, files_to_delete, total = self.sync_manager.get_files_to_upload(
+            partial_files, remote_hashes=remote_hashes
+        )
+
+        # Files outside the dependency graph but existing on disk must NOT be deleted
+        assert len(files_to_delete) == 0, (
+            f"Files that exist locally should NOT be deleted! Got: {files_to_delete}"
+        )
+        assert total == 1  # Only 1 file in the dependency graph
+
 
 if __name__ == "__main__":
     import pytest
