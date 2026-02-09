@@ -24,6 +24,7 @@ SlurmRay allows you to transparently distribute your Python tasks across Slurm c
 
 ## 🌟 Key Features (SlurmRay v9.0.2)
 - **Ray Multiprocessing Patch**: Transparently replaces `multiprocessing.Pool` with `ray.util.multiprocessing.Pool` for distributed execution.
+- **Local Wheel Packages Auto-Upload**: Reads `[tool.hatch.build.targets.wheel].packages` from your `pyproject.toml` and automatically uploads declared local packages (e.g. vendored libraries) to the cluster. Excludes them from `requirements.txt` to prevent failed PyPI installs.
 - **Zero-Config Launch**: No `project_name` required. Auto-git detection.
 - **Robust Venv**: Uses `uv venv` to safely create environments even on broken system Pythons.
 - **Precision Logging**: Explicitly reports *why* a venv is reused or rebuilt (Hash Match vs Missing).

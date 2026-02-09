@@ -353,6 +353,73 @@ class ClusterBackend(ABC):
 
         return source_paths
 
+    def _get_local_wheel_packages(self) -> List[str]:
+        """
+        Detect local packages declared in pyproject.toml under
+        [tool.hatch.build.targets.wheel].packages.
+
+        These are packages that are part of the project but may not be
+        installed in editable mode (e.g. vendored libraries like ragatouille).
+
+        Returns:
+            List[str]: List of relative paths to package directories.
+        
+        Raises:
+            FileNotFoundError: If a declared package path does not exist on disk.
+        """
+        pwd_path = self.launcher.pwd_path
+        pyproject_path = os.path.join(pwd_path, "pyproject.toml")
+
+        if not os.path.exists(pyproject_path):
+            return []
+
+        # Parse pyproject.toml
+        data = None
+        try:
+            try:
+                import tomllib
+            except ImportError:
+                import tomli as tomllib
+            with open(pyproject_path, "rb") as f:
+                data = tomllib.load(f)
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to parse pyproject.toml for wheel packages: {e}")
+            return []
+
+        # Extract [tool.hatch.build.targets.wheel].packages
+        packages = (
+            data.get("tool", {})
+            .get("hatch", {})
+            .get("build", {})
+            .get("targets", {})
+            .get("wheel", {})
+            .get("packages", [])
+        )
+
+        if not packages:
+            return []
+
+        # Validate and collect paths
+        validated_paths = []
+        for pkg_path in packages:
+            abs_path = os.path.join(pwd_path, pkg_path)
+            if not os.path.exists(abs_path):
+                raise FileNotFoundError(
+                    f"Local wheel package declared in pyproject.toml does not exist: "
+                    f"{pkg_path} (resolved to {abs_path}). "
+                    f"Fix your [tool.hatch.build.targets.wheel].packages or restore the directory."
+                )
+            validated_paths.append(pkg_path)
+
+        if self.logger and validated_paths:
+            self.logger.info(
+                f"Detected {len(validated_paths)} local wheel package(s) from pyproject.toml: "
+                f"{', '.join(validated_paths)}"
+            )
+
+        return validated_paths
+
     def _run_uv_freeze(self):
         """
         Run uv pip list --format=freeze and return its output.
@@ -778,6 +845,22 @@ class ClusterBackend(ABC):
                 editable_packages_set.add(local_proj_name.replace("_", "-"))
                 if self.logger:
                     self.logger.debug(f"Detected and excluding local project: {local_proj_name}")
+
+            # Exclude local wheel packages declared in [tool.hatch.build.targets.wheel]
+            # These are uploaded via files= and must NOT appear in requirements.txt
+            try:
+                wheel_packages = self._get_local_wheel_packages()
+                for wp in wheel_packages:
+                    # Extract the package name from the path (e.g. "src/pathfinder_rag" -> "pathfinder_rag")
+                    pkg_dir_name = os.path.basename(wp)
+                    editable_packages_set.add(pkg_dir_name.lower())
+                    editable_packages_set.add(pkg_dir_name.lower().replace("_", "-"))
+                    editable_packages_set.add(pkg_dir_name.lower().replace("-", "_"))
+                    if self.logger:
+                        self.logger.info(f"✅ Excluding local wheel package from requirements: {pkg_dir_name}")
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"Failed to detect local wheel packages for exclusion: {e}")
 
             # Filter out local packages (development installs) using robust detection
             filtered_lines = []

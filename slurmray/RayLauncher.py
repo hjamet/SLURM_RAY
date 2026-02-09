@@ -353,6 +353,22 @@ class Cluster:
             except Exception as e:
                 self.logger.warning(f"Failed to auto-detect editable packages: {e}")
 
+        # Auto-detect and add local wheel packages from pyproject.toml [tool.hatch.build.targets.wheel]
+        if self.server_run and hasattr(self.backend, "_get_local_wheel_packages"):
+            wheel_packages = self.backend._get_local_wheel_packages()
+            for pkg_path in wheel_packages:
+                # Check if already covered by existing files
+                is_covered = any(
+                    pkg_path == existing or pkg_path.startswith(existing + os.sep)
+                    for existing in self.files
+                )
+                if not is_covered:
+                    self.files.append(pkg_path)
+                    self._auto_added_files.append(pkg_path)
+                    self.logger.info(f"✅ Auto-added local wheel package to upload: {pkg_path} (from pyproject.toml)")
+                else:
+                    self.logger.info(f"✅ Local wheel package already covered: {pkg_path}")
+
         # Note: Intelligent dependency detection is done in __call__.
         # We auto-add editable packages here to ensure development changes are synced,
         # and we track them in _auto_added_files to avoid false positive "manual upload" warnings.
