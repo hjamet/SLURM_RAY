@@ -145,139 +145,49 @@ class RemoteMixin(ClusterBackend):
         ssh_client: paramiko.SSHClient = None,
     ):
         """
-        Synchronize local files incrementally using hash comparison.
-        Only uploads files that have changed.
+        Mirror-sync local files to the remote server.
+        Uploads ALL local files and removes orphans on the remote.
+        No hash caching — always correct, self-healing.
         """
-        from slurmray.file_sync import FileHashManager, LocalFileSyncManager
+        from slurmray.file_sync import list_local_files, list_remote_files
 
-        # Use provided ssh_client or self.ssh_client
         if ssh_client is None:
             ssh_client = self.ssh_client
 
-        # Initialize sync manager
-        hash_manager = FileHashManager(self.launcher.pwd_path, self.logger)
-        sync_manager = LocalFileSyncManager(
-            self.launcher.pwd_path, hash_manager, self.logger
+        # 1. List all local files to sync
+        local_file_set = list_local_files(
+            self.launcher.pwd_path, local_files, self.logger
         )
 
-        # Remote hash file path
-        remote_hash_file = os.path.join(
-            remote_base_dir, ".slogs", ".remote_file_hashes.json"
-        )
+        if not local_file_set:
+            self.logger.info("📂 No local files to sync.")
+            return
 
-        # Fetch remote hashes
-        # If force_sync is enabled, we start with an empty dict to force re-upload
-        if getattr(self.launcher, "force_sync", False):
-            self.logger.info("🔄 Force sync enabled: ignoring remote hash cache.")
-            remote_hashes = {}
-        else:
-            remote_hashes = sync_manager.fetch_remote_hashes(ssh_client, remote_hash_file)
-            
-            # CRITICAL: Verify that files tracked in remote_hashes actually exist on server.
-            # This fixes the bug where manual deletion on cluster is ignored.
-            if remote_hashes:
-                remote_hashes = sync_manager.verify_remote_hashes_existence(
-                    ssh_client, remote_base_dir, remote_hashes
-                )
+        self.logger.info(f"📤 Uploading {len(local_file_set)} file(s) to cluster...")
 
-        # Expand local_files to cover all directories that contain synced files.
-        # This ensures recovery after destructive sync errors: if remote_hashes
-        # tracks scripts/algos/dense.py, we also scan scripts/algos/ and scripts/
-        # to find ALL local files in those directories (not just dill dependencies).
-        if remote_hashes:
-            synced_dirs = set()
-            for rel_path in remote_hashes:
-                parent = os.path.dirname(rel_path)
-                while parent:
-                    synced_dirs.add(parent)
-                    parent = os.path.dirname(parent)
+        # 2. Upload ALL files
+        for rel_path in sorted(local_file_set):
+            self._push_file_wrapper(rel_path, sftp, remote_base_dir, ssh_client)
 
-            expanded_files = list(local_files)  # Copy to avoid mutating caller's list
-            for d in synced_dirs:
-                abs_d = os.path.join(self.launcher.pwd_path, d)
-                if d not in expanded_files and os.path.isdir(abs_d):
-                    expanded_files.append(d)
-                    self.logger.debug(f"Expanding sync scope to include directory: {d}/")
-            local_files = expanded_files
+        self.logger.info(f"✅ Uploaded {len(local_file_set)} file(s).")
 
-        # Determine which files need uploading and which need deleting
-        files_to_upload, files_to_delete, total_tracked = sync_manager.get_files_to_upload(
-            local_files, remote_hashes
-        )
+        # 3. List remote files and delete orphans
+        remote_file_set = list_remote_files(ssh_client, remote_base_dir, self.logger)
+        orphans = remote_file_set - local_file_set
 
-        # Delete stale files on remote (renamed/deleted locally)
-        if files_to_delete:
+        if orphans:
             self.logger.info(
-                f"🗑️ Removing {len(files_to_delete)} stale file(s) from cluster..."
+                f"🗑️ Removing {len(orphans)} orphan file(s) from cluster..."
             )
-            for rel_path in files_to_delete:
+            for rel_path in sorted(orphans):
                 remote_path = os.path.join(remote_base_dir, rel_path)
                 try:
                     stdin, stdout, stderr = ssh_client.exec_command(
                         f"rm -f '{remote_path}'"
                     )
                     stdout.channel.recv_exit_status()
-                    self.logger.debug(f"Deleted remote file: {rel_path}")
+                    self.logger.debug(f"Deleted orphan: {rel_path}")
                 except Exception as e:
                     self.logger.debug(f"Failed to delete {rel_path}: {e}")
-            # Clean up remote hash cache
-            sync_manager.cleanup_remote_hashes(files_to_delete, remote_hashes)
+            self.logger.info(f"✅ Cleanup complete.")
 
-        if not files_to_upload:
-            if files_to_delete:
-                self.logger.info(
-                    f"✅ {len(files_to_delete)} stale file(s) removed. "
-                    f"All {total_tracked} tracked files are up to date."
-                )
-            else:
-                self.logger.info(
-                    f"✅ All {total_tracked} tracked files are up to date, no upload needed."
-                )
-            # Still need to save updated remote hashes if deletions occurred
-            if files_to_delete:
-                remote_hash_file = os.path.join(
-                    remote_base_dir, ".slogs", ".remote_file_hashes.json"
-                )
-                sync_manager.save_remote_hashes_to_server(
-                    ssh_client, remote_hash_file, remote_hashes
-                )
-            return
-
-        self.logger.info(
-            f"📤 Uploading {len(files_to_upload)} modified/new file(s) "
-            f"out of {total_tracked} tracked files..."
-        )
-
-        # Upload files
-        uploaded_files = []
-        for rel_path in files_to_upload:
-            # Convert relative path to absolute
-            abs_path = os.path.join(self.launcher.pwd_path, rel_path)
-
-            # Handle directories (packages)
-            if os.path.isdir(abs_path):
-                # Upload all files in the directory recursively
-                for root, dirs, files in os.walk(abs_path):
-                    # Skip __pycache__
-                    dirs[:] = [d for d in dirs if d != "__pycache__"]
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        file_rel = os.path.relpath(
-                            file_path, self.launcher.pwd_path
-                        )
-                        self._push_file_wrapper(
-                            file_rel, sftp, remote_base_dir, ssh_client
-                        )
-                        uploaded_files.append(file_rel)
-            else:
-                # Single file
-                self._push_file_wrapper(rel_path, sftp, remote_base_dir, ssh_client)
-                uploaded_files.append(rel_path)
-
-        # Update remote hashes after successful upload
-        sync_manager.update_remote_hashes(uploaded_files, remote_hashes)
-        sync_manager.save_remote_hashes_to_server(
-            ssh_client, remote_hash_file, remote_hashes
-        )
-
-        self.logger.info(f"✅ Successfully uploaded {len(uploaded_files)} file(s).")
