@@ -645,10 +645,12 @@ class SlurmBackend(RemoteMixin):
                 
                 # Command to delete all except .venv
                 cmd = f"find {project_dir} -mindepth 1 -maxdepth 1 ! -name '.venv' -exec rm -rf {{}} +"
-                ssh_client.exec_command(cmd)
+                stdin, stdout, stderr = ssh_client.exec_command(cmd)
+                stdout.channel.recv_exit_status()  # BLOCK until cleanup completes
                 
                 # If we cleaned the project, we should probably reset the remote hashes to ensure fresh upload
-                ssh_client.exec_command(f"rm -f {project_dir}/.slogs/.remote_file_hashes.json")
+                stdin, stdout, stderr = ssh_client.exec_command(f"rm -f {project_dir}/.slogs/.remote_file_hashes.json")
+                stdout.channel.recv_exit_status()  # BLOCK until hash file removal completes
 
             # Prepare files to upload
             # Include generated files (.py, .pkl, .sh) in the smart sync list

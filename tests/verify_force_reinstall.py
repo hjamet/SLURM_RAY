@@ -12,8 +12,7 @@ if __name__ == "__main__":
     launcher = Cluster(
         project_name=project_name,
         cluster="desi",
-        use_gpu=False, # Faster, avoid GPU check
-        node_nbr=1,
+        num_gpus=0, # Faster, avoid GPU check
         force_reinstall_project=True 
     )
     

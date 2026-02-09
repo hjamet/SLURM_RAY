@@ -129,8 +129,10 @@ class DesiBackend(RemoteMixin):
             if self.launcher.force_reinstall_project:
                 self.logger.warning(f"Force reinstall project enabled: cleaning {base_dir} (preserving venv if possible)...")
                 cmd = f"find {base_dir} -mindepth 1 -maxdepth 1 ! -name 'venv' -exec rm -rf {{}} +"
-                self.ssh_client.exec_command(cmd)
-                self.ssh_client.exec_command(f"rm -f {base_dir}/.slogs/.remote_file_hashes.json")
+                stdin, stdout, stderr = self.ssh_client.exec_command(cmd)
+                stdout.channel.recv_exit_status()  # BLOCK until cleanup completes
+                stdin, stdout, stderr = self.ssh_client.exec_command(f"rm -f {base_dir}/.slogs/.remote_file_hashes.json")
+                stdout.channel.recv_exit_status()  # BLOCK until hash file removal completes
 
             # Smart cleanup: preserve venv if hash matches
             self.ssh_client.exec_command(f"mkdir -p {base_dir}/.slogs/server")
