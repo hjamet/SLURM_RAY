@@ -180,26 +180,6 @@ class RemoteMixin(ClusterBackend):
                     ssh_client, remote_base_dir, remote_hashes
                 )
 
-        # Expand local_files to cover all directories that contain synced files.
-        # This ensures recovery after destructive sync errors: if remote_hashes
-        # tracks scripts/algos/dense.py, we also scan scripts/algos/ and scripts/
-        # to find ALL local files in those directories (not just dill dependencies).
-        if remote_hashes:
-            synced_dirs = set()
-            for rel_path in remote_hashes:
-                parent = os.path.dirname(rel_path)
-                while parent:
-                    synced_dirs.add(parent)
-                    parent = os.path.dirname(parent)
-
-            expanded_files = list(local_files)  # Copy to avoid mutating caller's list
-            for d in synced_dirs:
-                abs_d = os.path.join(self.launcher.pwd_path, d)
-                if d not in expanded_files and os.path.isdir(abs_d):
-                    expanded_files.append(d)
-                    self.logger.debug(f"Expanding sync scope to include directory: {d}/")
-            local_files = expanded_files
-
         # Determine which files need uploading and which need deleting
         files_to_upload, files_to_delete, total_tracked = sync_manager.get_files_to_upload(
             local_files, remote_hashes

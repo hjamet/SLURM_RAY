@@ -1,4 +1,4 @@
-# SlurmRay v9.2.0 - Autonomous Distributed Ray on Slurm
+# SlurmRay v9.10.0 - Autonomous Distributed Ray on Slurm
 
 > [!IMPORTANT]
 > **Bug Reports**: SlurmRay is in beta. If you find a bug, please [report it on GitHub](https://github.com/hjamet/SLURM_RAY/issues).
@@ -10,7 +10,7 @@
 
 SlurmRay allows you to transparently distribute your Python tasks across Slurm clusters (like Curnagl) or standalone servers (like Desi). It handles environment synchronization, local package detection, and task distribution automatically, turning your local machine into a control center for massive compute resources.
 
-**Current State**: Version 9.2.0 (Feb 09). **Smart Hash Synchronization** with **rename/delete detection**: The incremental sync now detects files that were renamed or deleted locally and removes stale copies from the cluster, preventing `ModuleNotFoundError` caused by ghost files.
+**Current State**: Version 9.10.0 (Feb 10). **Callable Args Dependency Scanning**: The scanner now introspects callable arguments (e.g. functions passed via `args={"fn": my_func}`) to detect their lazy imports and dependencies. **Removed aggressive parent directory expansion** in file sync that caused cross-job contamination (e.g. model checkpoints from a previous `push` job being re-uploaded during unrelated stages).
 
 > [!NOTE]
 > **Ray Multiprocessing Patch (v9.0.2)**: Uses a **proxy module** that preserves all `multiprocessing` attributes (`Queue`, `Process`, `Lock`, `reduction`, etc.) while overriding only `Pool` with Ray's distributed version. Fixes all `ImportError` issues from v9.0.0-9.0.1.
