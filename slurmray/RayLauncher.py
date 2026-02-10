@@ -592,6 +592,25 @@ class Cluster:
                 scanner = ProjectScanner(self.pwd_path, self.logger)
                 detected_dependencies = scanner.detect_dependencies_from_function(func)
 
+                # Also scan callables passed in args (e.g. pipeline_stage pattern
+                # where the real business function is passed as an arg, not as func)
+                if args:
+                    _args_iter = args.items() if isinstance(args, dict) else enumerate(args)
+                    for arg_name, arg_value in _args_iter:
+                        if callable(arg_value) and hasattr(arg_value, '__code__'):
+                            try:
+                                arg_deps = scanner.detect_dependencies_from_function(arg_value)
+                                detected_dependencies.extend(arg_deps)
+                                if arg_deps:
+                                    self.logger.info(
+                                        f"Scanned callable arg '{arg_name}': "
+                                        f"found {len(arg_deps)} additional dependencies."
+                                    )
+                            except Exception as e:
+                                self.logger.debug(
+                                    f"Could not scan callable arg '{arg_name}': {e}"
+                                )
+
                 added_count = 0
                 for dep in detected_dependencies:
                     # Skip invalid paths (empty, current directory, etc.)

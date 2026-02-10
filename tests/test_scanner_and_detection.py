@@ -107,7 +107,91 @@ def test_editable_detection():
         import traceback
         traceback.print_exc()
 
+def test_callable_args_scanning():
+    """Test that scanner detects dependencies from callables passed in args.
+    
+    This reproduces the pipeline_stage pattern:
+    - wrapper_func is the function passed to launcher (scanned first)
+    - business_func is passed in args dict (must also be scanned)
+    - business_func has a lazy import to a local module that wrapper_func doesn't know about
+    """
+    import shutil
+    import tempfile
+
+    print("\n--- Testing Callable Args Scanning ---")
+    
+    # Create an isolated dummy project
+    base_dir = tempfile.mkdtemp(prefix="test_callable_args_")
+    
+    try:
+        # 1. Create a "scripts/utils/push_helper.py" (the missing dependency)
+        create_dummy_file(os.path.join(base_dir, "scripts", "utils", "push_helper.py"),
+            "def upload(): pass\ndef validate(): pass\n"
+        )
+        create_dummy_file(os.path.join(base_dir, "scripts", "__init__.py"), "")
+        create_dummy_file(os.path.join(base_dir, "scripts", "utils", "__init__.py"), "")
+        
+        # 2. Create "src/pipeline/base.py" (the wrapper function file)
+        create_dummy_file(os.path.join(base_dir, "src", "pipeline", "base.py"),
+            "import os\n\ndef wrapper(fn, cfg):\n    return fn(cfg)\n"
+        )
+        create_dummy_file(os.path.join(base_dir, "src", "__init__.py"), "")
+        create_dummy_file(os.path.join(base_dir, "src", "pipeline", "__init__.py"), "")
+        
+        # 3. Create "scripts/step_push.py" (the business function with lazy import)
+        create_dummy_file(os.path.join(base_dir, "scripts", "step_push.py"),
+            "def push_to_hf(cfg):\n"
+            "    from scripts.utils.push_helper import upload, validate\n"
+            "    upload()\n"
+            "    validate()\n"
+        )
+        
+        # Add base_dir to sys.path so imports resolve
+        sys.path.insert(0, base_dir)
+        
+        scanner = ProjectScanner(base_dir, logger)
+        
+        # Scan only the wrapper (simulates what RayLauncher did BEFORE the fix)
+        wrapper_deps = scanner.detect_dependencies_from_function(
+            __import__("src.pipeline.base", fromlist=["wrapper"]).wrapper
+        )
+        
+        # The wrapper should NOT find scripts/utils/push_helper.py
+        wrapper_dep_strs = set(wrapper_deps)
+        assert not any("push_helper" in d for d in wrapper_dep_strs), \
+            f"Wrapper should NOT detect push_helper, but found: {wrapper_dep_strs}"
+        print(f"  ✓ Wrapper alone found {len(wrapper_deps)} deps (no push_helper)")
+        
+        # Now scan the business function (simulates the NEW fix)
+        business_mod = __import__("scripts.step_push", fromlist=["push_to_hf"])
+        business_deps = scanner.detect_dependencies_from_function(business_mod.push_to_hf)
+        
+        # The business function SHOULD find scripts/utils/push_helper.py
+        business_dep_strs = set(business_deps)
+        found_push_helper = any("push_helper" in d for d in business_dep_strs)
+        assert found_push_helper, \
+            f"Business func should detect push_helper, but found only: {business_dep_strs}"
+        print(f"  ✓ Business func found {len(business_deps)} deps (including push_helper)")
+        
+        # Combined (simulates the full fixed flow)
+        all_deps = list(set(wrapper_deps + business_deps))
+        assert any("push_helper" in d for d in all_deps)
+        print(f"  ✓ Combined: {len(all_deps)} total deps")
+        
+        print("✅ Callable args scanning test passed!")
+    
+    finally:
+        # Cleanup
+        if base_dir in sys.path:
+            sys.path.remove(base_dir)
+        # Clean up imported modules
+        for mod_name in list(sys.modules.keys()):
+            if mod_name.startswith("scripts") or mod_name.startswith("src.pipeline"):
+                del sys.modules[mod_name]
+        shutil.rmtree(base_dir, ignore_errors=True)
+
 if __name__ == "__main__":
     test_scanner()
     test_editable_detection()
+    test_callable_args_scanning()
 
