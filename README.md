@@ -10,7 +10,7 @@
 
 SlurmRay allows you to transparently distribute your Python tasks across Slurm clusters (like Curnagl) or standalone servers (like Desi). It handles environment synchronization, local package detection, and task distribution automatically, turning your local machine into a control center for massive compute resources.
 
-**Current State**: Version 9.10.0 (Feb 10). **Callable Args Dependency Scanning**: The scanner now introspects callable arguments (e.g. functions passed via `args={"fn": my_func}`) to detect their lazy imports and dependencies. **Removed aggressive parent directory expansion** in file sync that caused cross-job contamination (e.g. model checkpoints from a previous `push` job being re-uploaded during unrelated stages).
+**Current State**: Version 9.10.0 (Feb 12). **Recursive Callable Args Scanning**: The scanner now recursively walks all data structures (nested dicts, lists, tuples) passed as function arguments to detect local callable objects and their dependencies at any depth. Only project-local callables are scanned (installed libraries are filtered via `inspect.getfile`). Handles circular references safely. **Removed aggressive parent directory expansion** in file sync that caused cross-job contamination.
 
 > [!NOTE]
 > **Ray Multiprocessing Patch (v9.0.2)**: Uses a **proxy module** that preserves all `multiprocessing` attributes (`Queue`, `Process`, `Lock`, `reduction`, etc.) while overriding only `Pool` with Ray's distributed version. Fixes all `ImportError` issues from v9.0.0-9.0.1.

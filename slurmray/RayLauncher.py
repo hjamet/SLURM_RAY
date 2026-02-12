@@ -549,13 +549,58 @@ class Cluster:
                 job_id = target
             elif isinstance(target, self.FunctionReturn):
                 job_id = target.job_id
-            
+
             if job_id:
                 self.backend.cancel(job_id)
             else:
                 self.logger.warning("No job ID found to cancel.")
         else:
             self.logger.warning("No backend initialized, cannot cancel.")
+
+    def _extract_local_callables(self, obj, _prefix="", _visited=None):
+        """Recursively walk a data structure to find all callable objects
+        that belong to the local project (not installed libraries).
+
+        Scans through dicts, lists, tuples, and sets at any nesting depth.
+        Uses id()-based visited set to avoid infinite loops on circular references.
+
+        Returns:
+            List of (name, callable) tuples for each local callable found.
+        """
+        import inspect
+
+        if _visited is None:
+            _visited = set()
+
+        # Guard against circular references
+        obj_id = id(obj)
+        if obj_id in _visited:
+            return []
+        _visited.add(obj_id)
+
+        results = []
+
+        # Check if obj itself is a scannable local callable
+        if callable(obj) and hasattr(obj, "__code__"):
+            try:
+                source_file = os.path.abspath(inspect.getfile(obj))
+                if source_file.startswith(os.path.abspath(self.pwd_path)):
+                    name = _prefix or getattr(obj, "__qualname__", getattr(obj, "__name__", "anonymous"))
+                    results.append((name, obj))
+            except (TypeError, OSError):
+                pass  # Built-in or C extension — skip
+
+        # Recurse into containers
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                child_prefix = f"{_prefix}.{key}" if _prefix else str(key)
+                results.extend(self._extract_local_callables(value, child_prefix, _visited))
+        elif isinstance(obj, (list, tuple, set)):
+            for idx, value in enumerate(obj):
+                child_prefix = f"{_prefix}[{idx}]" if _prefix else f"[{idx}]"
+                results.extend(self._extract_local_callables(value, child_prefix, _visited))
+
+        return results
 
     def __call__(
         self,
@@ -592,24 +637,23 @@ class Cluster:
                 scanner = ProjectScanner(self.pwd_path, self.logger)
                 detected_dependencies = scanner.detect_dependencies_from_function(func)
 
-                # Also scan callables passed in args (e.g. pipeline_stage pattern
-                # where the real business function is passed as an arg, not as func)
+                # Recursively scan callables passed in args (e.g. pipeline_stage pattern
+                # where the real business function is nested inside args at any depth)
                 if args:
-                    _args_iter = args.items() if isinstance(args, dict) else enumerate(args)
-                    for arg_name, arg_value in _args_iter:
-                        if callable(arg_value) and hasattr(arg_value, '__code__'):
-                            try:
-                                arg_deps = scanner.detect_dependencies_from_function(arg_value)
-                                detected_dependencies.extend(arg_deps)
-                                if arg_deps:
-                                    self.logger.info(
-                                        f"Scanned callable arg '{arg_name}': "
-                                        f"found {len(arg_deps)} additional dependencies."
-                                    )
-                            except Exception as e:
-                                self.logger.debug(
-                                    f"Could not scan callable arg '{arg_name}': {e}"
+                    local_callables = self._extract_local_callables(args)
+                    for cb_name, cb_func in local_callables:
+                        try:
+                            arg_deps = scanner.detect_dependencies_from_function(cb_func)
+                            detected_dependencies.extend(arg_deps)
+                            if arg_deps:
+                                self.logger.info(
+                                    f"Scanned callable arg '{cb_name}': "
+                                    f"found {len(arg_deps)} additional dependencies."
                                 )
+                        except Exception as e:
+                            self.logger.debug(
+                                f"Could not scan callable arg '{cb_name}': {e}"
+                            )
 
                 added_count = 0
                 for dep in detected_dependencies:

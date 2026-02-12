@@ -190,8 +190,109 @@ def test_callable_args_scanning():
                 del sys.modules[mod_name]
         shutil.rmtree(base_dir, ignore_errors=True)
 
+def test_nested_callable_args_scanning():
+    """Test that _extract_local_callables finds callables at any nesting depth.
+    
+    Covers the extended pattern where callables are nested inside:
+    - nested dicts: {"config": {"preprocessor": fn}}
+    - lists: {"callbacks": [fn1, fn2]}
+    - mixed: {"pipeline": [{"stage": fn}]}
+    """
+    import shutil
+    import tempfile
+
+    print("\n--- Testing Nested Callable Args Scanning ---")
+    
+    base_dir = tempfile.mkdtemp(prefix="test_nested_callables_")
+    
+    try:
+        # Create local functions in different files
+        create_dummy_file(os.path.join(base_dir, "funcs", "preprocess.py"),
+            "def clean(data): pass\n"
+        )
+        create_dummy_file(os.path.join(base_dir, "funcs", "__init__.py"), "")
+        
+        create_dummy_file(os.path.join(base_dir, "funcs", "validate.py"),
+            "def check(data): pass\n"
+        )
+        
+        create_dummy_file(os.path.join(base_dir, "funcs", "transform.py"),
+            "def normalize(data): pass\n"
+        )
+        
+        sys.path.insert(0, base_dir)
+        
+        # Import local functions
+        from funcs.preprocess import clean
+        from funcs.validate import check
+        from funcs.transform import normalize
+        
+        # Create a mock object to test _extract_local_callables
+        from slurmray.RayLauncher import Cluster
+        
+        mock = type("MockCluster", (), {"pwd_path": base_dir})()
+        mock._extract_local_callables = Cluster._extract_local_callables.__get__(mock)
+        
+        # Test 1: Flat dict (backward compat)
+        flat_args = {"fn": clean, "cfg": {"key": "value"}}
+        callables = mock._extract_local_callables(flat_args)
+        callable_names = [name for name, _ in callables]
+        assert len(callables) == 1, f"Expected 1 callable, got {len(callables)}: {callable_names}"
+        print(f"  ✓ Flat dict: found {len(callables)} callable")
+        
+        # Test 2: Nested dict
+        nested_args = {"config": {"preprocessor": clean, "validator": check}}
+        callables = mock._extract_local_callables(nested_args)
+        assert len(callables) == 2, f"Expected 2 callables, got {len(callables)}"
+        print(f"  ✓ Nested dict: found {len(callables)} callables")
+        
+        # Test 3: List of callables
+        list_args = {"callbacks": [clean, check, normalize]}
+        callables = mock._extract_local_callables(list_args)
+        assert len(callables) == 3, f"Expected 3 callables, got {len(callables)}"
+        print(f"  ✓ List: found {len(callables)} callables")
+        
+        # Test 4: Mixed nesting
+        deep_args = {
+            "pipeline": [
+                {"stage": clean, "name": "preprocess"},
+                {"stage": check, "name": "validate"},
+            ],
+            "postprocess": normalize,
+        }
+        callables = mock._extract_local_callables(deep_args)
+        assert len(callables) == 3, f"Expected 3 callables, got {len(callables)}"
+        print(f"  ✓ Deep nesting: found {len(callables)} callables")
+        
+        # Test 5: Should NOT include non-local callables (builtins, stdlib)
+        import json
+        mixed_args = {"fn": clean, "serializer": json.dumps, "formatter": str.upper}
+        callables = mock._extract_local_callables(mixed_args)
+        callable_funcs = [fn for _, fn in callables]
+        assert clean in callable_funcs, "Should include local callable"
+        assert json.dumps not in callable_funcs, "Should NOT include stdlib callable"
+        print(f"  ✓ Local filter: correctly excluded non-local callables ({len(callables)} local)")
+        
+        # Test 6: Circular reference protection
+        circular = {"fn": clean}
+        circular["self"] = circular  # Circular!
+        callables = mock._extract_local_callables(circular)
+        assert len(callables) == 1, f"Expected 1 callable despite circular ref, got {len(callables)}"
+        print(f"  ✓ Circular reference: handled safely")
+        
+        print("✅ Nested callable args scanning test passed!")
+    
+    finally:
+        if base_dir in sys.path:
+            sys.path.remove(base_dir)
+        for mod_name in list(sys.modules.keys()):
+            if mod_name.startswith("funcs"):
+                del sys.modules[mod_name]
+        shutil.rmtree(base_dir, ignore_errors=True)
+
 if __name__ == "__main__":
     test_scanner()
     test_editable_detection()
     test_callable_args_scanning()
+    test_nested_callable_args_scanning()
 
