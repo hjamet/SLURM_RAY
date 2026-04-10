@@ -81,11 +81,37 @@ root/
 
 | Script | Rôle technique | Contexte d'exécution |
 |--------|----------------|----------------------|
+| `setup_reverse_tunnel.sh` | Sets up an `autossh` reverse tunnel to access Desi GPUs | Background Service (PM2) |
 | `diagnose_uv.py` | Validates `uv` based environment handling | Local/Remote |
 | `diagnose_ray_segfault.py` | Diagnoses 3.12.1 Segfaults on Desi | Remote |
 | `check_desi_locks.py` | Inspects lock files on Desi | Local (connects to Remote) |
 | `check_desi_resources.py` | Checks CPU/GPU availability | Local (connects to Remote) |
 | `cleanup_desi_projects.py` | Removes old projects/venvs | Maintenance |
+
+### 🚇 Reverse SSH Tunnel Mode (Accessing Internal GPUs)
+
+To allow external access to the internal "Desi" cluster (e.g., to use its GPUs), you can set up a reverse SSH tunnel. This creates a persistent connection from the internal node to an external bridge server.
+
+#### Prerequisites for Tunnel
+* `autossh` installed on the node.
+* A process manager like `pm2` is recommended to keep the tunnel running.
+
+#### Configuration
+You must define the following environment variables (e.g., in your `.env` file or exported in your shell):
+
+* `SERVER_SSH`: The hostname or IP address of your external bridge server.
+* `SERVER_PORT`: The remote port on the bridge server that will be forwarded to the node's local SSH port (22).
+* `SERVER_USERNAME`: The username used to authenticate on the bridge server.
+
+#### Usage with PM2
+
+```bash
+export SERVER_SSH="bridge.example.com"
+export SERVER_PORT="12345"
+export SERVER_USERNAME="bridgeuser"
+
+pm2 start scripts/setup_reverse_tunnel.sh --name "desi-tunnel"
+```
 
 # Roadmap
 
