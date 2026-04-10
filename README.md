@@ -49,6 +49,32 @@ pip install -e .
 *   **Remote**: SSH access to a Slurm cluster or a standalone server with Ray support.
 *   **Configuration**: Create a `.env` file at the root.
 
+## 🚇 Stealth Reverse SSH Tunnel Mode
+
+If your internal cluster/server (e.g., Desi) is blocked behind a strict VPN or firewall, you can use the **Stealth Reverse SSH Tunnel** mode to connect SlurmRay via an external relay server (e.g., Hetzner).
+
+### 1. Configure the Internal Server (Once)
+On your internal server (Desi), set up a reverse tunnel to your external relay server. We provide a setup script to guide you through daemonizing the connection with `autossh` and `pm2`.
+
+Run:
+```bash
+./scripts/setup_reverse_tunnel.sh
+```
+
+Follow the printed instructions to configure the connection and ensure it persists across reboots.
+
+### 2. Configure SlurmRay Locally
+On your local machine, override the default connection settings in your `.env` file to point to the external relay server and the mapped reverse port:
+
+```dotenv
+# .env file
+SERVER_SSH=<RELAY_IP_OR_DOMAIN>
+SERVER_PORT=2222  # The reverse port you chose
+SERVER_USERNAME=root # User on the internal server or relay, depending on your setup
+```
+
+SlurmRay will transparently use the tunnel to connect to your internal server.
+
 # Key Results (Performance Baseline)
 
 | Scenario | Mode | Status | Avg Time |
