@@ -217,6 +217,7 @@ class SSHTunnel:
             logger: Optional logger
         """
         self.ssh_host = ssh_host
+        self.ssh_port = int(os.environ.get("SERVER_PORT", os.environ.get("DESI_PORT", os.environ.get("CURNAGL_PORT", 22))))
         self.ssh_username = ssh_username
         self.ssh_password = ssh_password
         self.remote_host = remote_host
@@ -233,6 +234,7 @@ class SSHTunnel:
             self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             self.ssh_client.connect(
                 hostname=self.ssh_host,
+                port=self.ssh_port,
                 username=self.ssh_username,
                 password=self.ssh_password,
             )

@@ -253,17 +253,17 @@ class Cluster:
         # Auto-detect server_ssh from cluster parameter if not provided
         if self.server_run and server_ssh is None:
             if cluster_lower == "desi":
-                self.server_ssh = "130.223.73.209"
+                self.server_ssh = os.getenv("SERVER_SSH", os.getenv("DESI_SSH", "130.223.73.209"))
             elif cluster_lower == "curnagl":
-                self.server_ssh = "curnagl.dcsr.unil.ch"
+                self.server_ssh = os.getenv("SERVER_SSH", os.getenv("CURNAGL_SSH", "curnagl.dcsr.unil.ch"))
             elif is_custom_ip:
                 # Use the provided IP/hostname directly
                 self.server_ssh = cluster
             else:
                 # Fallback (should not happen)
-                self.server_ssh = "curnagl.dcsr.unil.ch"
+                self.server_ssh = os.getenv("SERVER_SSH", os.getenv("CURNAGL_SSH", "curnagl.dcsr.unil.ch"))
         else:
-            self.server_ssh = server_ssh or "curnagl.dcsr.unil.ch"
+            self.server_ssh = server_ssh or os.getenv("SERVER_SSH", os.getenv("CURNAGL_SSH", "curnagl.dcsr.unil.ch"))
 
         self.log_file = log_file
         self.force_reinstall_venv = force_reinstall_venv

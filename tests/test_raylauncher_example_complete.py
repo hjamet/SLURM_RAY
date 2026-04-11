@@ -57,7 +57,7 @@ def test_raylauncher_example_complete():
                     if os.path.exists("documentation/RayLauncher.html")
                     else []
                 ),  # List of files to push to the server
-                use_gpu=False,  # Pas de GPU pour le test (mais l'exemple utilise True)
+                num_gpus=False,  # Pas de GPU pour le test (mais l'exemple utilise True)
                 runtime_env={
                     "env_vars": {}  # L'exemple utilise {"NCCL_SOCKET_IFNAME": "eno1"}
                 },  # Example of environment variable
