@@ -102,6 +102,7 @@ class Cluster:
         server_ssh: str = None,  # Auto-detected from cluster parameter
         server_username: str = None,
         server_password: str = None,
+        server_port: int = 22,
         log_file: str = ".slogs/Cluster.log",
         cluster: str = "curnagl",  # 'curnagl', 'desi', 'local', or custom IP/hostname
         force_reinstall_venv: bool = False,
@@ -127,6 +128,7 @@ class Cluster:
             server_ssh (str, optional): If `server_run` is set to true, the address of the server to use. Auto-detected from `cluster` parameter if not provided. Defaults to None (auto-detected).
             server_username (str, optional): If `server_run` is set to true, the username with which you wish to connect. Credentials are automatically loaded from a `.env` file (CURNAGL_USERNAME for Curnagl/custom IP, DESI_USERNAME for Desi) if available. Priority: environment variables → explicit parameter → default ("hjamet" for Curnagl/custom IP, "henri" for Desi).
             server_password (str, optional): If `server_run` is set to true, the password of the user to connect to the server. Credentials are automatically loaded from a `.env` file (CURNAGL_PASSWORD for Curnagl/custom IP, DESI_PASSWORD for Desi) if available. Priority: explicit parameter → environment variables → interactive prompt. CAUTION: never write your password in the code. Defaults to None.
+            server_port (int, optional): The SSH port to connect to. Defaults to 22. Set to 2222 for Desi.
             log_file (str, optional): Path to the log file. Defaults to ".slogs/Cluster.log".
             cluster (str, optional): Cluster/server to use: 'curnagl' (default, Slurm cluster), 'desi' (ISIPOL09/Desi server), 'local' (local execution), or a custom IP/hostname (for custom Slurm clusters). Defaults to "curnagl".
             force_reinstall_venv (bool, optional): Force complete removal and recreation of virtual environment on remote server/cluster. This will delete the existing venv and reinstall all packages from requirements.txt. Use this if the venv is corrupted or you need a clean installation. Defaults to False.
@@ -253,7 +255,8 @@ class Cluster:
         # Auto-detect server_ssh from cluster parameter if not provided
         if self.server_run and server_ssh is None:
             if cluster_lower == "desi":
-                self.server_ssh = "130.223.73.209"
+                self.server_ssh = "178.104.173.231"
+                server_port = server_port if server_port != 22 else 2222
             elif cluster_lower == "curnagl":
                 self.server_ssh = "curnagl.dcsr.unil.ch"
             elif is_custom_ip:
@@ -264,6 +267,10 @@ class Cluster:
                 self.server_ssh = "curnagl.dcsr.unil.ch"
         else:
             self.server_ssh = server_ssh or "curnagl.dcsr.unil.ch"
+            if cluster_lower == "desi":
+                server_port = server_port if server_port != 22 else 2222
+
+        self.server_port = server_port
 
         self.log_file = log_file
         self.force_reinstall_venv = force_reinstall_venv

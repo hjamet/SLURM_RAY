@@ -56,6 +56,7 @@ class RemoteMixin(ClusterBackend):
                     hostname=self.launcher.server_ssh,
                     username=self.launcher.server_username,
                     password=self.launcher.server_password,
+                    port=getattr(self.launcher, 'server_port', 22),
                     banner_timeout=30, # Increased safety against hanging
                     auth_timeout=30,
                 )

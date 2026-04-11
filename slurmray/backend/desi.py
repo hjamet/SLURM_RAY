@@ -343,6 +343,7 @@ class DesiBackend(RemoteMixin):
                                 ssh_host=self.launcher.server_ssh,
                                 ssh_username=self.launcher.server_username,
                                 ssh_password=self.launcher.server_password,
+                                ssh_port=getattr(self.launcher, 'server_port', 22),
                                 remote_host="127.0.0.1",
                                 local_port=0, # Dynamic port to avoid contention
                                 remote_port=remote_port,

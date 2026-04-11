@@ -204,6 +204,7 @@ class SSHTunnel:
         local_port: int = 8888,
         remote_port: int = 8888,
         logger: logging.Logger = None,
+        ssh_port: int = 22,
     ):
         """Initialize SSH tunnel
 
@@ -215,6 +216,7 @@ class SSHTunnel:
             local_port: Local port to bind (default: 8888)
             remote_port: Remote port to forward (default: 8888)
             logger: Optional logger
+            ssh_port: SSH server port
         """
         self.ssh_host = ssh_host
         self.ssh_username = ssh_username
@@ -222,6 +224,7 @@ class SSHTunnel:
         self.remote_host = remote_host
         self.local_port = local_port
         self.remote_port = remote_port
+        self.ssh_port = ssh_port
         self.ssh_client = None
         self.forward_server = None
         self.logger = logger
@@ -235,6 +238,7 @@ class SSHTunnel:
                 hostname=self.ssh_host,
                 username=self.ssh_username,
                 password=self.ssh_password,
+                port=self.ssh_port,
             )
 
             # Create local port forwarding using socket server
