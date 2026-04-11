@@ -52,8 +52,17 @@ class RemoteMixin(ClusterBackend):
                         "No password provided and cannot prompt (non-interactive)"
                     )
 
+                # Extract port from environment or use 22
+                try:
+                    cluster_type_upper = self.launcher.cluster_type.upper() if getattr(self.launcher, "cluster_type", None) else ""
+                    port_str = os.environ.get("SERVER_PORT", os.environ.get(f"{cluster_type_upper}_PORT", 22) if cluster_type_upper else 22)
+                    port = int(port_str)
+                except Exception:
+                    port = 22
+
                 self.ssh_client.connect(
                     hostname=self.launcher.server_ssh,
+                    port=port,
                     username=self.launcher.server_username,
                     password=self.launcher.server_password,
                     banner_timeout=30, # Increased safety against hanging
