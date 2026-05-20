@@ -103,10 +103,13 @@ class LocalBackend(ClusterBackend):
         with open(
             os.path.join(self.launcher.module_path, "assets", "spython_template.py"),
             "r",
+            encoding="utf-8"
         ) as f:
             text = f.read()
 
-        text = text.replace("{{PROJECT_PATH}}", f'"{self.launcher.project_path}"')
+        # Clean paths to use forward slashes to prevent unicode escape syntax errors under Windows
+        project_path_clean = self.launcher.project_path.replace("\\", "/")
+        text = text.replace("{{PROJECT_PATH}}", f'"{project_path_clean}"')
         # Local mode doesn't need special address usually, or 'auto' is fine.
         # Original code:
         # if self.cluster or self.server_run:
@@ -130,11 +133,12 @@ class LocalBackend(ClusterBackend):
         # Inject CWD to sys.path for local execution to ensure modules are found
         # This fixes issues where local project modules or tests are shadowed by site-packages
         # or not found because spython.py runs in a subplot with different sys.path[0]
-        cwd_injection = f"import sys\nsys.path.insert(0, '{self.launcher.pwd_path}')\n"
+        pwd_path_clean = self.launcher.pwd_path.replace("\\", "/")
+        cwd_injection = f"import sys\nsys.path.insert(0, '{pwd_path_clean}')\n"
         pre_import = cwd_injection + pre_import
 
         if "{{PRE_IMPORT}}" in text:
             text = text.replace("{{PRE_IMPORT}}", pre_import)
 
-        with open(os.path.join(self.launcher.project_path, "spython.py"), "w") as f:
+        with open(os.path.join(self.launcher.project_path, "spython.py"), "w", encoding="utf-8") as f:
             f.write(text)

@@ -12,6 +12,15 @@ from slurmray.backend.remote import RemoteMixin
 from slurmray.utils import SSHTunnel, DependencyManager
 
 
+# Try to configure console to UTF-8 to prevent print errors under Windows
+if hasattr(sys.stdout, "reconfigure"):
+    try: sys.stdout.reconfigure(encoding="utf-8")
+    except Exception: pass
+if hasattr(sys.stderr, "reconfigure"):
+    try: sys.stderr.reconfigure(encoding="utf-8")
+    except Exception: pass
+
+
 class DesiBackend(RemoteMixin):
     """Backend for Desi server (ISIPOL09) execution"""
 
@@ -30,18 +39,8 @@ class DesiBackend(RemoteMixin):
         self._connect()
         self.logger.info("✅ Connected successfully")
 
-        # Setup pyenv Python version if available
-        self.pyenv_python_cmd = None
-        if hasattr(self.launcher, "local_python_version"):
-            self.pyenv_python_cmd = self._setup_pyenv_python(
-                self.ssh_client, self.launcher.local_python_version
-            )
-
-        # Check Python version compatibility (with pyenv if available)
-        is_compatible = self._check_python_version_compatibility(
-            self.ssh_client, self.pyenv_python_cmd
-        )
-        self.python_version_compatible = is_compatible
+        # We enforce using uv with local Python version directly without pyenv
+        self.python_version_compatible = True
 
         sftp = self.get_sftp()
 
@@ -82,10 +81,10 @@ class DesiBackend(RemoteMixin):
 
             # Add slurmray (unpinned for now to match legacy behavior, but could be pinned)
             req_file = f"{self.launcher.project_path}/requirements.txt"
-            with open(req_file, "r") as f:
+            with open(req_file, "r", encoding="utf-8") as f:
                 content = f.read()
             if "slurmray" not in content.lower():
-                with open(req_file, "a") as f:
+                with open(req_file, "a", encoding="utf-8") as f:
                     f.write("slurmray\n")
 
             # Check if venv can be reused based on requirements hash
@@ -99,7 +98,7 @@ class DesiBackend(RemoteMixin):
                 self.ssh_client.exec_command(f"rm -rf {base_dir}/venv")
                 should_recreate_venv = True
             elif os.path.exists(req_file):
-                with open(req_file, "r") as f:
+                with open(req_file, "r", encoding="utf-8") as f:
                     req_lines = f.readlines()
                 # Check remote hash (if venv exists on remote)
                 remote_hash_file = f"{base_dir}/.slogs/venv_hash.txt"
@@ -246,7 +245,7 @@ class DesiBackend(RemoteMixin):
 
             # Store venv hash
             if os.path.exists(req_file):
-                with open(req_file, "r") as f:
+                with open(req_file, "r", encoding="utf-8") as f:
                     req_lines = f.readlines()
                 current_hash = dep_manager.compute_requirements_hash(req_lines)
                 self.ssh_client.exec_command(f"mkdir -p {base_dir}/.slogs")
@@ -361,7 +360,11 @@ class DesiBackend(RemoteMixin):
                 # Filter out only very noisy system messages
                 if not any(noise in line_stripped for noise in ["pkill:", "WARNING:"]):
                     # Always print user output
-                    print(line, end="", flush=True)
+                    try:
+                        print(line, end="", flush=True)
+                    except UnicodeEncodeError:
+                        safe_line = line.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(sys.stdout.encoding or "utf-8")
+                        print(safe_line, end="", flush=True)
 
                     # Log important system messages with emojis
                     if (
@@ -390,7 +393,11 @@ class DesiBackend(RemoteMixin):
             stderr_output = stderr.read().decode("utf-8")
             if stderr_output.strip():
                 self.logger.error(f"Script errors:\n{stderr_output}")
-                print(stderr_output, end="")
+                try:
+                    print(stderr_output, end="")
+                except UnicodeEncodeError:
+                    safe_stderr = stderr_output.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(sys.stdout.encoding or "utf-8")
+                    print(safe_stderr, end="")
 
             exit_status = stdout.channel.recv_exit_status()
 
@@ -580,6 +587,7 @@ class DesiBackend(RemoteMixin):
         with open(
             os.path.join(self.launcher.module_path, "assets", "spython_template.py"),
             "r",
+            encoding="utf-8",
         ) as f:
             text = f.read()
 
@@ -633,33 +641,19 @@ class DesiBackend(RemoteMixin):
             local_mode,
         )
 
-        with open(os.path.join(self.launcher.project_path, "spython.py"), "w") as f:
+        with open(os.path.join(self.launcher.project_path, "spython.py"), "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
 
     def _write_runner_script(self, filename, base_dir):
         """Write bash script to set up env and run wrapper"""
-        # Determine Python command
-        if self.pyenv_python_cmd:
-            # Use pyenv: the command already includes eval and pyenv shell
-            python_cmd = self.pyenv_python_cmd.split(" && ")[
-                -1
-            ]  # Extract just "python" from the command
-            python3_cmd = python_cmd.replace("python", "python3")
-            pyenv_setup = self.pyenv_python_cmd.rsplit(" && ", 1)[
-                0
-            ]  # Get "eval ... && pyenv shell X.Y.Z"
-            use_pyenv = True
-        else:
-            # Fallback to system Python
-            python_cmd = "python"
-            python3_cmd = "python3"
-            pyenv_setup = ""
-            use_pyenv = False
-
-        # Prepare uv arguments
+        # Prepare uv arguments using local Python version (strictly enforced, no pyenv)
         uv_python_arg = ""
         if hasattr(self.launcher, "local_python_version") and self.launcher.local_python_version:
-             uv_python_arg = f"--python {self.launcher.local_python_version}"
+            # Extract major.minor to allow uv to fetch the latest matching patch version.
+            # This avoids failing on exact patch versions (like 3.11.15) not in uv's index.
+            parts = self.launcher.local_python_version.split(".")
+            python_version_major_minor = ".".join(parts[:2]) if len(parts) >= 2 else self.launcher.local_python_version
+            uv_python_arg = f"--python {python_version_major_minor}"
 
         content = f"""#!/bin/bash
 # Desi Runner Script
@@ -668,17 +662,6 @@ set -e  # Exit immediately if a command exits with a non-zero status
 # Clean up any previous Ray instances (silently)
 # pkill -f ray 2>/dev/null || true
 # disabled to allow concurrency
-
-# Setup pyenv if available
-"""
-
-        if use_pyenv:
-            content += f"""# Using pyenv for Python version management
-export PATH="$HOME/.pyenv/bin:/usr/local/bin:/opt/pyenv/bin:$PATH"
-{pyenv_setup}
-"""
-        else:
-            content += """# pyenv not available, using system Python
 """
 
         content += f"""
@@ -827,7 +810,7 @@ echo "🔒 Acquiring Smart Lock and starting job..."
         content += """python desi_wrapper.py
 """
 
-        with open(os.path.join(self.launcher.project_path, filename), "w") as f:
+        with open(os.path.join(self.launcher.project_path, filename), "w", encoding="utf-8", newline="\n") as f:
             f.write(content)
 
     def _write_desi_wrapper(self, filename):
@@ -835,7 +818,7 @@ echo "🔒 Acquiring Smart Lock and starting job..."
         
         # Load template
         template_path = os.path.join(self.launcher.module_path, "assets", "desi_wrapper_template.py")
-        with open(template_path, "r") as f:
+        with open(template_path, "r", encoding="utf-8") as f:
             content = f.read()
             
         # Resource Limits (Hardcoded for Desi based on audit)
@@ -870,6 +853,6 @@ echo "🔒 Acquiring Smart Lock and starting job..."
         base_dir = f"/home/{self.launcher.server_username}/slurmray-server/{self.launcher.project_name}"
         content = content.replace("{{PROJECT_DIR}}", str(base_dir))
         
-        with open(os.path.join(self.launcher.project_path, filename), "w") as f:
+        with open(os.path.join(self.launcher.project_path, filename), "w", encoding="utf-8", newline="\n") as f:
             f.write(content)
 

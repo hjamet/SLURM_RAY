@@ -114,6 +114,7 @@ class TestUVRequirements(unittest.TestCase):
         self.launcher.project_name = "test_project"
         self.launcher.files = []
         self.launcher.force_reinstall_venv = False
+        self.launcher.strict_versions = False
         
         if not os.path.exists(self.launcher.project_path):
             os.makedirs(self.launcher.project_path)

@@ -392,7 +392,7 @@ class Cluster:
             self.logger.handlers.clear()
 
         # File handler (constantly rewritten)
-        file_handler = logging.FileHandler(self.log_file, mode="w")
+        file_handler = logging.FileHandler(self.log_file, mode="w", encoding="utf-8")
         file_handler.setLevel(logging.INFO)
         file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
         file_handler.setFormatter(file_formatter)
@@ -1233,23 +1233,30 @@ class Cluster:
 # ---------------------------------------------------------------------------- #
 if __name__ == "__main__":
     import ray
-    import torch
 
     def function_inside_function():
         # Check if file exists before trying to read it, as paths might differ
         if os.path.exists("documentation/RayLauncher.html"):
-            with open("documentation/RayLauncher.html", "r") as f:
+            with open("documentation/RayLauncher.html", "r", encoding="utf-8") as f:
                 return f.read()[0:10]
         return "DocNotFound"
 
     def example_func(x):
         import time # Encapsulated imports works too !
-        print("Waiting for 60 seconds so that you can check the dashboard...")
-        time.sleep(60)
+        print("Waiting for 10 seconds so that you can check the dashboard...")
+        time.sleep(10)
         print("Done waiting !")
+        
+        # Gracefully handle torch import/execution since some cluster environments have NCCL library conflicts
+        try:
+            import torch
+            gpu_status = f"GPU is available : {torch.cuda.is_available()}"
+        except Exception as e:
+            gpu_status = f"GPU status check failed: {e}"
+
         result = (
             ray.cluster_resources(),
-            f"GPU is available : {torch.cuda.is_available()}",
+            gpu_status,
             x + 1,
             function_inside_function(),
         )
